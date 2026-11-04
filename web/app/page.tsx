@@ -7,6 +7,7 @@ import {
   ChainChips, FinalCta, HeroBlock, HeroCheck, LANDING_ESTATE_SLUG, LiveProofCard, LiveStrip, NftShowcase, PhoneMockup, SourceLinks, WatchExampleLink,
 } from "@/components/landing";
 import { GITHUB_URL } from "@/lib/config";
+import { FAQ } from "@/components/faq-data";
 
 // SPEC §12 — copy is final.
 
@@ -26,17 +27,7 @@ function Section({ children, className, label }: { children: React.ReactNode; cl
   );
 }
 
-const FAQ: [string, React.ReactNode][] = [
-  ["Where is my money, exactly?", <>In your unit&apos;s own NEAR account, e.g. <span className="mono">a-4b.harmattan-court.plote.near</span>. Anyone can look it up.</>],
-  ["Can Plote take my money?", "No. Plote's servers don't hold any key that can move it. Only the estate contract's rules can, and those rules are public."],
-  ["What if the developer disappears?", "When a deadline passes without a verified stage, you can refund everything not yet released."],
-  ["Doesn't the developer need money to start building?", "An estate can release a fixed mobilisation share (up to 10%) when a unit is allocated. Everything else waits for a proven stage."],
-  ["What if I can't keep paying?", "Your unit is listed for what you've paid. When it sells, you get that back minus a fixed 5%."],
-  ["What does it cost me?", "Nothing on top of the price during the pilot. You pay a small network fee for each transaction (fractions of a cent)."],
-  ["Is my name public?", "Your account name and amounts are public. Your real name isn't stored on-chain."],
-  ["Why one vote per unit and not per account?", "Each unit is one stake. Splitting units across accounts can't add votes, and units bought after a vote opens can't swing it."],
-  ["Is this live?", "The hackathon build runs on NEAR testnet, with a real cross-chain payment demonstrated on mainnet."],
-];
+
 
 export default function Landing() {
   return (
