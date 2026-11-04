@@ -11,7 +11,7 @@ import { Bar, BracketCard, Button, EmptyState, ErrorState, LinkButton, LoadingCa
 import { describeProposal, estate as E } from "@/lib/estate";
 import { estateAccount, estateSlug } from "@/lib/estates";
 import { formatDateTime, nsToMs } from "@/lib/format";
-import { useEstate, useMilestones, useProposals } from "@/lib/hooks";
+import { useEstate, useMilestones, useNow, useProposals } from "@/lib/hooks";
 import { callNoPopup } from "@/lib/near";
 import type { MilestoneView, ProposalView } from "@/lib/types";
 import { LoginKeyToggle } from "./login-key";
@@ -78,13 +78,14 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
   const { accountId, connect } = useWallet();
   const { run } = useTx();
   const qc = useQueryClient();
+  const now = useNow(5000);
   const avail = useQuery({
     queryKey: ["votes-available", estate, p.id, accountId],
     queryFn: () => E.votesAvailable(estate, p.id, accountId!),
     enabled: !!accountId && p.status === "Open",
     retry: 0,
   });
-  const expired = p.status === "Open" && nsToMs(p.expires_at) < Date.now();
+  const expired = p.status === "Open" && nsToMs(p.expires_at) < now;
   const need = Math.floor(p.electorate / 2) + 1;
   const vote = async (approve: boolean) => {
     if (!accountId) return connect();

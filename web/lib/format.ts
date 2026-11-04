@@ -97,6 +97,9 @@ export function nearToYocto(near: string): string {
 
 // ---------- time ----------
 
+/** Wall clock (ms). For event handlers; render code should use the useNow() hook. */
+export const nowMs = (): number => Date.now();
+
 export function nsToMs(ns: string | number | bigint | null | undefined): number {
   return Number(toBig(ns) / 1_000_000n);
 }

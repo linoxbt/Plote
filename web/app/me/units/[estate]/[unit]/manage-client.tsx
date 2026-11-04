@@ -14,7 +14,7 @@ import { BracketCard, Button, ErrorState, Field, LinkButton, LoadingCard, Page }
 import { approvedCount, estate as E, MAX_GUARDIANS } from "@/lib/estate";
 import { estateAccount, estateSlug, isValidAccountId } from "@/lib/estates";
 import { formatUsd, parseUsdc, toBig, unitDisplay } from "@/lib/format";
-import { useEstate, useMilestones, useNftToken, useUnit, useUsdcBalance } from "@/lib/hooks";
+import { useEstate, useMilestones, useNftToken, useNow, useUnit, useUsdcBalance } from "@/lib/hooks";
 import { bytesToBase64, getWallet, sendTx, sendTxs, type TxSpec } from "@/lib/near";
 import { notifyMessage, timestampedNonce } from "@/lib/nep413";
 import { isRegistered, usdc } from "@/lib/usdc";
@@ -48,21 +48,28 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
   const [cap, setCap] = useState("");
   const [email, setEmail] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [celebrate, setCelebrate] = useState(false);
+  const now = useNow(30_000);
+  const seenKey = `plote:seen-approved:${account}:${unitId}`;
+  const [prevSeen] = useState<number>(() => {
+    try {
+      return typeof window === "undefined" ? -1 : Number(window.localStorage.getItem(seenKey) ?? "-1");
+    } catch {
+      return -1;
+    }
+  });
+  const [dismissed, setDismissed] = useState(false);
   const done = approvedCount(ms.data);
+  const celebrate = !dismissed && !!ms.data && !!accountId && prevSeen >= 0 && done > prevSeen;
 
   // C7: celebrate on the first visit after a new approval.
   useEffect(() => {
     if (!ms.data || !accountId) return;
-    const key = `plote:seen-approved:${account}:${unitId}`;
     try {
-      const prev = Number(window.localStorage.getItem(key) ?? "-1");
-      if (prev >= 0 && done > prev) setCelebrate(true);
-      window.localStorage.setItem(key, String(done));
+      window.localStorage.setItem(seenKey, String(done));
     } catch {
       /* storage blocked */
     }
-  }, [ms.data, done, account, unitId, accountId]);
+  }, [ms.data, done, seenKey, accountId]);
 
   const exec = async (title: string, spec: TxSpec | TxSpec[], success?: string) => {
     setErr(null);
@@ -90,7 +97,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
       <EstateBanners estate={e} />
       <Celebration
         open={celebrate}
-        onClose={() => setCelebrate(false)}
+        onClose={() => setDismissed(true)}
         title={latestTitle ? `Your ${latestTitle.toLowerCase()} is done.` : "A new stage was approved."}
         sub={`${unitDisplay(u.id)} at ${e.name} is ${u.progress_bps / 100}% built.`}
         house={{ estateName: e.name, unitLabel: unitDisplay(u.id), unitId: u.id, approvedCount: done, total: ms.data?.length || 4, status: u.status, paid: u.paid, price: u.price }}
@@ -233,7 +240,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
 
             <Section id="danger" title="Danger zone" tone="red">
               {u.listing?.kind === "Voluntary" ? <Button variant="danger" disabled={!isHolder} onClick={() => exec("Cancel listing", E.cancelListing(account, u.id))}>Cancel listing</Button> : <p className="text-sm text-muted">{u.listing?.kind === "Default" ? "A default listing can't be cancelled; it closes when the unit sells." : "No open listing."}</p>}
-              {u.next_due && Number(u.next_due.due_at) / 1e6 < Date.now() ? (
+              {u.next_due && Number(u.next_due.due_at) / 1e6 < now ? (
                 <p className="text-sm text-muted">An instalment is overdue. After the grace period anyone can declare a default, which lists the unit for what you&apos;ve paid (minus a fixed {e.params.penalty_bps / 100}%) instead of forfeiting it.</p>
               ) : null}
             </Section>

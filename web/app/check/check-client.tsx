@@ -12,7 +12,7 @@ export function CheckClient({ initial }: { initial: string }) {
   const [q, setQ] = useState(initial);
 
   useEffect(() => {
-    setRecent(loadRecent());
+    Promise.resolve().then(() => setRecent(loadRecent()));
     if (!initial) return;
     let alive = true;
     runCheck(initial).then((r) => {

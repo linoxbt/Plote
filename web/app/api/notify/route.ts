@@ -7,7 +7,6 @@ import { ESTATES, TABLES } from "@/lib/config";
 import { estate as E } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { verifySignedRequest } from "@/lib/server/auth";
-import { serverEnv } from "@/lib/server/env";
 import { jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 
