@@ -62,7 +62,7 @@ export function EstatesClient() {
               <Link href={`/estates/${estateSlug(account)}`} className="block h-full">
                 <BracketCard hover className="h-full space-y-3">
                   <div className="relative">
-                    <HouseNFT estateName={e.name} unitLabel={estateSlug(account)} unitId={estateSlug(account)} approvedCount={approvedCount(m)} total={m?.length || 4} status="Allocated" paid={e.totals.paid} price={e.totals.paid} className="aspect-[300/200] w-full object-cover object-top" />
+                    <HouseNFT estateName={e.name} unitLabel={estateSlug(account)} unitId={estateSlug(account)} approvedCount={approvedCount(m)} total={m?.length || 4} status="Allocated" paid={e.totals.paid} price="0" className="aspect-[300/200] w-full object-cover object-top" />
                     <span className="mono absolute bottom-1 right-1 bg-bg/80 px-1 text-[10px] text-muted">illustrative</span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
