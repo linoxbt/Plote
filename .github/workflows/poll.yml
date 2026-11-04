@@ -1,0 +1,13 @@
+# Calls the event poller every 5 minutes (Vercel Hobby cron is too infrequent). Disable after judging.
+name: poll
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    if: ${{ vars.APP_URL != '' }}
+    steps:
+      - run: curl -fsS -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" "${{ vars.APP_URL }}/api/cron/poll"

@@ -1,0 +1,16 @@
+[package]
+name = "plote-estate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Plote estate contract: unit registry, allocation NFT, milestone escrow, TEE-checked evidence, holder votes"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { workspace = true }
+near-contract-standards = { workspace = true }
+
+[dev-dependencies]
+near-sdk = { workspace = true, features = ["unit-testing"] }

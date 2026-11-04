@@ -1,0 +1,38 @@
+{
+  "account": "harmattan-court",
+  "name": "Harmattan Court",
+  "location": "Lekki, Lagos (fictional demo estate)",
+  "developer": "dev-harmattan.plote.testnet",
+  "payout": "dev-harmattan.plote.testnet",
+  "surveyor": "qs-adaeze.plote.testnet",
+  "recovery": "plote.testnet",
+  "verdict_relayer": "relayer.plote.testnet",
+  "verify_mode": "outlayer",
+  "outlayer": "outlayer.testnet",
+  "verifier": { "repo": "https://github.com/linoxbt/plote-verifier", "commit": "REPLACE_WITH_PINNED_COMMIT", "build_target": "wasm32-wasip2" },
+  "geofence": { "lat_e6": 6447000, "lon_e6": 3474000, "radius_m": 300 },
+  "milestones": [
+    { "key": "foundation", "title": "Foundation", "bps": 2000, "deadline": "2027-02-01T12:00:00Z" },
+    { "key": "roofing", "title": "Roofing", "bps": 3000, "deadline": "2027-05-03T12:00:00Z" },
+    { "key": "finishing", "title": "Finishing", "bps": 3000, "deadline": "2027-08-02T12:00:00Z" },
+    { "key": "handover", "title": "Handover", "bps": 2000, "deadline": "2027-11-01T12:00:00Z" }
+  ],
+  "params": {
+    "reserve_ttl_ns": "1800000000000", "min_initial_bps": 1000, "mobilisation_bps": 0,
+    "grace_ns": "120000000000", "veto_window_ns": "120000000000", "default_grace_ns": "120000000000",
+    "penalty_bps": 500, "dust_threshold": "1000000", "late_claim_ns": "600000000000",
+    "capture_ttl_ns": "1800000000000", "proposal_period_ns": "600000000000",
+    "max_phash_distance": 8, "max_exif_age_h": 72, "min_ai_confidence": 70,
+    "demo_mode": true, "playground": false
+  },
+  "units": [
+    { "id": "a-1a", "label": "Block A · 1A · 2-bed", "price": "60000000000" },
+    { "id": "a-2a", "label": "Block A · 2A · 2-bed", "price": "60000000000" },
+    { "id": "a-4b", "label": "Block A · 4B · 3-bed", "price": "85000000000" },
+    { "id": "b-1a", "label": "Block B · 1A · 2-bed", "price": "60000000000",
+      "plan": [ { "due_at": "+30d", "cumulative": "18000000000" }, { "due_at": "+120d", "cumulative": "36000000000" } ] },
+    { "id": "b-3b", "label": "Block B · 3B · 3-bed", "price": "85000000000" },
+    { "id": "c-ph", "label": "Block C · Penthouse · 4-bed", "price": "140000000000" }
+  ],
+  "fund_verification_near": "5"
+}

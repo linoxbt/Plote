@@ -1,0 +1,125 @@
+//! Stretch safety features: next-of-kin beneficiary, 2-of-3 guardian recovery (C2) and lender liens (C3).
+
+use crate::*;
+use near_sdk::json_types::{U128, U64};
+use near_sdk::{env, near, AccountId};
+
+/// Recovery delay after two guardians agree: 72 h, or the grace period in demo mode.
+fn recovery_delay(p: &Params) -> u64 {
+    if p.demo_mode {
+        p.grace_ns.0
+    } else {
+        72 * ONE_HOUR_NS
+    }
+}
+
+#[near]
+impl Estate {
+    pub fn set_beneficiary(&mut self, unit_id: String, beneficiary: Option<AccountId>) {
+        let mut unit = self.unit(&unit_id);
+        self.assert_holder(&unit);
+        unit.beneficiary = beneficiary;
+        self.save(unit);
+    }
+
+    pub fn set_guardians(&mut self, unit_id: String, guardians: Vec<AccountId>) {
+        let mut unit = self.unit(&unit_id);
+        let holder = self.assert_holder(&unit);
+        ensure!(guardians.len() <= 3, "E_TOO_MANY", "at most 3 guardians");
+        ensure!(
+            !guardians.contains(&holder),
+            "E_BAD_ARGS",
+            "the holder can't be their own guardian"
+        );
+        let mut g = guardians;
+        g.sort();
+        g.dedup();
+        unit.guardians = g;
+        unit.recovery = None;
+        self.save(unit);
+    }
+
+    /// A guardian backs moving the token to `new_owner`. The second distinct guardian starts the delay.
+    pub fn guardian_recover(&mut self, unit_id: String, new_owner: AccountId) {
+        let mut unit = self.unit(&unit_id);
+        let caller = env::predecessor_account_id();
+        ensure!(unit.status.has_token(), "E_RECOVERY", "unit has no holder");
+        ensure!(
+            unit.guardians.contains(&caller),
+            "E_NOT_GUARDIAN",
+            "only a guardian can do this"
+        );
+        ensure!(
+            unit.holder.as_ref() != Some(&new_owner),
+            "E_BAD_ARGS",
+            "new owner is already the holder"
+        );
+        let mut r = match unit.recovery.take() {
+            Some(r) if r.new_owner == new_owner => r,
+            _ => Recovery {
+                new_owner,
+                approvals: vec![],
+                ready_at: None,
+            },
+        };
+        if !r.approvals.contains(&caller) {
+            r.approvals.push(caller);
+        }
+        if r.approvals.len() >= 2 && r.ready_at.is_none() {
+            r.ready_at = Some(U64(Self::now() + recovery_delay(&self.params)));
+        }
+        unit.recovery = Some(r);
+        self.save(unit);
+    }
+
+    /// Anyone, after the delay: complete the recovery.
+    pub fn finish_recovery(&mut self, unit_id: String) {
+        let mut unit = self.unit(&unit_id);
+        let r = unit
+            .recovery
+            .clone()
+            .unwrap_or_else(|| errors::fail("E_RECOVERY", "no recovery in progress"));
+        let ready = r.ready_at.map(|t| Self::now() >= t.0).unwrap_or(false);
+        ensure!(ready, "E_RECOVERY", "recovery isn't ready yet");
+        let from = unit.holder.clone().unwrap();
+        self.move_token(&mut unit, &from, &r.new_owner, false);
+        self.save(unit);
+    }
+
+    pub fn cancel_recovery(&mut self, unit_id: String) {
+        let mut unit = self.unit(&unit_id);
+        self.assert_holder(&unit);
+        unit.recovery = None;
+        self.save(unit);
+    }
+
+    /// A lien blocks transfer and listing; refunds go to the lender first, up to `cap`.
+    pub fn set_lien(&mut self, unit_id: String, lender: AccountId, cap: U128) {
+        let mut unit = self.unit(&unit_id);
+        let holder = self.assert_holder(&unit);
+        ensure!(
+            lender != holder,
+            "E_BAD_ARGS",
+            "the holder can't be the lender"
+        );
+        ensure!(unit.lien.is_none(), "E_LIEN", "a lien is already set");
+        unit.lien = Some(Lien { lender, cap });
+        unit.listing = None;
+        self.save(unit);
+    }
+
+    pub fn clear_lien(&mut self, unit_id: String) {
+        let mut unit = self.unit(&unit_id);
+        let lien = unit
+            .lien
+            .clone()
+            .unwrap_or_else(|| errors::fail("E_LIEN", "no lien"));
+        ensure!(
+            lien.lender == env::predecessor_account_id(),
+            "E_NOT_LENDER",
+            "only the lender can clear the lien"
+        );
+        unit.lien = None;
+        self.save(unit);
+    }
+}
