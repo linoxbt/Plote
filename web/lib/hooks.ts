@@ -1,0 +1,112 @@
+"use client";
+
+// TanStack Query hooks over the typed chain clients. Every view failure becomes a query error the page
+// renders as an ErrorState / "—"; nothing here throws into React.
+
+import { useQuery, useQueries, type UseQueryOptions } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { ESTATES } from "./config";
+import { estate as E } from "./estate";
+import { getFxRate } from "./format";
+import { usdc } from "./usdc";
+import type { EstateView, EvidenceView, MilestoneView, NftToken, ProposalView, UnitView } from "./types";
+
+type Opts = { poll?: number | false; enabled?: boolean };
+
+function base<T>(key: unknown[], fn: () => Promise<T>, o: Opts = {}): UseQueryOptions<T, Error, T, unknown[]> {
+  return {
+    queryKey: key,
+    queryFn: fn,
+    retry: 1,
+    staleTime: 5000,
+    refetchInterval: o.poll ?? false,
+    enabled: o.enabled ?? true,
+  };
+}
+
+export const useEstate = (e: string, o?: Opts) => useQuery(base<EstateView>(["estate", e], () => E.getEstate(e), o));
+export const useUnits = (e: string, o?: Opts) => useQuery(base<UnitView[]>(["units", e], () => E.listUnits(e, 0, 100), o));
+export const useUnit = (e: string, id: string, o?: Opts) => useQuery(base<UnitView | null>(["unit", e, id], () => E.getUnit(e, id), o));
+export const useMilestones = (e: string, o?: Opts) => useQuery(base<MilestoneView[]>(["milestones", e], () => E.getMilestones(e), o));
+export const useEvidence = (e: string, id: string, o?: Opts) =>
+  useQuery(base<EvidenceView | null>(["evidence", e, id], () => E.getEvidence(e, id), o));
+export const useEvidenceList = (e: string, milestone?: number, o?: Opts) =>
+  useQuery(base<EvidenceView[]>(["evidence-list", e, milestone ?? "all"], () => E.listEvidence(e, { milestone, limit: 50 }), o));
+export const useProposals = (e: string, o?: Opts) => useQuery(base<ProposalView[]>(["proposals", e], () => E.listProposals(e, 0, 50), o));
+export const useCapture = (e: string, milestone: number | null, o?: Opts) =>
+  useQuery(base(["capture", e, milestone], () => (milestone === null ? Promise.resolve(null) : E.getCapture(e, milestone)), o));
+export const useNftToken = (e: string, id: string, o?: Opts) => useQuery(base<NftToken | null>(["nft", e, id], () => E.nftToken(e, id), o));
+
+export const useUsdcBalance = (account: string | null | undefined, o?: Opts) =>
+  useQuery(base(["usdc-bal", account], () => usdc.balanceOf(account!), { ...o, enabled: !!account && (o?.enabled ?? true) }));
+export const useUsdcRegistered = (account: string | null | undefined, o?: Opts) =>
+  useQuery(base(["usdc-reg", account], () => usdc.storageBalanceOf(account!).then((b) => !!b), { ...o, enabled: !!account && (o?.enabled ?? true) }));
+
+/** All configured estates' get_estate, each succeeding or failing on its own. */
+export function useAllEstates(estates: string[] = ESTATES) {
+  const qs = useQueries({ queries: estates.map((e) => base<EstateView>(["estate", e], () => E.getEstate(e))) });
+  return estates.map((account, i) => ({ account, q: qs[i] }));
+}
+
+export function useAllMilestones(estates: string[] = ESTATES) {
+  const qs = useQueries({ queries: estates.map((e) => base<MilestoneView[]>(["milestones", e], () => E.getMilestones(e))) });
+  return estates.map((account, i) => ({ account, q: qs[i] }));
+}
+
+/** Units held by an account across every configured estate (nft_tokens_for_owner, then get_unit). */
+export function useMyUnits(account: string | null | undefined, estates: string[] = ESTATES) {
+  return useQuery({
+    queryKey: ["my-units", account, estates.join(",")],
+    enabled: !!account,
+    retry: 1,
+    staleTime: 5000,
+    queryFn: async () => {
+      const out: { estate: string; token: NftToken; unit: UnitView | null; error?: string }[] = [];
+      const errors: { estate: string; error: string }[] = [];
+      await Promise.all(
+        estates.map(async (e) => {
+          try {
+            const toks = (await E.nftTokensForOwner(e, account!)) ?? [];
+            const units = await Promise.all(toks.map((t) => E.getUnit(e, t.token_id).catch(() => null)));
+            toks.forEach((t, i) => out.push({ estate: e, token: t, unit: units[i] }));
+          } catch (err) {
+            errors.push({ estate: e, error: err instanceof Error ? err.message : String(err) });
+          }
+        }),
+      );
+      if (errors.length === estates.length && estates.length > 0) throw new Error(errors[0].error);
+      return { units: out, errors };
+    },
+  });
+}
+
+/** Which estates this account is the developer / surveyor of. */
+export function useRoles(account: string | null | undefined) {
+  const all = useAllEstates();
+  const developerOf = all.filter((x) => x.q.data?.developer_id === account).map((x) => x.account);
+  const surveyorOf = all.filter((x) => x.q.data && (x.q.data.surveyor_id === account || x.q.data.params.playground)).map((x) => x.account);
+  return { all, developerOf, surveyorOf, loading: all.some((x) => x.q.isLoading) };
+}
+
+/** USD→NGN rate (cached 1 h); null when unavailable. */
+export function useFx(): number | null {
+  const [rate, setRate] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getFxRate().then((r) => alive && setRate(r));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return rate;
+}
+
+/** Re-render every `ms` (for countdowns). */
+export function useNow(ms = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
+}
