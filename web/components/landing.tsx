@@ -151,7 +151,7 @@ export function NftShowcase() {
         unitId="a-4b"
         approvedCount={shown}
         total={msQ.data?.length || 4}
-        status={stage === 3 ? "HandedOver" : (u?.status ?? "Allocated")}
+        status={stage === 3 ? "HandedOver" : (u?.status ?? "—")}
         paid={u?.paid ?? "0"}
         price={u?.price ?? "0"}
       />

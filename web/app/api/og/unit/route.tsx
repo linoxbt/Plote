@@ -27,9 +27,9 @@ export async function GET(req: Request) {
   const total = ms?.length || 4;
   const estateName = e?.name ?? (slug ? slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Plote");
   const label = unitId ? unitId.toUpperCase() : "A-4B";
-  const house = houseSvgDataUri({ estateName, unitLabel: label, unitId: unitId ?? "a-4b", approvedCount: unitId ? done : 3, total, status: u?.status ?? "Allocated", paid: u?.paid ?? "0", price: u?.price ?? "0" });
-  const headline = unitId ? `${label} at ${estateName} is ${u ? Math.round(u.progress_bps / 100) : Math.round((done / total) * 100)}% built` : "Pay for the house you can see.";
-  const sub = unitId ? `${done} of ${total} stages proven · every payment checked on-chain` : "Every off-plan home gets its own on-chain account.";
+  const house = houseSvgDataUri({ estateName, unitLabel: label, unitId: unitId ?? "a-4b", approvedCount: unitId ? done : 3, total, status: u?.status ?? (unitId ? "—" : "Allocated"), paid: u?.paid ?? "0", price: u?.price ?? "0" });
+  const headline = unitId ? (u ? `${label} at ${estateName} is ${Math.round(u.progress_bps / 100)}% built` : `${label} at ${estateName}`) : "Pay for the house you can see.";
+  const sub = unitId ? (ms ? `${done} of ${total} stages proven · every payment checked on-chain` : "Every stage of this home, with the proof behind each payment.") : "Every off-plan home gets its own on-chain account.";
   return new ImageResponse(
     (
       <div style={{ width: 1200, height: 630, display: "flex", background: "#0A0B0D", color: "#E9ECEF", padding: 56, fontFamily: "sans-serif" }}>

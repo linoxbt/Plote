@@ -65,7 +65,7 @@ export function houseSvg(i: HouseSvgInput): string {
     segs +
     `<text x="30" y="294" font-size="26" font-weight="600">${label}</text>` +
     `<text x="270" y="294" font-size="16" text-anchor="end">${done}/${total}</text>` +
-    `<text x="30" y="314" font-size="11" style="fill:#8B939D">${formatUsd(i.paid)} / ${formatUsd(i.price)}</text>` +
+    `<text x="30" y="314" font-size="11" style="fill:#8B939D">${!i.price || i.price === "0" ? "—" : `${formatUsd(i.paid)} / ${formatUsd(i.price)}`}</text>` +
     `</svg>`
   );
 }
