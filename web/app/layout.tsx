@@ -16,11 +16,11 @@ export const metadata: Metadata = {
     "Plote holds your off-plan deposit in its own on-chain account and releases it to the developer only when each construction stage is proven. Check any unit in seconds.",
   applicationName: "Plote",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/mark.svg", apple: "/mark.svg" },
+  icons: { icon: [{ url: "/favicon.ico", sizes: "any" }, { url: "/mark.svg", type: "image/svg+xml" }], apple: "/apple-touch-icon.png" },
   openGraph: {
     title: "Plote — Pay for the house you can see",
     description: "Every off-plan home gets its own on-chain account. Money moves only on proof.",
-    images: [{ url: "/api/og/unit", width: 1200, height: 630 }],
+    images: [{ url: "/og-default.png", width: 1200, height: 630, alt: "Plote — Pay for the house you can see" }],
     siteName: "Plote",
   },
   twitter: { card: "summary_large_image" },
