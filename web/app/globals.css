@@ -1,0 +1,245 @@
+@import "tailwindcss";
+
+/* SPEC §11.2 tokens. Dark only (light mode isn't shipped for the hackathon). */
+:root {
+  --bg: #0a0b0d;
+  --surface: #111317;
+  --surface-2: #171a1f;
+  --line: #252a31;
+  --text: #e9ecef;
+  --muted: #8b939d;
+  --teal: #2dd4bf;
+  --teal-dim: #134e48;
+  --gold: #e8b04b;
+  --red: #f06a6a;
+  --amber: #f2a93b;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-teal: var(--teal);
+  --color-teal-dim: var(--teal-dim);
+  --color-gold: var(--gold);
+  --color-red: var(--red);
+  --color-amber: var(--amber);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-space), var(--font-inter), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-jet), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-xs: 2px;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: var(--teal-dim);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+a {
+  color: inherit;
+}
+
+.mono,
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- survey-beacon corner brackets (the signature device). No borders, four corners. ---- */
+.corners {
+  --c: var(--line);
+  --l: 12px;
+  --w: 1.5px;
+  background-image:
+    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c));
+  background-repeat: no-repeat;
+  background-size:
+    var(--l) var(--w), var(--w) var(--l),
+    var(--l) var(--w), var(--w) var(--l),
+    var(--l) var(--w), var(--w) var(--l),
+    var(--l) var(--w), var(--w) var(--l);
+  background-position:
+    top left, top left,
+    top right, top right,
+    bottom left, bottom left,
+    bottom right, bottom right;
+}
+.corners-hover:hover,
+.corners-hover:focus-within,
+.corners-active {
+  --c: var(--teal);
+}
+.corners-teal {
+  --c: var(--teal);
+}
+.corners-red {
+  --c: var(--red);
+}
+.corners-amber {
+  --c: var(--amber);
+}
+.corners-gold {
+  --c: var(--gold);
+}
+
+/* ---- buttons ---- */
+.btn {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 1rem;
+  border-radius: 2px;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    opacity 150ms ease-out;
+  cursor: pointer;
+  user-select: none;
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background-color: var(--teal);
+  color: var(--bg);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: #5eead4;
+}
+.btn-ghost {
+  --c: var(--line);
+  color: var(--text);
+  background-color: transparent;
+}
+.btn-ghost:hover:not(:disabled),
+.btn-ghost:focus-visible {
+  --c: var(--teal);
+  color: var(--teal);
+}
+.btn-danger {
+  background-color: var(--red);
+  color: var(--bg);
+}
+.btn-gold {
+  background-color: var(--gold);
+  color: var(--bg);
+}
+.btn-sm {
+  min-height: 36px;
+  padding: 0 0.75rem;
+  font-size: 13px;
+}
+
+/* ---- inputs ---- */
+.input {
+  width: 100%;
+  min-height: 44px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0 0.75rem;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+.input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+.input:focus {
+  border-color: var(--teal);
+  outline: none;
+}
+textarea.input {
+  padding: 0.6rem 0.75rem;
+  min-height: 88px;
+}
+.label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+/* ---- survey-paper grid (hero only) ---- */
+.survey-grid {
+  background-image: radial-gradient(rgba(233, 236, 239, 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ---- skeleton ---- */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 2px;
+}
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* timelapse crossfade */
+.fade-frame {
+  transition: opacity 900ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

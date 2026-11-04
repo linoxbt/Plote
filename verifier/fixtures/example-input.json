@@ -1,0 +1,16 @@
+{
+  "evidence_id": 17,
+  "url": "https://example.supabase.co/storage/v1/object/public/evidence/harmattan-court/17.jpg",
+  "sha256": "9f2c4be1d0a37e5f8c6b2a91d4e7f0c3b5a8e2d1f6c9b0a7e4d3c2b1a0f9e8e1",
+  "captured_at": 1793740000000000000,
+  "device_gps": [6447123, 3474190],
+  "now": 1793743600000000000,
+  "milestone": "roofing",
+  "geofence": { "lat_e6": 6447000, "lon_e6": 3474000, "radius_m": 300 },
+  "known_phashes": ["c3a1f0e29b7d4410"],
+  "limits": { "max_exif_age_h": 72, "max_phash_distance": 8, "min_ai_confidence": 70 },
+  "demo_mode": true,
+  "playground": false,
+  "challenge": "K7RQ4M",
+  "challenge_opened_at": 1793739000000000000
+}

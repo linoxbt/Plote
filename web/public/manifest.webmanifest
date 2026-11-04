@@ -1,0 +1,10 @@
+{
+  "name": "Plote",
+  "short_name": "Plote",
+  "description": "Pay for the house you can see. Surveyor capture app included.",
+  "start_url": "/qs",
+  "display": "standalone",
+  "background_color": "#0A0B0D",
+  "theme_color": "#0A0B0D",
+  "icons": [{ "src": "/mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

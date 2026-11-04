@@ -1,0 +1,60 @@
+[package]
+name = "plote-verifier"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+license = "MIT"
+description = "Plote milestone-photo verifier: an OutLayer TEE worker (wasm32-wasip2)"
+build = "build.rs"
+
+# Own workspace root, so this directory can be split into its own repo and
+# never joins a parent workspace.
+[workspace]
+
+[lib]
+name = "plote_verifier"
+path = "src/lib.rs"
+
+[[bin]]
+name = "plote-verifier"
+path = "src/main.rs"
+
+[[example]]
+name = "gen_fixture"
+required-features = ["synth"]
+
+[features]
+default = []
+# Honour PLOTE_AI_MOCK on wasm builds too (it is always honoured natively).
+# Never enable this for the build registered on OutLayer.
+ai-mock = []
+# Synthetic-image helpers (used by tests and the gen_fixture example).
+synth = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+kamadak-exif = "0.6"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image_hasher = { version = "3", default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wstd = "=0.6.8"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+# Image decoding/encoding is slow unoptimised; keep tests fast.
+[profile.dev.package."*"]
+opt-level = 2
+[profile.dev]
+opt-level = 1
