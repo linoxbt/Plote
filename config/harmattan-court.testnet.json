@@ -9,7 +9,7 @@
   "verdict_relayer": "relayer.plote.testnet",
   "verify_mode": "outlayer",
   "outlayer": "outlayer.testnet",
-  "verifier": { "repo": "https://github.com/linoxbt/plote-verifier", "commit": "REPLACE_WITH_PINNED_COMMIT", "build_target": "wasm32-wasip2" },
+  "verifier": { "repo": "project:plote.testnet/plote-verifier", "commit": "", "build_target": "wasm32-wasip2" },
   "geofence": { "lat_e6": 6447000, "lon_e6": 3474000, "radius_m": 300 },
   "milestones": [
     { "key": "foundation", "title": "Foundation", "bps": 2000, "deadline": "2027-02-01T12:00:00Z" },
