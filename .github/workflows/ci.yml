@@ -17,6 +17,13 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: cargo check --target wasm32-unknown-unknown -p plote-estate -p plote-unit -p plote-musdc
+      - run: cargo install cargo-near --locked --no-default-features
+      - name: build WASMs and run them together on near-mock
+        run: |
+          for c in contracts/unit contracts/musdc contracts/mocks/outlayer-mock contracts/estate; do
+            cargo near build non-reproducible-wasm --manifest-path $c/Cargo.toml
+          done
+          cargo test --release --manifest-path tests/integration/Cargo.toml
 
   verifier:
     runs-on: ubuntu-latest

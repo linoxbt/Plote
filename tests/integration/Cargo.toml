@@ -1,0 +1,16 @@
+[package]
+name = "plote-integration"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+description = "Runs the real contract WASMs (target/near) together on near-mock: cross-contract receipts and gas, no node."
+
+# Separate workspace so the heavy engine doesn't slow `cargo test --workspace` at the repo root.
+[workspace]
+
+[dev-dependencies]
+near-mock = "=0.7.2"
+serde_json = "1"
