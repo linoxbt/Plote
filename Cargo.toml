@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = ["contracts/estate", "contracts/unit", "contracts/musdc", "contracts/mocks/outlayer-mock"]
+exclude = ["verifier", "web"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+near-sdk = { version = "=5.30.0" }
+near-contract-standards = { version = "=5.30.0" }
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true

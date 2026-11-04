@@ -1,0 +1,4 @@
+{
+  "testnet": ["harmattan-court.plote.testnet", "baobab-heights.plote.testnet", "playground.plote.testnet"],
+  "mainnet": []
+}

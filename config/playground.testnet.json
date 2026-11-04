@@ -1,0 +1,31 @@
+{
+  "account": "playground",
+  "name": "Plote Playground",
+  "location": "Anywhere (judge sandbox — no geofence)",
+  "developer": "dev-harmattan.plote.testnet",
+  "payout": "dev-harmattan.plote.testnet",
+  "surveyor": "qs-adaeze.plote.testnet",
+  "recovery": "plote.testnet",
+  "verdict_relayer": "relayer.plote.testnet",
+  "verify_mode": "outlayer",
+  "outlayer": "outlayer.testnet",
+  "verifier": { "repo": "https://github.com/linoxbt/plote-verifier", "commit": "REPLACE_WITH_PINNED_COMMIT", "build_target": "wasm32-wasip2" },
+  "geofence": { "lat_e6": 0, "lon_e6": 0, "radius_m": 0 },
+  "milestones": [
+    { "key": "foundation", "title": "Foundation", "bps": 2000, "deadline": "+90d" },
+    { "key": "roofing", "title": "Roofing", "bps": 3000, "deadline": "+180d" },
+    { "key": "finishing", "title": "Finishing", "bps": 3000, "deadline": "+270d" },
+    { "key": "handover", "title": "Handover", "bps": 2000, "deadline": "+360d" }
+  ],
+  "params": {
+    "reserve_ttl_ns": "1800000000000", "min_initial_bps": 1000, "mobilisation_bps": 0,
+    "grace_ns": "120000000000", "veto_window_ns": "120000000000", "default_grace_ns": "120000000000",
+    "penalty_bps": 500, "dust_threshold": "1000000", "late_claim_ns": "600000000000",
+    "capture_ttl_ns": "1800000000000", "proposal_period_ns": "600000000000",
+    "max_phash_distance": 8, "max_exif_age_h": 8760, "min_ai_confidence": 70,
+    "demo_mode": true, "playground": true
+  },
+  "units": [],
+  "generate_units": { "prefix": "p", "count": 60, "label": "Playground · Unit {n} · studio", "price": "1000000000" },
+  "fund_verification_near": "5"
+}

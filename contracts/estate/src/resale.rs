@@ -1,0 +1,173 @@
+//! Fair exit: voluntary listings, defaults that resell instead of forfeit, and atomic purchase via
+//! `usdc.ft_transfer_call(estate, ask, {"buy": unit_id})`. The escrow on the unit account never moves.
+
+use crate::events::emit;
+use crate::*;
+use near_sdk::json_types::{U128, U64};
+use near_sdk::serde::Deserialize;
+use near_sdk::serde_json::{self, json};
+use near_sdk::{env, near, AccountId, PromiseOrValue};
+
+#[derive(Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+struct BuyMsg {
+    buy: String,
+}
+
+#[near]
+impl Estate {
+    pub fn list_for_sale(&mut self, unit_id: String, ask: U128) {
+        let mut unit = self.unit(&unit_id);
+        self.assert_holder(&unit);
+        ensure!(
+            matches!(unit.status, UnitStatus::Allocated | UnitStatus::HandedOver),
+            "E_LISTING",
+            "unit can't be listed in status {:?}",
+            unit.status
+        );
+        ensure!(unit.lien.is_none(), "E_LIEN", "a lien blocks listing");
+        ensure!(
+            unit.listing
+                .as_ref()
+                .map(|l| l.kind != ListingKind::Default)
+                .unwrap_or(true),
+            "E_LISTING",
+            "a default listing is open"
+        );
+        ensure!(ask.0 > 0, "E_BAD_ARGS", "ask must be positive");
+        unit.listing = Some(Listing {
+            ask,
+            kind: ListingKind::Voluntary,
+            since: U64(Self::now()),
+        });
+        emit(
+            "listed",
+            json!({ "unit_id": unit_id, "ask": ask, "kind": "Voluntary" }),
+        );
+        self.save(unit);
+    }
+
+    pub fn cancel_listing(&mut self, unit_id: String) {
+        let mut unit = self.unit(&unit_id);
+        self.assert_holder(&unit);
+        ensure!(
+            unit.listing
+                .as_ref()
+                .map(|l| l.kind == ListingKind::Voluntary)
+                .unwrap_or(false),
+            "E_LISTING",
+            "no voluntary listing to cancel"
+        );
+        unit.listing = None;
+        self.save(unit);
+    }
+
+    /// Anyone: an instalment is overdue past `default_grace_ns` → the unit is listed at what the holder paid.
+    pub fn declare_default(&mut self, unit_id: String) {
+        let mut unit = self.unit(&unit_id);
+        ensure!(
+            unit.status == UnitStatus::Allocated,
+            "E_NOT_DUE",
+            "only an Allocated unit can default"
+        );
+        let now = Self::now();
+        ensure!(
+            self.overdue(&unit, now),
+            "E_NOT_DUE",
+            "no instalment is overdue past the grace period"
+        );
+        unit.status = UnitStatus::InDefault;
+        let ask = U128(unit.paid);
+        unit.listing = Some(Listing {
+            ask,
+            kind: ListingKind::Default,
+            since: U64(now),
+        });
+        emit("defaulted", json!({ "unit_id": unit_id, "ask": ask }));
+        emit(
+            "listed",
+            json!({ "unit_id": unit_id, "ask": ask, "kind": "Default" }),
+        );
+        self.save(unit);
+    }
+
+    /// NEP-141 receiver for purchases. Any failure returns the full amount to the buyer.
+    pub fn ft_on_transfer(
+        &mut self,
+        sender_id: AccountId,
+        amount: U128,
+        msg: String,
+    ) -> PromiseOrValue<U128> {
+        if env::predecessor_account_id() != self.usdc_id {
+            env::log_str("E_BAD_TOKEN: only the estate's USDC is accepted");
+            return PromiseOrValue::Value(amount);
+        }
+        match self.try_buy(&sender_id, amount.0, &msg) {
+            Ok(unused) => PromiseOrValue::Value(U128(unused)),
+            Err(e) => {
+                env::log_str(&format!("purchase rejected: {}", e));
+                PromiseOrValue::Value(amount)
+            }
+        }
+    }
+}
+
+impl Estate {
+    pub(crate) fn overdue(&self, unit: &Unit, now: u64) -> bool {
+        unit.plan.iter().any(|i| {
+            now > i.due_at.0.saturating_add(self.params.default_grace_ns.0)
+                && unit.paid < i.cumulative.0
+        })
+    }
+
+    fn try_buy(&mut self, buyer: &AccountId, amount: u128, msg: &str) -> Result<u128, String> {
+        let m: BuyMsg = serde_json::from_str(msg)
+            .map_err(|_| "E_BAD_ARGS: msg must be {\"buy\":\"<unit_id>\"}".to_string())?;
+        let mut unit = self
+            .units
+            .get(&m.buy)
+            .cloned()
+            .ok_or("E_UNIT_NOT_FOUND: no such unit")?;
+        let listing = unit.listing.clone().ok_or("E_LISTING: unit isn't listed")?;
+        if self.frozen.is_some() {
+            return Err("E_FROZEN: estate is frozen".into());
+        }
+        if unit.lien.is_some() {
+            return Err("E_LIEN: a lien blocks the sale".into());
+        }
+        if unit.in_flight > 0 {
+            return Err("E_IN_FLIGHT: a transfer out is pending".into());
+        }
+        if amount < listing.ask.0 {
+            return Err("E_UNDERPAID: amount is below the ask".into());
+        }
+        let seller = unit.holder.clone().ok_or("E_LISTING: no holder")?;
+        if &seller == buyer {
+            return Err("E_BAD_ARGS: buyer is the seller".into());
+        }
+        let ask = listing.ask.0;
+        let penalty = if listing.kind == ListingKind::Default {
+            (unit.paid.saturating_mul(self.params.penalty_bps as u128) / BPS).min(ask)
+        } else {
+            0
+        };
+        self.move_token(&mut unit, &seller, buyer, false);
+        if listing.kind == ListingKind::Default {
+            unit.status = UnitStatus::Allocated;
+        }
+        unit.listing = None;
+        emit(
+            "sold",
+            json!({ "unit_id": unit.id, "from": seller, "to": buyer, "price": U128(ask) }),
+        );
+        self.save(unit);
+        if ask > penalty {
+            self.pay_from_estate(seller, ask - penalty, "sale").detach();
+        }
+        if penalty > 0 {
+            self.pay_from_estate(self.payout_account(), penalty, "default-penalty")
+                .detach();
+        }
+        Ok(amount - ask)
+    }
+}

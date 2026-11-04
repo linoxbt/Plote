@@ -1,0 +1,24 @@
+# Rust
+/target
+**/target
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.vercel
+
+# Env and keys — never commit
+.env
+.env.*
+!.env.example
+**/.env.local
+.near-credentials/
+*.pem
+
+# Local
+.DS_Store
+coverage/
+playwright-report/
+test-results/
