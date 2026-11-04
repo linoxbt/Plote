@@ -18,6 +18,9 @@ test:
     pnpm -C web test
     cd verifier && cargo test
 
+test-integration: build
+    cargo test --release --manifest-path tests/integration/Cargo.toml
+
 lint:
     cargo fmt --all -- --check
     cargo clippy --workspace --all-targets -- -D warnings

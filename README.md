@@ -100,6 +100,19 @@ No real OutLayer project yet? `pnpm -C scripts exec tsx deploy-outlayer-mock.ts`
 
 Details: architecture §3, contracts §5, verifier §6, payments §7, votes §8 in `docs/SPEC.md`.
 
+## Verification status
+
+| Layer | How it's checked | Result |
+|---|---|---|
+| Estate, unit, mock USDC logic | 47 unit tests with simulated balances, callbacks and clock, incl. a randomised 200-step conservation invariant | pass |
+| The real WASMs together | `just test-integration`: near-mock runs the built contracts in-process (real receipts, metered gas): add_units creating unit accounts, buy → allocate, capture → evidence → verdict → sign → 20% release, reused-photo fail, freeze vote, resale, refund + burn | 5/5 pass |
+| Verifier worker | 64 tests, incl. 4 that run the binary; wasm32-wasip2 build (1.2 MB) run under wasmtime | pass |
+| Web | typecheck, lint, 60 Vitest tests, production build; pages and API routes served by `next start` | pass |
+| Not yet exercised live | wallet `ft_transfer_call` → unit → estate hand-off (near-mock can't resolve a promise returned from inside a cross-contract receipt; covered by unit tests), OutLayer yield/resume, NEAR AI, 1Click, wallet flows | needs a testnet deploy |
+
+Contracts pin near-sdk 5.29.1: 5.30 adds an import (`promise_batch_action_universal_state_init`) that older runtimes
+and tools don't provide.
+
 ## Built during the hackathon
 
 All code in this repo was written during NEAR HACKATHON, Nov 1–14 2026 (see commit history). Third-party: near-sdk,

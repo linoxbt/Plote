@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["contracts/estate", "contracts/unit", "contracts/musdc", "contracts/mocks/outlayer-mock"]
-exclude = ["verifier", "web"]
+exclude = ["verifier", "web", "tests/integration"]
 
 [workspace.package]
 edition = "2021"
@@ -9,8 +9,8 @@ license = "MIT"
 version = "0.1.0"
 
 [workspace.dependencies]
-near-sdk = { version = "=5.30.0" }
-near-contract-standards = { version = "=5.30.0" }
+near-sdk = { version = "=5.29.1" }
+near-contract-standards = { version = "=5.29.1" }
 
 [profile.release]
 codegen-units = 1
