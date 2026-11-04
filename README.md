@@ -72,6 +72,11 @@ just seed                       # demo purchases; the refund units for judges
 cp web/.env.example web/.env.local && just web
 ```
 
+**NEAR budget (testnet faucet NEAR).** Contract sizes from `just build`: estate ≈ 565 KB (≈ 5.7 NEAR of storage per
+estate, each estate account gets 10 NEAR), unit ≈ 110 KB published once as a global contract (global deploys burn
+about 10× normal storage, ≈ 11 NEAR), mock USDC ≈ 150 KB, outlayer-mock ≈ 115 KB. Plan for roughly 90 NEAR on
+`plote.testnet` to deploy all three estates, the role accounts and the seed purchases.
+
 No real OutLayer project yet? `pnpm -C scripts exec tsx deploy-outlayer-mock.ts` and set `"outlayer"` in a config to
 `outlayer-mock.plote.testnet`. Every proof it produces carries a `mock_verifier` warning.
 
