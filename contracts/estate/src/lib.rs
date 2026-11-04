@@ -44,7 +44,8 @@ pub const ADD_UNIT_DEPOSIT: NearToken = NearToken::from_millinear(35);
 /// NEAR attached to each OutLayer `request_execution` (unused part is refunded by OutLayer).
 pub const VERIFY_DEPOSIT: NearToken = NearToken::from_millinear(50);
 pub const MAX_UNITS_PER_CALL: usize = 8;
-pub const MAX_RELEASE_PER_CALL: usize = 20;
+/// Each release is a unit transfer (25 Tgas) + callback (15 Tgas): 6 fit in one 300 Tgas call.
+pub const MAX_RELEASE_PER_CALL: usize = 6;
 pub const BPS: u128 = 10_000;
 
 pub const GAS_UNIT_INIT: Gas = Gas::from_tgas(5);

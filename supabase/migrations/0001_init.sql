@@ -26,7 +26,7 @@ create table if not exists events (
   tx_hash text not null,
   block_height bigint not null,
   block_time timestamptz not null,
-  unique (tx_hash, event, unit)
+  unique nulls not distinct (tx_hash, event, unit)
 );
 create index if not exists events_estate_idx on events (estate, block_height desc);
 
