@@ -49,10 +49,10 @@ export const GAS = {
 
 /** Exactly 0.05 NEAR on reserve (storage, not price). */
 export const RESERVE_DEPOSIT = nearToYocto("0.05");
-/** ≥ 0.03 NEAR per unit on add_units (unit storage + USDC registration). */
-export const ADD_UNIT_DEPOSIT_EACH = nearToYocto("0.03");
+/** ≥ 0.035 NEAR per unit on add_units (unit account funding + USDC registration + the unit record). */
+export const ADD_UNIT_DEPOSIT_EACH = nearToYocto("0.035");
 export const MAX_UNITS_PER_ADD = 8;
-export const MAX_UNITS_PER_CLAIM = 20;
+export const MAX_UNITS_PER_CLAIM = 6;
 export const MAX_GUARDIANS = 3;
 
 export const estate = {
@@ -64,6 +64,7 @@ export const estate = {
   getMilestones: (e: string) => view<MilestoneView[]>(e, "get_milestones"),
   getCapture: (e: string, milestone: number) => view<CaptureView | null>(e, "get_capture", { milestone }),
   getEvidence: (e: string, id: string) => view<EvidenceView | null>(e, "get_evidence", { id }),
+  checkInput: (e: string, evidence_id: string) => view<string | null>(e, "check_input", { evidence_id }, { fresh: true }),
   listEvidence: (e: string, opts: { milestone?: number; from_index?: number; limit?: number } = {}) =>
     view<EvidenceView[]>(e, "list_evidence", opts),
   getProposal: (e: string, id: string) => view<ProposalView | null>(e, "get_proposal", { id }),

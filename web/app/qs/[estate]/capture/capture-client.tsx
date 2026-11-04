@@ -182,6 +182,10 @@ export function CaptureClient({ slug }: { slug: string }) {
       const ev = id ? await E.getEvidence(account, id).catch(() => null) : null;
       setEvidence(ev ?? { id: id ?? "?", milestone, url: j.publicUrl, sha256: sha, captured_at: capturedAt, device_gps: dgps, challenge: cap.code, challenge_opened_at: cap.opened_at, submitted_by: signer.accountId ?? "", submitted_at: msToNs(nowMs()), status: "Pending", verdict: null, raw_response_hash: null, error: null });
       setPhase(ev && ev.status !== "Pending" ? "verdict" : "checking");
+      // HTTPS-mode estates (SPEC 6.6): the server runs the worker on OutLayer's API and relays the verdict.
+      if (e.verify_mode === "https" && id) {
+        void fetch("/api/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate: account, evidenceId: id }) }).catch(() => undefined);
+      }
     } catch (x) {
       setErr(x);
       setPhase("preview");

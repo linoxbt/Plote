@@ -1037,6 +1037,11 @@ fn verify_https_fallback_by_relayer_only() {
             e.c.submit_verdict(U64(ev), v2);
         }),
     );
+    let input: serde_json::Value =
+        serde_json::from_str(&e.c.check_input(U64(ev)).unwrap()).unwrap();
+    assert_eq!(input["evidence_id"], ev);
+    assert_eq!(input["challenge"].as_str().unwrap().len(), 6);
+    assert_eq!(input["geofence"]["radius_m"], 300);
     e.as_("relayer.testnet");
     assert!(e.c.submit_verdict(U64(ev), v));
     assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Verified);

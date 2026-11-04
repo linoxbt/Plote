@@ -327,6 +327,13 @@ impl Estate {
         emit("handed_over", json!({ "unit_id": unit_id }));
         self.save(unit);
     }
+
+    /// View: the worker input for a pending evidence (used by the HTTPS fallback route, SPEC 6.6).
+    pub fn check_input(&self, evidence_id: U64) -> Option<String> {
+        self.evidence
+            .get(&evidence_id.0)
+            .map(|ev| self.check_input_json(ev))
+    }
 }
 
 pub(crate) fn hex_lower(bytes: &[u8]) -> String {
@@ -348,9 +355,10 @@ impl Estate {
             .collect()
     }
 
-    fn start_check(&self, ev: &Evidence) -> Promise {
+    /// The exact stdin the TEE worker gets for this evidence. Shared by the on-chain path and the HTTPS fallback.
+    pub(crate) fn check_input_json(&self, ev: &Evidence) -> String {
         let m = &self.milestones[ev.milestone as usize];
-        let input = json!({
+        json!({
             "evidence_id": ev.id,
             "url": ev.url,
             "sha256": ev.sha256,
@@ -370,7 +378,11 @@ impl Estate {
             "challenge": ev.challenge,
             "challenge_opened_at": ev.challenge_opened_at,
         })
-        .to_string();
+        .to_string()
+    }
+
+    fn start_check(&self, ev: &Evidence) -> Promise {
+        let input = self.check_input_json(ev);
         let args = json!({
             "source": { "GitHub": { "repo": self.verifier.repo, "commit": self.verifier.commit, "build_target": self.verifier.build_target } },
             "resource_limits": { "max_instructions": 50_000_000_000u64, "max_memory_mb": 256, "max_execution_seconds": 60 },

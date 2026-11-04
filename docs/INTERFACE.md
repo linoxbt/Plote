@@ -30,7 +30,8 @@ new({
   "outlayer_id": "outlayer.testnet",
   "verdict_relayer": "relayer.plote.testnet",      // optional; may call submit_verdict (HTTPS fallback, SPEC 6.6)
   "verifier": { "repo": "https://github.com/<you>/plote-verifier", "commit": "<sha>", "build_target": "wasm32-wasip2" },
-  "unit_code_hash": "<base58 sha256 of plote_unit.wasm>" | null,   // null → estate embeds unit wasm (fallback)
+  "unit_code_hash": "<base58 sha256 of plote_unit.wasm>",           // required: NEP-591 global contract hash
+  "verify_mode": "outlayer",                                         // or "https" (needs verdict_relayer; SPEC 6.6)
   "name": "Harmattan Court",
   "location": "Lekki, Lagos",
   "geofence": { "lat_e6": 6447000, "lon_e6": 3474000, "radius_m": 300 },   // radius_m 0 = no geofence
@@ -61,7 +62,7 @@ Rules: `sum(milestones.bps) + mobilisation_bps == 10000`, `mobilisation_bps <= 1
 
 | Method | Args | Access / deposit | Returns |
 |---|---|---|---|
-| `add_units` | `{ units: [{ id, label, price: U128, plan: [{ due_at: U64, cumulative: U128 }] }] }` | developer; attach ≥ 0.03 NEAR × n (unit storage + USDC registration); ≤ 8 per call | Promise |
+| `add_units` | `{ units: [{ id, label, price: U128, plan: [{ due_at: U64, cumulative: U128 }] }] }` | developer; attach ≥ 0.035 NEAR × n (unit funding + USDC registration + record); ≤ 8 per call | Promise |
 | `fund_verification` | `{}` | anyone, payable | — |
 | `set_verifier` | `{ verifier }` | developer, only before the first sale | — |
 | `playground_reset` | `{}` | anyone, only if `params.playground` | — |
@@ -89,7 +90,7 @@ Rules: `sum(milestones.bps) + mobilisation_bps == 10000`, `mobilisation_bps <= 1
 | `submit_evidence` | `{ milestone: u8, url, sha256, captured_at: U64, device_gps: [i32, i32] \| null }` | surveyor (anyone if playground) | `U64` evidence id |
 | `submit_verdict` | `{ evidence_id: U64, verdict: Verdict }` | only `verdict_relayer` (HTTPS fallback) | — |
 | `qs_sign` | `{ milestone: u8 }` | surveyor (anyone if playground) | — |
-| `claim_release` | `{ unit_ids: [String] }` (≤ 20) | anyone (funds go to `payout_id`) | Promise |
+| `claim_release` | `{ unit_ids: [String] }` (≤ 6; gas) | anyone (funds go to `payout_id`) | Promise |
 | `withdraw_owed` | `{}` | anyone with an owed balance | Promise |
 | `propose` | `{ kind: ProposalKind }` | holder (any kind) / developer (`ExtendDeadline`) | `U64` proposal id |
 | `vote` | `{ proposal_id: U64, approve: bool }` | holder with eligible tokens | — |
@@ -126,6 +127,7 @@ Plus NEP-171/177/178/181: `nft_transfer`, `nft_transfer_call`, `nft_approve`, `n
 | `dev_stats` | — | `DevStats` |
 | `verification_budget` | — | `U128` (yoctoNEAR) |
 | `owed_of` | `{ account_id }` | `U128` |
+| `check_input` | `{ evidence_id: U64 }` | `String \| null` — the exact worker stdin (HTTPS fallback) |
 | `votes_available` | `{ proposal_id: U64, account_id }` | `u32` |
 | `nft_token`, `nft_tokens`, `nft_tokens_for_owner`, `nft_supply_for_owner`, `nft_total_supply`, `nft_metadata` | standard | standard; `metadata.media` = live SVG data URI |
 
@@ -133,7 +135,7 @@ Plus NEP-171/177/178/181: `nft_transfer`, `nft_transfer_call`, `nft_approve`, `n
 type EstateView = {
   name: string; location: string; account: string; app_url: string;
   developer_id: string; payout_id: string; surveyor_id: string; recovery_id: string;
-  usdc_id: string; outlayer_id: string; verdict_relayer: string | null;
+  usdc_id: string; outlayer_id: string; verdict_relayer: string | null; verify_mode: "outlayer" | "https";
   verifier: { repo: string; commit: string; build_target: string };
   unit_code_hash: string | null;
   geofence: { lat_e6: number; lon_e6: number; radius_m: number };

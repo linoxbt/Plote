@@ -27,6 +27,7 @@ export type EstateView = {
   name: string; location: string; account: string; app_url: string;
   developer_id: string; payout_id: string; surveyor_id: string; recovery_id: string;
   usdc_id: string; outlayer_id: string; verdict_relayer: string | null;
+  verify_mode: "outlayer" | "https";
   verifier: { repo: string; commit: string; build_target: string };
   unit_code_hash: string | null;
   geofence: { lat_e6: number; lon_e6: number; radius_m: number };
