@@ -30,6 +30,7 @@ new({
   "outlayer_id": "outlayer.testnet",
   "verdict_relayer": "relayer.plote.testnet",      // optional; may call submit_verdict (HTTPS fallback, SPEC 6.6)
   "verifier": { "repo": "https://github.com/<you>/plote-verifier", "commit": "<sha>", "build_target": "wasm32-wasip2" },
+  // or a deployed OutLayer project: { "repo": "project:plote.testnet/plote-verifier", "commit": "<version_key or empty>", "build_target": "wasm32-wasip2" }
   "unit_code_hash": "<base58 sha256 of plote_unit.wasm>",           // required: NEP-591 global contract hash
   "verify_mode": "outlayer",                                         // or "https" (needs verdict_relayer; SPEC 6.6)
   "name": "Harmattan Court",

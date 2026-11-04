@@ -1498,3 +1498,16 @@ fn invariants_conservation() {
         e.check_conservation();
     }
 }
+
+#[test]
+fn outlayer_source_project_or_github() {
+    let mut e = Env::standard();
+    assert_eq!(e.c.outlayer_source()["GitHub"]["commit"], "abc");
+    e.c.verifier.repo = "project:plote.testnet/plote-verifier".into();
+    e.c.verifier.commit = String::new();
+    let s = e.c.outlayer_source();
+    assert_eq!(s["Project"]["project_id"], "plote.testnet/plote-verifier");
+    assert!(s["Project"]["version_key"].is_null());
+    e.c.verifier.commit = "v3".into();
+    assert_eq!(e.c.outlayer_source()["Project"]["version_key"], "v3");
+}

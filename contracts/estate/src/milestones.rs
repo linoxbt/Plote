@@ -384,7 +384,7 @@ impl Estate {
     fn start_check(&self, ev: &Evidence) -> Promise {
         let input = self.check_input_json(ev);
         let args = json!({
-            "source": { "GitHub": { "repo": self.verifier.repo, "commit": self.verifier.commit, "build_target": self.verifier.build_target } },
+            "source": self.outlayer_source(),
             "resource_limits": { "max_instructions": 50_000_000_000u64, "max_memory_mb": 256, "max_execution_seconds": 60 },
             "input_data": input,
             "secrets_ref": { "profile": "plote", "account_id": env::current_account_id() },
@@ -402,6 +402,24 @@ impl Estate {
                     .with_static_gas(GAS_ON_VERDICT)
                     .on_verdict(ev.id),
             )
+    }
+
+    /// OutLayer source: `verifier.repo = "project:<owner>/<name>"` selects a deployed OutLayer project
+    /// (`version_key` = `verifier.commit`, or the active version when empty); anything else builds from GitHub.
+    pub(crate) fn outlayer_source(&self) -> Value {
+        match self.verifier.repo.strip_prefix("project:") {
+            Some(project_id) => {
+                let version = if self.verifier.commit.is_empty() {
+                    Value::Null
+                } else {
+                    Value::String(self.verifier.commit.clone())
+                };
+                json!({ "Project": { "project_id": project_id, "version_key": version } })
+            }
+            None => json!({ "GitHub": {
+                "repo": self.verifier.repo, "commit": self.verifier.commit, "build_target": self.verifier.build_target
+            } }),
+        }
     }
 
     fn set_error(&mut self, evidence_id: u64, msg: &str) {
