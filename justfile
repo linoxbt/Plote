@@ -2,6 +2,7 @@
 set dotenv-load := true
 
 build:
+    cargo near build non-reproducible-wasm --manifest-path contracts/mocks/outlayer-mock/Cargo.toml
     cargo near build non-reproducible-wasm --manifest-path contracts/unit/Cargo.toml
     cargo near build non-reproducible-wasm --manifest-path contracts/musdc/Cargo.toml
     cargo near build non-reproducible-wasm --manifest-path contracts/estate/Cargo.toml
