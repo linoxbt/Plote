@@ -10,12 +10,13 @@ import { BracketCard, EmptyState, LinkButton, LoadingCard } from "@/components/u
 import { currentMilestone, estate as E } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { formatNear, nsToMs, toBig } from "@/lib/format";
-import { useAllMilestones, useRoles } from "@/lib/hooks";
+import { useAllMilestones, useNow, useRoles } from "@/lib/hooks";
 
 const DAY = 86_400_000;
 
 export function DevHomeClient() {
   const { accountId } = useWallet();
+  const now = useNow(60_000);
   const roles = useRoles(accountId);
   const ms = useAllMilestones(roles.developerOf);
   const units = useQueries({ queries: roles.developerOf.map((e) => ({ queryKey: ["units", e], queryFn: () => E.listUnits(e, 0, 100), retry: 1 })) });
@@ -34,7 +35,7 @@ export function DevHomeClient() {
               const list = units[i]?.data ?? [];
               const releasable = list.reduce((n, u) => n + toBig(u.releasable_now), 0n);
               const cur = currentMilestone(ms[i]?.q.data);
-              const risk = cur && nsToMs(cur.deadline) - Date.now() < 14 * DAY ? list.filter((u) => u.holder).length : 0;
+              const risk = cur && nsToMs(cur.deadline) - now < 14 * DAY ? list.filter((u) => u.holder).length : 0;
               const s = estateSlug(acc);
               return (
                 <li key={acc}>

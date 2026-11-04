@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { clsx } from "clsx";
 import { GITHUB_URL, IS_MAINNET, MAINNET_APP_URL, TESTNET_APP_URL } from "@/lib/config";
@@ -21,7 +21,6 @@ const LINKS = [
 export function Nav() {
   const [open, setOpen] = useState(false);
   const path = usePathname();
-  useEffect(() => setOpen(false), [path]);
   return (
     <header className="sticky top-0 z-50 h-16 border-b border-line/60 bg-bg/80 backdrop-blur-md">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[70] focus:bg-teal focus:px-3 focus:py-2 focus:text-bg">
@@ -59,7 +58,7 @@ export function Nav() {
       </div>
       {open ? (
         <div id="mobile-nav" className="border-b border-line bg-bg px-4 pb-4 lg:hidden">
-          <nav className="flex flex-col" aria-label="Mobile">
+          <nav className="flex flex-col" aria-label="Mobile" onClick={() => setOpen(false)}>
             {LINKS.map((l) => (
               <Link key={l.href} href={l.href} className="flex min-h-12 items-center border-b border-line/50 text-base">
                 {l.label}

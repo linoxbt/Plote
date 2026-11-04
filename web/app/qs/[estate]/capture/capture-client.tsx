@@ -14,9 +14,9 @@ import { BracketCard, Button, ErrorState, LinkButton, LoadingCard, Page } from "
 import { estate as E } from "@/lib/estate";
 import { explainError } from "@/lib/errors";
 import { estateAccount, estateSlug } from "@/lib/estates";
-import { formatDuration, msToNs, nsToMs } from "@/lib/format";
+import { formatDuration, msToNs, nowMs, nsToMs } from "@/lib/format";
 import { haversineM } from "@/lib/geo";
-import { useCapture, useEstate, useMilestones } from "@/lib/hooks";
+import { useCapture, useEstate, useMilestones, useNow } from "@/lib/hooks";
 import { bytesToBase64 } from "@/lib/near";
 import { timestampedNonce, uploadMessage } from "@/lib/nep413";
 import { reasonBase } from "@/lib/proof";
@@ -77,6 +77,7 @@ export function CaptureClient({ slug }: { slug: string }) {
   const [err, setErr] = useState<unknown>(null);
   const [evidence, setEvidence] = useState<EvidenceView | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const now = useNow(1000);
 
   // poll get_evidence until the verdict lands
   useEffect(() => {
@@ -110,13 +111,13 @@ export function CaptureClient({ slug }: { slug: string }) {
   const allowed = e.params.playground || signer.accountId === e.surveyor_id;
   const openMs = (ms.data ?? []).filter((m) => m.status === "Open" || m.status === "Checking" || m.status === "Vetoed" || m.status === "Missed");
   const cap = capture.data;
-  const capValid = cap && nsToMs(cap.expires_at) > Date.now();
+  const capValid = cap && nsToMs(cap.expires_at) > now;
 
   const openCapture = async (m: number) => {
     setMilestone(m);
     setErr(null);
     const existing = await E.getCapture(account, m).catch(() => null);
-    if (existing && nsToMs(existing.expires_at) - Date.now() > 5 * 60_000) {
+    if (existing && nsToMs(existing.expires_at) - nowMs() > 5 * 60_000) {
       setPhase("code");
       return;
     }
@@ -170,7 +171,7 @@ export function CaptureClient({ slug }: { slug: string }) {
       const j = (await res.json()) as { code?: string; message?: string; signedUrl?: string; publicUrl?: string };
       if (!res.ok || !j.signedUrl || !j.publicUrl) throw Object.assign(new Error(j.message ?? "upload-url failed"), { code: j.code });
       await putWithProgress(j.signedUrl, bytes, contentType, setProgress);
-      const capturedAt = msToNs(pre?.exifTime ?? Date.now());
+      const capturedAt = msToNs(pre?.exifTime ?? nowMs());
       const dgps = pre?.device ? ([Math.round(pre.device[0] * 1e6), Math.round(pre.device[1] * 1e6)] as [number, number]) : null;
       const r = await signer.call(E.submitEvidence(account, { milestone, url: j.publicUrl, sha256: sha, captured_at: capturedAt, device_gps: dgps }));
       let id: string | null = r.returnValue !== undefined && r.returnValue !== null ? String(r.returnValue) : null;
@@ -179,7 +180,7 @@ export function CaptureClient({ slug }: { slug: string }) {
         id = list.find((x) => x.sha256 === sha)?.id ?? null;
       }
       const ev = id ? await E.getEvidence(account, id).catch(() => null) : null;
-      setEvidence(ev ?? { id: id ?? "?", milestone, url: j.publicUrl, sha256: sha, captured_at: capturedAt, device_gps: dgps, challenge: cap.code, challenge_opened_at: cap.opened_at, submitted_by: signer.accountId ?? "", submitted_at: msToNs(Date.now()), status: "Pending", verdict: null, raw_response_hash: null, error: null });
+      setEvidence(ev ?? { id: id ?? "?", milestone, url: j.publicUrl, sha256: sha, captured_at: capturedAt, device_gps: dgps, challenge: cap.code, challenge_opened_at: cap.opened_at, submitted_by: signer.accountId ?? "", submitted_at: msToNs(nowMs()), status: "Pending", verdict: null, raw_response_hash: null, error: null });
       setPhase(ev && ev.status !== "Pending" ? "verdict" : "checking");
     } catch (x) {
       setErr(x);
@@ -190,7 +191,7 @@ export function CaptureClient({ slug }: { slug: string }) {
   const center: [number, number] = [e.geofence.lat_e6 / 1e6, e.geofence.lon_e6 / 1e6];
   const loc = pre?.gps ?? pre?.device ?? null;
   const dist = loc && e.geofence.radius_m > 0 ? Math.round(haversineM(center, loc)) : null;
-  const age = pre?.exifTime ? Date.now() - pre.exifTime : null;
+  const age = pre?.exifTime ? now - pre.exifTime : null;
   const preChecks: { ok: boolean | null; text: string }[] = pre
     ? [
         { ok: !!pre.exifTime && age! <= e.params.max_exif_age_h * 3600_000, text: pre.exifTime ? `Capture time in photo: ${formatDuration(age!)} ago` : "No capture time in photo — check your camera app saves EXIF" },

@@ -6,6 +6,7 @@ import { ShoppingCart } from "lucide-react";
 import { approvedCount } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { formatDate, pct, shareOf, toBig, unitDisplay } from "@/lib/format";
+import { useNow } from "@/lib/hooks";
 import { sendTx } from "@/lib/near";
 import { usdc } from "@/lib/usdc";
 import type { EstateView, EvidenceView, MilestoneView, NftToken, UnitView } from "@/lib/types";
@@ -93,7 +94,8 @@ export function PositionCard({ e, u }: { e: EstateView; u: UnitView }) {
 }
 
 export function DueChip({ dueAt }: { dueAt: string }) {
-  const ms = Number(toBig(dueAt) / 1_000_000n) - Date.now();
+  const now = useNow(30_000);
+  const ms = Number(toBig(dueAt) / 1_000_000n) - now;
   if (ms < 0) return <StatusBadge kind="unit" status="InDefault" suffix="overdue" />;
   return <CountdownChip until={dueAt} tone={ms < 7 * 86400_000 ? "amber" : "teal"} label="due" />;
 }

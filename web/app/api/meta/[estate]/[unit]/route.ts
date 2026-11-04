@@ -3,6 +3,7 @@
 import { APP_URL } from "@/lib/config";
 import { approvedCount, estate as E } from "@/lib/estate";
 import { estateAccount, estateSlug, UNIT_ID_RE } from "@/lib/estates";
+import { explainError } from "@/lib/errors";
 import { jsonError, ok } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +42,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ estate: string
       },
       { headers: { "cache-control": "public, max-age=60" } },
     );
-  } catch {
-    return jsonError("RPC_UNAVAILABLE", "Couldn't read the estate contract.", 503);
+  } catch (e) {
+    const x = explainError(e);
+    if (x.code === "CONTRACT_NOT_DEPLOYED") return jsonError(x.code, `${acc} isn't deployed on this network.`, 404);
+    return jsonError(x.code === "UNKNOWN" ? "RPC_UNAVAILABLE" : x.code, x.message, 503);
   }
 }
