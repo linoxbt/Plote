@@ -6,6 +6,7 @@ import {
 } from "@/components/landing";
 import { DataField, EstateRing, HudTag, SectionHead } from "@/components/hud";
 import { EstateLinks, LandingShell, WorldFallback } from "@/components/world/landing-shell";
+import { KineticTitle, Marquee } from "@/components/world/fx";
 import { GITHUB_URL, IS_MAINNET } from "@/lib/config";
 import { FAQ } from "@/components/faq-data";
 
@@ -75,7 +76,7 @@ export default function Landing() {
               }}
             >
               <div className="glass border-y border-[var(--line-soft)] px-5 py-9 text-center sm:py-12">
-                <h1 className="mx-auto max-w-5xl text-[24px] uppercase tracking-[0.08em] text-text sm:text-[36px] lg:text-[42px]">Pay for the house you can see.</h1>
+                <KineticTitle text="Pay for the house you can see." className="mx-auto max-w-5xl text-[24px] uppercase tracking-[0.08em] text-text sm:text-[36px] lg:text-[42px]" />
                 <p className="tech-wide mt-4 text-[8.5px] text-text/70 sm:text-[9.5px]">Plote · Off-plan escrow on NEAR</p>
               </div>
               <div className="mx-auto mt-5 w-[86%] sm:w-[70%]">
@@ -97,12 +98,16 @@ export default function Landing() {
               passes an independent check. If the build stalls, you take it back.
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
-              <LinkButton href="/check" variant="primary" size="sm">
-                Check a unit →
-              </LinkButton>
-              <LinkButton href={`/estates/${LANDING_ESTATE_SLUG}`} size="sm">
-                See a live estate
-              </LinkButton>
+              <span data-magnetic className="inline-block">
+                <LinkButton href="/check" variant="primary" size="sm">
+                  Check a unit →
+                </LinkButton>
+              </span>
+              <span data-magnetic className="inline-block">
+                <LinkButton href={`/estates/${LANDING_ESTATE_SLUG}`} size="sm">
+                  See a live estate
+                </LinkButton>
+              </span>
             </div>
             <div className="mx-auto mt-7 max-w-md text-left">
               <HeroCheck />
@@ -129,6 +134,8 @@ export default function Landing() {
             <SourceLinks />
           </div>
         </Section>
+
+        <Marquee rows={["Pay for the house you can see", "Proof before payment · Escrow per unit"]} />
 
         {/* ═════════ Stage 2 · the house builds itself ═════════ */}
         <section id="how" data-world="house" data-step="0" aria-label="How it works" className="group relative h-[420vh]">

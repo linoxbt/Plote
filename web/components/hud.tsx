@@ -13,6 +13,7 @@ import { formatUsd, toBig } from "@/lib/format";
 import { useAllEstates, useAllMilestones } from "@/lib/hooks";
 import { houseSvgDataUri } from "@/lib/svg-house";
 import { ESTATES } from "@/lib/config";
+import { explainError } from "@/lib/errors";
 
 // ---------------- frame ----------------
 
@@ -42,7 +43,8 @@ function HudFrameLines() {
     };
   }, []);
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
+      <div className="rings absolute inset-x-0 bottom-0 h-[55vh] opacity-80 [mask-image:linear-gradient(to_top,black,transparent)]" />
       <div className="absolute inset-y-0 left-[max(12px,calc(50%-36rem-24px))] w-px bg-[var(--line-soft)]" />
       <div className="absolute inset-y-0 right-[max(12px,calc(50%-36rem-24px))] w-px bg-[var(--line-soft)]" />
       <div className="absolute inset-x-0 top-[calc(4rem+0px)] h-px bg-[var(--line-soft)]" />
@@ -222,7 +224,7 @@ export function DataField({ className }: { className?: string }) {
 
 // ---------------- estate ring ("collections") ----------------
 
-export type RingItem = { account: string; slug: string; name: string; location: string; units: number | null; escrow: bigint | null; approved: number; total: number };
+export type RingItem = { account: string; slug: string; name: string; location: string; units: number | null; escrow: bigint | null; approved: number; total: number; pending: boolean };
 
 function titleFromSlug(slug: string) {
   return slug
@@ -247,6 +249,7 @@ export function useRingItems(): RingItem[] {
       escrow: e ? toBig(e.totals.in_escrow) : null,
       approved: approvedCount(m),
       total: m?.length ?? 4,
+      pending: !e && !!estates[i]?.q.error && explainError(estates[i].q.error).code === "CONTRACT_NOT_DEPLOYED",
     };
   });
 }
@@ -274,8 +277,14 @@ function RingCard({ it, tabIndex }: { it: RingItem; tabIndex?: number }) {
       </div>
       <img src={art} alt="" width={300} height={330} className="mt-3 aspect-[300/330] w-full opacity-90 transition-opacity group-hover:opacity-100" />
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <HudTag tone="ghost">{it.units === null ? "— units" : `${it.units} units`}</HudTag>
-        <HudTag tone="ghost">{it.escrow === null ? "— escrow" : `${formatUsd(it.escrow)}`}</HudTag>
+        {it.pending ? (
+          <HudTag tone="ghost">Awaiting deployment</HudTag>
+        ) : (
+          <>
+            <HudTag tone="ghost">{it.units === null ? "— units" : `${it.units} units`}</HudTag>
+            <HudTag tone="ghost">{it.escrow === null ? "— escrow" : `${formatUsd(it.escrow)}`}</HudTag>
+          </>
+        )}
       </div>
     </Link>
   );

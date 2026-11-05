@@ -11,6 +11,14 @@
 // overlay, and poses its own objects from it.
 
 import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+
+// Every material here writes display-space colour directly (custom shaders, raw textures), so the
+// pipeline stays "raw": no colour management, no output encoding, post passes pass values through.
+THREE.ColorManagement.enabled = false;
 
 import { measure, type Stage, type StageName } from "./stages";
 
@@ -52,6 +60,55 @@ float snoise(vec2 v){
 }
 float fbm(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * snoise(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }
 `;
+
+const BG_VERT = /* glsl */ `
+varying vec2 vUv;
+void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.9999, 1.0); }
+`;
+
+// The deep gallery field: indigo glow from the top, near-black floor, a slow breathing haze.
+const BG_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+uniform float uTime;
+uniform float uAspect;
+uniform float uScroll;
+${NOISE}
+void main(){
+  vec2 p = vUv - vec2(0.5, 1.0);
+  p.x *= uAspect;
+  float top = exp(-dot(p, p) * 1.1);
+  vec2 q = vUv - vec2(0.5, -0.15);
+  q.x *= uAspect;
+  float bottom = exp(-dot(q, q) * 2.2);
+  float haze = snoise(vec2(vUv.x * uAspect * 1.4, vUv.y * 1.4 - uScroll * 0.15) + uTime * 0.02) * 0.5 + 0.5;
+  vec3 col = vec3(0.004, 0.008, 0.06);
+  col += vec3(0.03, 0.04, 0.24) * top * (0.75 + 0.25 * haze);
+  col += vec3(0.02, 0.02, 0.15) * bottom;
+  col += vec3(0.015, 0.02, 0.07) * haze * 0.6;
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// Final grade: lens fringing toward the edges and a soft vignette.
+const FINAL = {
+  uniforms: { tDiffuse: { value: null }, uCA: { value: 0.0045 } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+precision highp float;
+uniform sampler2D tDiffuse;
+uniform float uCA;
+varying vec2 vUv;
+void main(){
+  vec2 c = vUv - 0.5;
+  vec2 off = c * dot(c, c) * uCA * 4.0;
+  vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+  float vig = smoothstep(0.95, 0.25, length(c * vec2(1.0, 1.2)));
+  col *= mix(0.62, 1.0, vig);
+  gl_FragColor = vec4(col, 1.0);
+}
+`,
+};
 
 const QUAD_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -362,9 +419,10 @@ async function cardTexture(card: HelixCard, font: string, maxAniso: number) {
   // boxed tag
   g.font = `500 18px ${font}`;
   const tw = g.measureText(card.tag).width + 20;
-  g.fillStyle = "#e8eaf4";
-  g.fillRect(610 - tw, 380, tw, 30);
-  g.fillStyle = "#03040c";
+  g.strokeStyle = "rgba(200,210,255,0.55)";
+  g.lineWidth = 2;
+  g.strokeRect(610 - tw, 380, tw, 30);
+  g.fillStyle = "#b9c0dc";
   g.fillText(card.tag, 600, 402);
   // vertical index along the art edge
   g.save();
@@ -376,7 +434,6 @@ async function cardTexture(card: HelixCard, font: string, maxAniso: number) {
   g.fillText("PLOTE · NEAR", 0, 0);
   g.restore();
   const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = maxAniso;
   tex.needsUpdate = true;
   return tex;
@@ -395,6 +452,9 @@ export class World {
   private mobile: boolean;
 
   private fieldRT: THREE.WebGLRenderTarget;
+  private bgMat: THREE.ShaderMaterial;
+  private composer: EffectComposer | null = null;
+  private bloom: UnrealBloomPass | null = null;
   private fieldScene = new THREE.Scene();
   private fieldCam = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
   private fieldMat: THREE.ShaderMaterial;
@@ -424,10 +484,34 @@ export class World {
   constructor(canvas: HTMLCanvasElement, opts: { onNavigate: (href: string) => void }) {
     this.onNavigate = opts.onNavigate;
     this.mobile = window.matchMedia("(max-width: 768px)").matches;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !this.mobile, alpha: true, powerPreference: "high-performance" });
-    this.renderer.setClearColor(0x000000, 0);
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !this.mobile, alpha: false, powerPreference: "high-performance" });
+    this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    this.renderer.setClearColor(0x01020f, 1);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.mobile ? 1.25 : 1.6));
     this.camera.position.set(0, 0, 10);
+
+    // the field behind everything
+    this.bgMat = new THREE.ShaderMaterial({
+      vertexShader: BG_VERT,
+      fragmentShader: BG_FRAG,
+      depthWrite: false,
+      depthTest: false,
+      uniforms: { uTime: { value: 0 }, uAspect: { value: 1.6 }, uScroll: { value: 0 } },
+    });
+    const bg = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.bgMat);
+    bg.frustumCulled = false;
+    bg.renderOrder = -10;
+    this.scene.add(bg);
+
+    // cinematic post: bloom on the light (desktop), then fringing + vignette
+    if (!this.mobile) {
+      const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+      this.composer = new EffectComposer(this.renderer, rt);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.62, 0.55, 0.7);
+      this.composer.addPass(this.bloom);
+      this.composer.addPass(new ShaderPass(FINAL));
+    }
 
     // painting
     this.fieldRT = new THREE.WebGLRenderTarget(320, 200, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
@@ -561,6 +645,11 @@ export class World {
     this.fieldMat.uniforms.uAspect.value = aspect;
     const fw = this.mobile ? 200 : 360;
     this.fieldRT.setSize(fw, Math.max(64, Math.round(fw / aspect)));
+    this.bgMat.uniforms.uAspect.value = aspect;
+    if (this.composer) {
+      this.composer.setPixelRatio(this.renderer.getPixelRatio());
+      this.composer.setSize(w, h);
+    }
     this.mobile = window.matchMedia("(max-width: 768px)").matches;
   };
 
@@ -623,6 +712,8 @@ export class World {
     this.arcMats.forEach((m, i) => (m.opacity = field * (0.16 - i * 0.004)));
     this.arcs.rotation.z = Math.sin(t * 0.05) * 0.02;
     const scrollY = window.scrollY / Math.max(1, window.innerHeight);
+    this.bgMat.uniforms.uTime.value = t;
+    this.bgMat.uniforms.uScroll.value = scrollY;
     this.arcs.position.y = -6.2 - Math.sin(scrollY * 0.35) * 0.6;
     this.dustMat.uniforms.uTime.value = t;
     this.dustMat.uniforms.uOpacity.value = 0.18 + 0.4 * field;
@@ -669,6 +760,7 @@ export class World {
           }
         }
       }
+      if (hov !== this.hovered) window.dispatchEvent(new CustomEvent("plote:cursor", { detail: hov !== null ? "Open" : null }));
       this.hovered = hov;
       document.documentElement.style.cursor = hov !== null ? "pointer" : "";
       const wp = new THREE.Vector3();
@@ -686,12 +778,14 @@ export class World {
     } else {
       this.helix.visible = false;
       if (this.hovered !== null) {
+        window.dispatchEvent(new CustomEvent("plote:cursor", { detail: null }));
         this.hovered = null;
         document.documentElement.style.cursor = "";
       }
     }
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   };
 
   dispose() {
@@ -712,6 +806,8 @@ export class World {
     });
     this.fieldMat.dispose();
     this.fieldRT.dispose();
+    this.composer?.dispose();
+    this.bloom?.dispose();
     this.renderer.dispose();
   }
 }

@@ -40,8 +40,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="flex min-h-dvh flex-col">
         <Providers>
           <HudFrame />
+          <div className="grain" aria-hidden />
           <Nav />
-          <div className="relative z-[1] flex-1">{children}</div>
+          <div className="relative flex-1">{children}</div>
           <Footer />
         </Providers>
       </body>

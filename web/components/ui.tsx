@@ -4,7 +4,7 @@ import Link from "next/link";
 import { clsx } from "clsx";
 import { AlertTriangle, ChevronDown, Inbox } from "lucide-react";
 import { useState, type ComponentProps, type ReactNode } from "react";
-import { EXPLORER } from "@/lib/config";
+import { EXPLORER, IS_MAINNET } from "@/lib/config";
 import { explainError } from "@/lib/errors";
 
 export { clsx as cx };
@@ -110,6 +110,7 @@ export function LoadingCard({ lines = 3, className, label = "Loading" }: { lines
 export function ErrorState({ error, title, onRetry, className }: { error: unknown; title?: string; onRetry?: () => void; className?: string }) {
   const e = explainError(error);
   const [open, setOpen] = useState(false);
+  if (e.code === "CONTRACT_NOT_DEPLOYED") return <AwaitingDeployment raw={e.raw} className={className} />;
   return (
     <BracketCard tone="red" className={clsx("space-y-3", className)} role="alert">
       <div className="flex items-start gap-3">
@@ -139,6 +140,35 @@ export function ErrorState({ error, title, onRetry, className }: { error: unknow
   );
 }
 
+/** A contract that isn't on this network yet is a state, not a failure: say so calmly. */
+export function AwaitingDeployment({ raw, className }: { raw?: string; className?: string }) {
+  const account = raw?.match(/([a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.(?:testnet|near))/)?.[1];
+  return (
+    <section className={clsx("corners panel relative overflow-hidden px-6 py-12 sm:px-10 sm:py-16", className)} aria-live="polite">
+      <div className="rings pointer-events-none absolute inset-x-0 bottom-0 h-40 opacity-70" aria-hidden />
+      <div className="relative flex flex-col items-center gap-5 text-center">
+        <span className="relative flex h-10 w-10 items-center justify-center" aria-hidden>
+          <span className="absolute inset-0 animate-ping rounded-full bg-teal/15" />
+          <span className="h-2 w-2 rounded-full bg-teal" />
+        </span>
+        <span className="hud-tag hud-tag-ghost text-[7.5px]">Awaiting deployment</span>
+        <p className="max-w-lg text-[15px] uppercase tracking-[0.08em] text-text [font-family:var(--font-tech)] font-light">
+          This contract isn&apos;t on NEAR {IS_MAINNET ? "mainnet" : "testnet"} yet
+        </p>
+        <p className="max-w-md text-[12.5px] text-muted">
+          Nothing is broken and no money is involved. This page reads straight from the chain, so it fills in by itself the moment the contract is deployed.
+        </p>
+        {account ? (
+          <span className="mono inline-flex items-center gap-1 text-[11px] text-faint">
+            {account}
+            <ChainLink account={account} />
+          </span>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export function EmptyState({ title, children, action, icon, className }: { title: string; children?: ReactNode; action?: ReactNode; icon?: ReactNode; className?: string }) {
   return (
     <BracketCard className={clsx("flex flex-col items-center gap-3 py-10 text-center", className)}>
@@ -156,18 +186,23 @@ export function EmptyState({ title, children, action, icon, className }: { title
 
 export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="mb-8 flex flex-col gap-5 border-b border-[var(--line-soft)] pb-8 sm:mb-10 sm:flex-row sm:items-end sm:justify-between">
+    <header className="relative mb-10 flex flex-col gap-6 pb-8 sm:mb-12 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="mb-4 flex items-center gap-3">
+          <div className="rise mb-5 flex items-center gap-3">
             <span className="h-px w-8 bg-teal" aria-hidden />
-            <p className="tech text-[10.5px] text-teal">{eyebrow}</p>
+            <p className="tech text-[9.5px] text-teal">{eyebrow}</p>
           </div>
         ) : null}
-        <h1 className="text-[32px] text-text sm:text-[48px]">{title}</h1>
-        {children ? <div className="mt-2 max-w-2xl text-muted">{children}</div> : null}
+        <h1 className="rise text-[26px] font-light uppercase tracking-[0.06em] text-text sm:text-[40px]">{title}</h1>
+        {children ? <div className="rise-2 mt-3 max-w-2xl text-[13px] text-muted">{children}</div> : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {actions ? <div className="rise-2 flex flex-wrap gap-2">{actions}</div> : null}
+      <div className="absolute inset-x-0 bottom-0 flex items-center" aria-hidden>
+        <span className="h-px flex-1 bg-[var(--line-soft)]" />
+        <span className="mx-2 block h-[7px] w-[7px] border-l border-t border-[rgba(200,210,255,0.3)]" />
+        <span className="h-px w-16 bg-[var(--line)]" />
+      </div>
     </header>
   );
 }
