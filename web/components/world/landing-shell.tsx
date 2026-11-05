@@ -40,7 +40,7 @@ function useHelixCards(): HelixCard[] {
           title: it.name,
           sub: it.pending ? "Awaiting deployment" : `${it.approved}/${it.total} stages proven`,
           meta: it.pending ? "Fills in from the chain once live" : `${it.units === null ? "—" : it.units} units · ${it.escrow === null ? "—" : formatUsd(it.escrow)} in escrow`,
-          tag: unit,
+          tag: `TOKEN ${unit}`,
           href: `/estates/${it.slug}`,
           art: houseSvgDataUri({
             estateName: it.name,
@@ -61,8 +61,9 @@ function useHelixCards(): HelixCard[] {
 
 const SECTIONS = [
   { id: "top", label: "Home" },
+  { id: "nft", label: "The NFT" },
   { id: "how", label: "How it works" },
-  { id: "estates", label: "Estates" },
+  { id: "estates", label: "Unit NFTs" },
   { id: "proof", label: "Data points" },
   { id: "faq", label: "F.A.Q" },
 ];
