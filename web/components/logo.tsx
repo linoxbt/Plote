@@ -14,15 +14,18 @@ export function Mark({ size = 28, className, title = "Plote" }: { size?: number;
   );
 }
 
-/** "plote" in Space Grotesk Medium, the "o" replaced by a square drawn with four corner brackets. */
+/** "PLOTE" in thin, widely tracked technical caps; the "O" is a square drawn with four corner brackets. */
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={clsx("font-display inline-flex items-baseline text-[22px] font-medium tracking-[-0.02em] text-text", className)} aria-label="plote">
-      <span aria-hidden>pl</span>
-      <svg viewBox="0 0 20 20" width="0.62em" height="0.62em" className="mx-[0.04em] self-center translate-y-[0.06em]" aria-hidden>
-        <path d="M1.5 7V1.5H7M13 1.5h5.5V7M18.5 13v5.5H13M7 18.5H1.5V13" stroke="#2DD4BF" strokeWidth="2.6" fill="none" strokeLinecap="square" />
+    <span
+      className={clsx("inline-flex items-center text-[15px] font-light uppercase tracking-[0.42em] text-text [font-family:var(--font-tech)]", className)}
+      aria-label="Plote"
+    >
+      <span aria-hidden>PL</span>
+      <svg viewBox="0 0 20 20" width="0.86em" height="0.86em" className="mr-[0.42em]" aria-hidden>
+        <path d="M1.5 7V1.5H7M13 1.5h5.5V7M18.5 13v5.5H13M7 18.5H1.5V13" stroke="#2DD4BF" strokeWidth="1.8" fill="none" strokeLinecap="square" />
       </svg>
-      <span aria-hidden>te</span>
+      <span aria-hidden>TE</span>
     </span>
   );
 }
@@ -30,7 +33,7 @@ export function Wordmark({ className }: { className?: string }) {
 export function Logo({ className }: { className?: string }) {
   return (
     <Link href="/" className={clsx("inline-flex min-h-11 items-center gap-2", className)} aria-label="Plote home">
-      <Mark size={28} title="" />
+      <Mark size={24} title="" />
       <Wordmark />
     </Link>
   );
