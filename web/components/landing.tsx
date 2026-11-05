@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { CheckCircle2 } from "lucide-react";
-import { ESTATES, IS_MAINNET } from "@/lib/config";
+import { ESTATES } from "@/lib/config";
 import { approvedCount, estate as E } from "@/lib/estate";
 import { estateSlug, unitAccount } from "@/lib/estates";
 import { formatUsd, formatDuration, nsToMs, toBig } from "@/lib/format";
@@ -15,72 +14,9 @@ import { chainName, oneclick, PICKER_CHAINS, STABLE_SYMBOLS } from "@/lib/onecli
 import { CheckChip, CheckInput, type CheckOutcome } from "./check";
 import { HouseNFT } from "./house-nft";
 import { BracketCard, ChainLink, LinkButton } from "./ui";
+import { Readout } from "./hud";
 
 const DEMO_ESTATE = ESTATES.find((e) => estateSlug(e) === "harmattan-court") ?? ESTATES[0] ?? "harmattan-court.plote.testnet";
-
-// ---------------- hero: isometric apartment block ----------------
-
-const R: [number, number] = [86, -50];
-const L: [number, number] = [-86, -50];
-const H = 42;
-
-function pts(...p: [number, number][]) {
-  return p.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-}
-
-export function HeroBlock() {
-  const reduce = useReducedMotion();
-  const floors = [0, 1, 2, 3];
-  return (
-    <svg viewBox="0 0 400 420" className="h-auto w-full max-w-md" role="img" aria-label="Isometric drawing of a four-storey apartment block: three floors built, the top floor dashed as not yet built, with unit 4B marked in gold.">
-      <path d="M20 44V20h24M356 20h24v24M380 376v24h-24M44 400H20v-24" stroke="#2DD4BF" strokeWidth="1.5" fill="none" />
-      {floors.map((i) => {
-        const P: [number, number] = [200, 360 - i * H];
-        const up = (q: [number, number]): [number, number] => [q[0], q[1] - H];
-        const add = (a: [number, number], b: [number, number]): [number, number] => [a[0] + b[0], a[1] + b[1]];
-        const left = pts(P, add(P, L), up(add(P, L)), up(P));
-        const right = pts(P, add(P, R), up(add(P, R)), up(P));
-        const top = pts(up(P), up(add(P, R)), up(add(add(P, R), L)), up(add(P, L)));
-        const dashed = i === 3;
-        const stroke = { stroke: "#2DD4BF", strokeWidth: 1.5, strokeDasharray: dashed ? "5 5" : undefined, fill: dashed ? "none" : "#0A0B0D" };
-        return (
-          <motion.g
-            key={i}
-            initial={reduce ? false : { opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: reduce ? 0 : 0.2 + i * 0.35, ease: "easeOut" }}
-          >
-            <polygon points={left} {...stroke} />
-            <polygon points={right} {...stroke} />
-            {i === 3 ? <polygon points={top} {...stroke} /> : null}
-            {[0.25, 0.55].map((t) => {
-              const a: [number, number] = [P[0] + R[0] * t + 8, P[1] + R[1] * t - 12];
-              return <path key={t} d={`M${a[0]} ${a[1]}l18 -10.5v-14l-18 10.5z`} stroke="#2DD4BF" strokeWidth="1" fill="none" opacity={dashed ? 0.5 : 0.7} strokeDasharray={dashed ? "3 3" : undefined} />;
-            })}
-            {[0.3, 0.65].map((t) => {
-              const a: [number, number] = [P[0] + L[0] * t - 8, P[1] + L[1] * t - 12];
-              return <path key={t} d={`M${a[0]} ${a[1]}l-18 -10.5v-14l18 10.5z`} stroke="#2DD4BF" strokeWidth="1" fill="none" opacity={dashed ? 0.5 : 0.7} strokeDasharray={dashed ? "3 3" : undefined} />;
-            })}
-            {i === 3 ? (
-              <motion.circle
-                cx={P[0] + R[0] * 0.55 + 17}
-                cy={P[1] + R[1] * 0.55 - 31}
-                r="5"
-                fill="#E8B04B"
-                initial={reduce ? false : { scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: reduce ? 0 : 1.8, duration: 0.3 }}
-              />
-            ) : null}
-          </motion.g>
-        );
-      })}
-      <text x="292" y="148" fill="#E8B04B" fontFamily="var(--font-jet), monospace" fontSize="12">
-        4B
-      </text>
-    </svg>
-  );
-}
 
 export function HeroCheck() {
   const [o, setO] = useState<CheckOutcome | null>(null);
@@ -94,39 +30,49 @@ export function HeroCheck() {
   );
 }
 
-// ---------------- live strip ----------------
+// ---------------- hero stats (instrument readouts) ----------------
 
-export function LiveStrip() {
+export function useLiveNumbers() {
   const estates = useAllEstates();
   const ms = useAllMilestones();
   const okE = estates.filter((x) => x.q.data);
   const okM = ms.filter((x) => x.q.data);
   const loading = estates.some((x) => x.q.isLoading);
-  const units = okE.length ? okE.reduce((n, x) => n + (x.q.data?.unit_count ?? 0), 0) : null;
-  const escrow = okE.length ? okE.reduce((n, x) => n + toBig(x.q.data?.totals.in_escrow), 0n) : null;
-  const verified = okM.length ? okM.reduce((n, x) => n + (x.q.data ?? []).filter((m) => m.status === "Verified" || m.status === "Approved").length, 0) : null;
-  const refunds = okE.length ? okE.reduce((n, x) => n + (x.q.data?.stats.units_refunded ?? 0), 0) : null;
-  const link = okE[0]?.account ?? DEMO_ESTATE;
-  const items: [string, string | null][] = [
-    ["UNITS ON PLOTE", units === null ? null : String(units)],
-    ["USDC IN ESCROW", escrow === null ? null : formatUsd(escrow)],
-    ["MILESTONES VERIFIED", verified === null ? null : String(verified)],
-    ["REFUNDS PAID", refunds === null ? null : String(refunds)],
+  return {
+    loading,
+    link: okE[0]?.account ?? DEMO_ESTATE,
+    units: okE.length ? okE.reduce((n, x) => n + (x.q.data?.unit_count ?? 0), 0) : null,
+    escrow: okE.length ? okE.reduce((n, x) => n + toBig(x.q.data?.totals.in_escrow), 0n) : null,
+    verified: okM.length ? okM.reduce((n, x) => n + (x.q.data ?? []).filter((m) => m.status === "Verified" || m.status === "Approved").length, 0) : null,
+    refunds: okE.length ? okE.reduce((n, x) => n + (x.q.data?.stats.units_refunded ?? 0), 0) : null,
+  };
+}
+
+/** The four live numbers as boxed-label readouts: a 2×2 grid on small screens, pinned to the corners
+ * of the hero (the nearest positioned ancestor) from `lg` up. One instance, so each label exists once. */
+export function HeroStats({ className }: { className?: string }) {
+  const n = useLiveNumbers();
+  const dash = <span aria-label="not available">—</span>;
+  const items = [
+    { label: "UNITS ON PLOTE", value: n.units === null ? dash : String(n.units) },
+    { label: "USDC IN ESCROW", value: n.escrow === null ? dash : formatUsd(n.escrow) },
+    { label: "MILESTONES VERIFIED", value: n.verified === null ? dash : String(n.verified) },
+    { label: "REFUNDS PAID", value: n.refunds === null ? dash : String(n.refunds) },
   ];
+  const pos = ["lg:left-0 lg:top-0", "lg:right-0 lg:top-0", "lg:left-0 lg:bottom-0", "lg:right-0 lg:bottom-0"];
   return (
-    <div>
-      <dl className="grid grid-cols-2 gap-px bg-line md:grid-cols-4">
-        {items.map(([k, v]) => (
-          <div key={k} className="bg-bg p-4 sm:p-5">
-            <dt className="mono text-[11px] tracking-[0.12em] text-muted">{k}</dt>
-            <dd className="mono mt-1 flex items-baseline gap-1 text-2xl tabular-nums sm:text-3xl" aria-busy={loading}>
-              {loading && v === null ? <span className="skeleton inline-block h-7 w-16" /> : (v ?? <span aria-label="not available">—</span>)}
-              <ChainLink account={link} />
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-3 text-sm text-muted">Live from NEAR {IS_MAINNET ? "mainnet" : "testnet"}. Every number links to the chain.</p>
+    <div role="list" aria-label="Live numbers" className={clsx("grid grid-cols-2 gap-x-6 gap-y-7 lg:pointer-events-none lg:absolute lg:inset-0 lg:block", className)}>
+      {items.map((it, i) => (
+        <div key={it.label} role="listitem" className={clsx("lg:pointer-events-auto lg:absolute", pos[i])}>
+          <Readout
+            label={it.label}
+            value={<span className="inline-flex items-baseline gap-1">{it.value}<ChainLink account={n.link} /></span>}
+            loading={n.loading && it.value === dash}
+            align={i % 2 ? "right" : "left"}
+            size="lg"
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -249,7 +195,7 @@ export function ChainChips() {
   return (
     <ul className="flex flex-wrap gap-2" aria-label="Supported chains">
       {chains.map((c) => (
-        <li key={c} className="mono corners bg-surface px-3 py-2 text-sm">
+        <li key={c} className="tech corners panel px-3 py-2.5 text-[11px] text-text">
           {chainName(c)}
         </li>
       ))}

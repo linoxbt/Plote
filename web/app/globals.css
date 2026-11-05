@@ -1,50 +1,68 @@
 @import "tailwindcss";
 
-/* SPEC §11.2 tokens. Dark only (light mode isn't shipped for the hackathon). */
+/*
+ * Plote — "instrument" design system.
+ * Deep ink-navy field, hairline HUD rules, thin technical display type, data treated as the artwork.
+ * Accents keep their meaning: teal = verified / action, gold = value / handover, red = refund / danger,
+ * amber = pending. Dark only.
+ */
 :root {
-  --bg: #0a0b0d;
-  --surface: #111317;
-  --surface-2: #171a1f;
-  --line: #252a31;
-  --text: #e9ecef;
-  --muted: #8b939d;
+  --bg: #03040c;
+  --bg-2: #070a1f;
+  --surface: #0a0e24;
+  --surface-2: #10153a;
+  --line: #1d2550;
+  --line-soft: rgba(140, 160, 255, 0.09);
+  --text: #e8eaf4;
+  --muted: #8d96b8;
+  --faint: #59628a;
   --teal: #2dd4bf;
-  --teal-dim: #134e48;
+  --teal-dim: #0f3d45;
   --gold: #e8b04b;
   --red: #f06a6a;
   --amber: #f2a93b;
+  --violet: #8b7cf6;
+  --glass: rgba(10, 14, 38, 0.62);
   color-scheme: dark;
 }
 
 @theme inline {
   --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-line: var(--line);
   --color-text: var(--text);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-teal: var(--teal);
   --color-teal-dim: var(--teal-dim);
   --color-gold: var(--gold);
   --color-red: var(--red);
   --color-amber: var(--amber);
+  --color-violet: var(--violet);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-space), var(--font-inter), ui-sans-serif, sans-serif;
+  --font-display: var(--font-tech), var(--font-inter), ui-sans-serif, sans-serif;
   --font-mono: var(--font-jet), ui-monospace, SFMono-Regular, Menlo, monospace;
-  --radius-xs: 2px;
+  --font-tech: var(--font-tech), var(--font-jet), ui-monospace, monospace;
+  --radius-xs: 0px;
 }
 
-html,
-body {
+html {
   background: var(--bg);
-  color: var(--text);
 }
 
 body {
+  color: var(--text);
   font-family: var(--font-sans);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
+  background:
+    radial-gradient(120% 70% at 50% -10%, #0b1140 0%, rgba(11, 17, 64, 0) 60%),
+    radial-gradient(80% 60% at 100% 100%, rgba(20, 16, 70, 0.55) 0%, rgba(20, 16, 70, 0) 70%),
+    var(--bg);
+  background-attachment: fixed;
 }
 
 h1,
@@ -52,8 +70,13 @@ h2,
 h3,
 h4 {
   font-family: var(--font-display);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  font-weight: 300;
+  line-height: 1.12;
+  letter-spacing: 0.01em;
+}
+h3,
+h4 {
+  font-weight: 400;
 }
 
 ::selection {
@@ -62,8 +85,8 @@ h4 {
 }
 
 :focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: 2px;
+  outline: 1.5px solid var(--teal);
+  outline-offset: 3px;
 }
 
 a {
@@ -76,11 +99,70 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- survey-beacon corner brackets (the signature device). No borders, four corners. ---- */
+/* Technical caps: labels, nav, section indices. */
+.tech {
+  font-family: var(--font-tech);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.tech-wide {
+  font-family: var(--font-tech);
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+}
+
+/* ---- HUD tag: the small boxed label over a number ("TOTAL EDITIONS") ---- */
+.hud-tag {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-tech);
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--text);
+  padding: 3px 5px 2px;
+}
+.hud-tag-ghost {
+  color: var(--muted);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.hud-tag-teal {
+  background: var(--teal);
+}
+.hud-tag-gold {
+  background: var(--gold);
+}
+.hud-tag-red {
+  background: var(--red);
+}
+.hud-tag-amber {
+  background: var(--amber);
+}
+
+/* Big thin readout numbers. */
+.readout {
+  font-family: var(--font-tech);
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* ---- glass panel (hero band, overlays) ---- */
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+}
+
+/* ---- survey-beacon corner brackets (kept from v1; now the HUD corner marks) ---- */
 .corners {
   --c: var(--line);
-  --l: 12px;
-  --w: 1.5px;
+  --l: 10px;
+  --w: 1px;
   background-image:
     linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
     linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
@@ -116,47 +198,60 @@ a {
   --c: var(--gold);
 }
 
-/* ---- buttons ---- */
+/* Panel = hairline-framed glass card with corner marks (BracketCard). */
+.panel {
+  background-color: rgba(10, 14, 36, 0.55);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ---- buttons: outlined, technical caps ---- */
 .btn {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 600;
+  font-family: var(--font-tech);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   min-height: 44px;
-  padding: 0 1rem;
-  border-radius: 2px;
+  padding: 0 1.15rem;
+  border-radius: 0;
   white-space: nowrap;
   transition:
-    background-color 150ms ease-out,
-    color 150ms ease-out,
-    opacity 150ms ease-out;
+    background-color 180ms ease-out,
+    color 180ms ease-out,
+    box-shadow 180ms ease-out,
+    opacity 180ms ease-out;
   cursor: pointer;
   user-select: none;
 }
 .btn:disabled,
 .btn[aria-disabled="true"] {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 .btn-primary {
-  background-color: var(--teal);
+  background-color: var(--text);
   color: var(--bg);
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: #5eead4;
+  background-color: var(--teal);
 }
 .btn-ghost {
-  --c: var(--line);
+  --c: var(--muted);
   color: var(--text);
-  background-color: transparent;
+  background-color: rgba(10, 14, 36, 0.35);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .btn-ghost:hover:not(:disabled),
 .btn-ghost:focus-visible {
   --c: var(--teal);
   color: var(--teal);
+  box-shadow: inset 0 0 0 1px var(--teal-dim);
 }
 .btn-danger {
   background-color: var(--red);
@@ -168,48 +263,61 @@ a {
 }
 .btn-sm {
   min-height: 36px;
-  padding: 0 0.75rem;
-  font-size: 13px;
+  padding: 0 0.8rem;
+  font-size: 11px;
 }
 
 /* ---- inputs ---- */
 .input {
   width: 100%;
-  min-height: 44px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  padding: 0 0.75rem;
+  min-height: 46px;
+  background: rgba(6, 9, 28, 0.7);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--line);
+  border-radius: 0;
+  padding: 0 0.85rem;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 15px;
+  transition: box-shadow 160ms ease-out;
 }
 .input::placeholder {
-  color: var(--muted);
-  opacity: 0.7;
+  color: var(--faint);
 }
 .input:focus {
-  border-color: var(--teal);
+  box-shadow: inset 0 0 0 1px var(--teal);
   outline: none;
 }
 textarea.input {
-  padding: 0.6rem 0.75rem;
+  padding: 0.65rem 0.85rem;
   min-height: 88px;
 }
 .label {
   display: block;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  font-family: var(--font-tech);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.4rem;
 }
 
-/* ---- survey-paper grid (hero only) ---- */
+/* ---- backgrounds ---- */
+/* Survey grid: hairline squares, like the HUD's guide lines. */
 .survey-grid {
-  background-image: radial-gradient(rgba(233, 236, 239, 0.06) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 120px 120px;
+  background-position: center top;
+}
+/* Concentric arcs rising from the bottom edge (the gallery's "rings"). */
+.rings {
+  background-image: repeating-radial-gradient(
+    circle at 50% 120%,
+    transparent 0 46px,
+    rgba(140, 160, 255, 0.075) 46px 47px
+  );
 }
 
 /* ---- skeleton ---- */
@@ -217,7 +325,6 @@ textarea.input {
   background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
-  border-radius: 2px;
 }
 @keyframes shimmer {
   0% {
@@ -228,9 +335,27 @@ textarea.input {
   }
 }
 
+/* ---- slow orbit for the estate ring ---- */
+@keyframes orbit {
+  from {
+    transform: translateZ(calc(var(--r) * -1)) rotateY(0deg);
+  }
+  to {
+    transform: translateZ(calc(var(--r) * -1)) rotateY(-360deg);
+  }
+}
+
 /* timelapse crossfade */
 .fade-frame {
   transition: opacity 900ms ease-in-out;
+}
+
+/* details/summary used for FAQ */
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

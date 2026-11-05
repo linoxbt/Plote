@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { Inter, JetBrains_Mono, Tomorrow } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Footer, Nav } from "@/components/nav";
+import { HudFrame } from "@/components/hud";
 import { APP_URL } from "@/lib/config";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const space = Space_Grotesk({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-space", display: "swap" });
+const tech = Tomorrow({ subsets: ["latin"], weight: ["300", "400", "500"], variable: "--font-tech", display: "swap" });
 const jet = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-jet", display: "swap" });
 
 export const metadata: Metadata = {
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0A0B0D",
+  themeColor: "#03040C",
   width: "device-width",
   initialScale: 1,
   colorScheme: "dark",
@@ -35,11 +36,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${space.variable} ${jet.variable}`}>
+    <html lang="en" className={`${inter.variable} ${tech.variable} ${jet.variable}`}>
       <body className="flex min-h-dvh flex-col">
         <Providers>
+          <HudFrame />
           <Nav />
-          <div className="flex-1">{children}</div>
+          <div className="relative z-[1] flex-1">{children}</div>
           <Footer />
         </Providers>
       </body>

@@ -22,7 +22,7 @@ export function BracketCard({
   return (
     <Tag
       className={clsx(
-        "corners relative bg-surface p-4 sm:p-5",
+        "corners panel relative p-4 sm:p-5",
         tone !== "default" && `corners-${tone}`,
         hover && "corners-hover",
         className,
@@ -143,9 +143,9 @@ export function EmptyState({ title, children, action, icon, className }: { title
   return (
     <BracketCard className={clsx("flex flex-col items-center gap-3 py-10 text-center", className)}>
       <div className="text-muted" aria-hidden>
-        {icon ?? <Inbox className="h-7 w-7" strokeWidth={1.5} />}
+        {icon ?? <Inbox className="h-7 w-7" strokeWidth={1} />}
       </div>
-      <p className="font-display text-lg">{title}</p>
+      <p className="text-lg uppercase tracking-[0.1em] [font-family:var(--font-tech)] font-light">{title}</p>
       {children ? <div className="max-w-md text-sm text-muted">{children}</div> : null}
       {action}
     </BracketCard>
@@ -156,10 +156,15 @@ export function EmptyState({ title, children, action, icon, className }: { title
 
 export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
+    <header className="mb-8 flex flex-col gap-5 border-b border-[var(--line-soft)] pb-8 sm:mb-10 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        {eyebrow ? <p className="mono mb-2 text-xs uppercase tracking-[0.12em] text-teal">{eyebrow}</p> : null}
-        <h1 className="text-3xl font-semibold sm:text-[40px]">{title}</h1>
+        {eyebrow ? (
+          <div className="mb-4 flex items-center gap-3">
+            <span className="h-px w-8 bg-teal" aria-hidden />
+            <p className="tech text-[10.5px] text-teal">{eyebrow}</p>
+          </div>
+        ) : null}
+        <h1 className="text-[32px] text-text sm:text-[48px]">{title}</h1>
         {children ? <div className="mt-2 max-w-2xl text-muted">{children}</div> : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
@@ -168,14 +173,14 @@ export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: Re
 }
 
 export function Page({ children, className, narrow }: { children: ReactNode; className?: string; narrow?: boolean }) {
-  return <main id="main" className={clsx("mx-auto w-full px-4 py-8 sm:px-6 sm:py-12", narrow ? "max-w-3xl" : "max-w-6xl", className)}>{children}</main>;
+  return <main id="main" className={clsx("mx-auto w-full px-4 py-10 sm:px-6 sm:py-16", narrow ? "max-w-3xl" : "max-w-6xl", className)}>{children}</main>;
 }
 
 export function Stat({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
     <div className="min-w-0">
       <p className="label">{label}</p>
-      <div className="mono text-lg tabular-nums">{children}</div>
+      <div className="readout text-xl text-text sm:text-2xl">{children}</div>
       {hint ? <div className="text-xs text-muted">{hint}</div> : null}
     </div>
   );
@@ -183,7 +188,7 @@ export function Stat({ label, children, hint }: { label: string; children: React
 
 export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-line/60 py-2 text-sm last:border-0">
+    <div className="flex items-start justify-between gap-4 border-b border-[var(--line-soft)] py-2.5 text-sm last:border-0">
       <dt className="text-muted">{k}</dt>
       <dd className="mono min-w-0 break-all text-right">{children}</dd>
     </div>
@@ -192,7 +197,7 @@ export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
 
 export function Collapsible({ title, children, defaultOpen = false }: { title: ReactNode; children: ReactNode; defaultOpen?: boolean }) {
   return (
-    <details className="corners bg-surface p-4 [&_summary::-webkit-details-marker]:hidden" open={defaultOpen}>
+    <details className="corners panel p-4" open={defaultOpen}>
       <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 font-medium">
         {title}
         <ChevronDown className="h-4 w-4 text-muted" aria-hidden />
@@ -204,7 +209,7 @@ export function Collapsible({ title, children, defaultOpen = false }: { title: R
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string }[]; value: T; onChange: (v: T) => void }) {
   return (
-    <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-line">
+    <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-[var(--line-soft)]">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -213,7 +218,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
           aria-selected={value === t.id}
           onClick={() => onChange(t.id)}
           className={clsx(
-            "mono min-h-11 shrink-0 border-b-2 px-3 text-sm",
+            "tech min-h-11 shrink-0 border-b px-3 text-[10.5px]",
             value === t.id ? "border-teal text-teal" : "border-transparent text-muted hover:text-text",
           )}
         >
@@ -228,7 +233,7 @@ export function Bar({ value, tone = "teal", label }: { value: number; tone?: "te
   const v = Math.max(0, Math.min(100, value));
   const color = { teal: "bg-teal", gold: "bg-gold", amber: "bg-amber", red: "bg-red", muted: "bg-muted" }[tone];
   return (
-    <div className="h-2 w-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v)} aria-label={label}>
+    <div className="h-1 w-full bg-[var(--line)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v)} aria-label={label}>
       <div className={clsx("h-full", color)} style={{ width: `${v}%` }} />
     </div>
   );
