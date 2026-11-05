@@ -139,6 +139,10 @@ void main(){
 `;
 
 // Pass 2 (full-res, on a plane in the scene): integrate high-frequency grain along the field.
+// Pass 2 (full-res, on a plane in the scene): integrate high-frequency grain along the field.
+// Colour is the concept: indigo/ice strands are unverified promises; teal (released), gold (held in
+// escrow) and red (refunded) strands appear in the proportions of the real totals on chain. Inside
+// the viewfinder the noise clears, so the house you can see sits in a calm, dark window.
 const PAINT_FRAG = /* glsl */ `
 precision highp float;
 varying vec2 vUv;
@@ -147,6 +151,9 @@ uniform float uAspect;
 uniform float uFade;
 uniform float uEdge;
 uniform float uTime;
+uniform vec4 uFrame;     // viewfinder in uv: x0, y0, x1, y1
+uniform float uFrameOn;
+uniform vec3 uData;      // released, held, refunded — fractions of everything paid
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float grain(vec2 p){
   vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -168,15 +175,29 @@ void main(){
   float strand = smoothstep(0.40, 0.74, acc);
   vec4 f = texture2D(uField, vUv);
   float c1 = f.b, c2 = f.a;
-  vec3 wine = vec3(0.30, 0.06, 0.16), rose = vec3(0.85, 0.50, 0.58), cream = vec3(0.94, 0.86, 0.74);
-  vec3 blue = vec3(0.16, 0.30, 0.68), teal = vec3(0.18, 0.83, 0.75), gold = vec3(0.91, 0.69, 0.29), navy = vec3(0.012, 0.016, 0.06);
-  vec3 col = mix(wine, rose, smoothstep(0.25, 0.65, c1));
-  col = mix(col, cream, smoothstep(0.62, 0.92, c1) * 0.85);
-  col = mix(col, blue, smoothstep(0.48, 0.82, c2));
-  col = mix(col, teal, smoothstep(0.80, 0.97, c2) * 0.55);
-  col = mix(col, gold, smoothstep(0.86, 0.99, c1) * 0.35);
+  // promise strands
+  vec3 indigo = vec3(0.09, 0.11, 0.40), ice = vec3(0.62, 0.70, 0.96), violet = vec3(0.42, 0.36, 0.86);
+  vec3 col = mix(indigo, ice, smoothstep(0.30, 0.82, c1));
+  col = mix(col, violet, smoothstep(0.55, 0.9, c2) * 0.45);
+  // data strands, by share of money
+  vec3 teal = vec3(0.18, 0.83, 0.75), gold = vec3(0.91, 0.69, 0.29), red = vec3(0.94, 0.42, 0.42);
+  float sel = smoothstep(0.18, 0.82, c2);
+  float e = 0.025;
+  float r1 = uData.x, r2 = uData.x + uData.y, r3 = uData.x + uData.y + uData.z;
+  float inT = 1.0 - smoothstep(r1 - e, r1 + e, sel);
+  float inG = smoothstep(r1 - e, r1 + e, sel) * (1.0 - smoothstep(r2 - e, r2 + e, sel));
+  float inR = smoothstep(r2 - e, r2 + e, sel) * (1.0 - smoothstep(r3 - e, r3 + e, sel));
+  col = mix(col, teal, inT * step(0.0001, r1) * 0.9);
+  col = mix(col, gold, inG * step(0.0001, uData.y) * 0.9);
+  col = mix(col, red, inR * step(0.0001, uData.z) * 0.9);
   float valley = smoothstep(0.15, 0.85, c1 * 0.6 + c2 * 0.5);
-  col *= (0.18 + 1.05 * strand) * (0.45 + 0.75 * valley);
+  col *= (0.14 + 1.0 * strand) * (0.42 + 0.7 * valley);
+  // the viewfinder window: noise clears to a dark, still field
+  float fe = 0.012;
+  float inside = smoothstep(uFrame.x - fe, uFrame.x + fe, vUv.x) * (1.0 - smoothstep(uFrame.z - fe, uFrame.z + fe, vUv.x))
+               * smoothstep(uFrame.y - fe, uFrame.y + fe, vUv.y) * (1.0 - smoothstep(uFrame.w - fe, uFrame.w + fe, vUv.y));
+  vec3 navy = vec3(0.012, 0.016, 0.06);
+  col = mix(col, navy + col * 0.06, inside * uFrameOn);
   float edge = smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x) * smoothstep(0.0, 0.2, vUv.y) * smoothstep(1.0, 0.8, vUv.y);
   float alpha = uFade * mix(1.0, edge, uEdge);
   gl_FragColor = vec4(mix(navy, col, uFade), alpha);
@@ -480,6 +501,8 @@ export class World {
   private mouseAmt = 0;
   private onNavigate: (href: string) => void;
   private reveal: HTMLElement[] = [];
+  private viewfinder: HTMLElement | null = null;
+  private parallax = 0;
 
   constructor(canvas: HTMLCanvasElement, opts: { onNavigate: (href: string) => void }) {
     this.onNavigate = opts.onNavigate;
@@ -508,7 +531,7 @@ export class World {
       const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
       this.composer = new EffectComposer(this.renderer, rt);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.62, 0.55, 0.7);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.5, 0.82);
       this.composer.addPass(this.bloom);
       this.composer.addPass(new ShaderPass(FINAL));
     }
@@ -526,7 +549,10 @@ export class World {
       fragmentShader: PAINT_FRAG,
       transparent: true,
       depthWrite: false,
-      uniforms: { uField: { value: this.fieldRT.texture }, uAspect: { value: 1.6 }, uFade: { value: 1 }, uEdge: { value: 0 }, uTime: { value: 0 } },
+      uniforms: {
+        uField: { value: this.fieldRT.texture }, uAspect: { value: 1.6 }, uFade: { value: 1 }, uEdge: { value: 0 }, uTime: { value: 0 },
+        uFrame: { value: new THREE.Vector4(0, 0, 0, 0) }, uFrameOn: { value: 0 }, uData: { value: new THREE.Vector3(0, 0, 0) },
+      },
     });
     this.paint = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.paintMat);
     this.paint.renderOrder = -1;
@@ -598,9 +624,15 @@ export class World {
     this.loop();
   }
 
-  attach(stages: Map<StageName, Stage>, reveal: HTMLElement[]) {
+  attach(stages: Map<StageName, Stage>, reveal: HTMLElement[], viewfinder: HTMLElement | null) {
     this.stages = stages;
     this.reveal = reveal;
+    this.viewfinder = viewfinder;
+  }
+
+  /** Shares of everything paid that were released, are held, were refunded (each 0..1). */
+  setData(d: { released: number; held: number; refunded: number }) {
+    this.paintMat.uniforms.uData.value.set(d.released, d.held, d.refunded);
   }
 
   async setCards(cards: HelixCard[]) {
@@ -683,13 +715,26 @@ export class World {
     this.mouse.lerp(this.mouseTarget, 0.06);
     this.mouseAmt *= 0.985;
 
-    // camera: gentle parallax with the pointer
-    this.camera.position.x = lerp(this.camera.position.x, this.ndc.x * 0.35 * (this.ndc.x > -2 ? 1 : 0), 0.04);
-    this.camera.position.y = lerp(this.camera.position.y, this.ndc.y * 0.22 * (this.ndc.y > -2 ? 1 : 0), 0.04);
+    // camera: gentle parallax with the pointer — held still in the hero so the viewfinder window
+    // painted into the field lines up exactly with the HTML brackets
+    const hp = hero ? hero.p : 1;
+    const inHero = !!hero && hero.visible && hp < 0.5;
+    this.parallax = lerp(this.parallax, inHero ? 0 : 1, 0.05);
+    const live = this.ndc.x > -2 ? this.parallax : 0;
+    this.camera.position.x = lerp(this.camera.position.x, this.ndc.x * 0.35 * live, 0.04);
+    this.camera.position.y = lerp(this.camera.position.y, this.ndc.y * 0.22 * live, 0.04);
     this.camera.lookAt(0, 0, 0);
 
+    // viewfinder (screen rect → uv for the painting, → world for the house)
+    const W = window.innerWidth, H = window.innerHeight;
+    const vr = this.viewfinder && inHero ? this.viewfinder.getBoundingClientRect() : null;
+    const visH = 2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * 10;
+    if (vr && vr.width > 0) {
+      this.paintMat.uniforms.uFrame.value.set(vr.left / W, 1 - vr.bottom / H, vr.right / W, 1 - vr.top / H);
+    }
+    this.paintMat.uniforms.uFrameOn.value = lerp(this.paintMat.uniforms.uFrameOn.value, vr ? 1 - smooth(0.05, 0.35, hp) : 0, 0.12);
+
     // hero painting
-    const hp = hero ? hero.p : 1;
     const paintOn = !!hero && (hero.visible || hp < 1) && hp < 0.999;
     this.paint.visible = paintOn;
     if (paintOn) {
@@ -719,8 +764,22 @@ export class World {
     this.dustMat.uniforms.uOpacity.value = 0.18 + 0.4 * field;
     this.dust.rotation.y = scrollY * 0.04;
 
-    // house
-    if (house && house.visible) {
+    // house: in the hero it assembles inside the viewfinder (promise → proof); later the
+    // "how it works" stage rebuilds it one milestone at a time
+    if (vr && vr.width > 0 && !(house && house.visible)) {
+      this.house.visible = true;
+      this.houseMat.uniforms.uTime.value = t;
+      this.houseMat.uniforms.uProgress.value = smooth(0.4, 3.6, t) * 4.4 - 0.15;
+      // dense additive points saturate at this size, so the hero house runs at lower intensity
+      this.houseMat.uniforms.uOpacity.value = (this.mobile ? 0.9 : 0.26) * (1 - smooth(0.12, 0.45, hp));
+      const cx = ((vr.left + vr.width / 2) / W - 0.5) * visH * (W / H);
+      const cy = -((vr.top + vr.height / 2) / H - 0.5) * visH;
+      const fh = (vr.height / H) * visH;
+      this.house.position.set(cx, cy, 0);
+      this.house.scale.setScalar((fh * 0.46) / 3.8);
+      this.house.rotation.y = -0.65 + Math.sin(t * 0.18) * 0.35 + this.mouse.x * 0.08;
+      this.house.rotation.x = 0.22 - this.mouse.y * 0.04;
+    } else if (house && house.visible) {
       this.house.visible = true;
       this.houseMat.uniforms.uTime.value = t;
       this.houseMat.uniforms.uProgress.value = house.p * 4.4 - 0.15;

@@ -12,13 +12,20 @@ import { houseSvgDataUri } from "@/lib/svg-house";
 import { useRingItems } from "../hud";
 import type { HelixCard, World } from "./world";
 import { collectReveal, collectStages, measure } from "./stages";
-import { Cursor, Preloader, useMagnetic } from "./fx";
+import { Cursor, useMagnetic } from "./fx";
+import { useLiveNumbers } from "../landing";
 
 type WorldState = "loading" | "ready" | "failed";
 const Ctx = createContext<WorldState>("loading");
 export const useWorldState = () => useContext(Ctx);
 
 const UNIT_LABELS = ["A-4B", "B-2C", "C-1A", "A-7D"];
+
+/** Phones on data-saver, 2G/3G or very little memory get the light page: no WebGL, native scroll. */
+function liteMode() {
+  const n = navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string }; deviceMemory?: number };
+  return !!n.connection?.saveData || /(^|-)(2g|3g)$/.test(n.connection?.effectiveType ?? "") || (n.deviceMemory !== undefined && n.deviceMemory <= 2);
+}
 
 function useHelixCards(): HelixCard[] {
   const items = useRingItems();
@@ -152,8 +159,9 @@ export function LandingShell({ children }: { children: ReactNode }) {
     routerRef.current = router;
   }, [router]);
 
-  // smooth, inertial scroll for the whole landing
+  // smooth, inertial scroll for the whole landing (not in lite mode)
   useEffect(() => {
+    if (liteMode()) return;
     const l = new Lenis({ lerp: 0.07, wheelMultiplier: 0.85, smoothWheel: true, anchors: true });
     lenis.current = l;
     let raf = 0;
@@ -176,13 +184,14 @@ export function LandingShell({ children }: { children: ReactNode }) {
     let dead = false;
     (async () => {
       try {
+        if (liteMode()) throw new Error("lite");
         const probe = document.createElement("canvas");
         if (!probe.getContext("webgl2") && !probe.getContext("webgl")) throw new Error("no webgl");
         const { World } = await import("./world");
         if (dead || !canvas.current) return;
         const w = new World(canvas.current, { onNavigate: (href) => routerRef.current.push(href) });
         world.current = w;
-        w.attach(collectStages(), collectReveal());
+        w.attach(collectStages(), collectReveal(), document.querySelector<HTMLElement>("[data-viewfinder]"));
         setState("ready");
       } catch {
         if (!dead) setState("failed");
@@ -198,6 +207,15 @@ export function LandingShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state === "ready") void world.current?.setCards(cards);
   }, [cards, state]);
+
+  // paint with the chain: shares of everything paid that were released / are held / were refunded
+  const live = useLiveNumbers();
+  useEffect(() => {
+    if (state !== "ready" || !world.current) return;
+    const paid = Number(live.paid);
+    const share = (x: bigint | null) => (paid > 0 && x !== null ? Number(x) / paid : 0);
+    world.current.setData({ released: share(live.released), held: share(live.escrow), refunded: share(live.refunded) });
+  }, [state, live.paid, live.released, live.escrow, live.refunded]);
 
   // without WebGL the HTML overlays still follow the scroll
   useEffect(() => {
@@ -217,7 +235,6 @@ export function LandingShell({ children }: { children: ReactNode }) {
     <Ctx.Provider value={state}>
       <div className="landing relative">
         <canvas ref={canvas} aria-hidden className={clsx("pointer-events-none fixed inset-0 z-0 h-full w-full transition-opacity duration-1000", state === "ready" ? "opacity-100" : "opacity-0")} />
-        <Preloader ready={state !== "loading"} />
         <Cursor />
         <GuideGrid />
         <SideNav lenis={lenis} />
