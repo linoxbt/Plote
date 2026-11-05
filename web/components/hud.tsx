@@ -4,6 +4,7 @@
 // the generative data-field hero and the estate ring. Data is the artwork; the frame is the gallery.
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { clsx } from "clsx";
 import { approvedCount } from "@/lib/estate";
@@ -17,6 +18,10 @@ import { ESTATES } from "@/lib/config";
 
 /** Site-wide hairlines at the content edges and a scroll index on the right (pointer-events: none). */
 export function HudFrame() {
+  return usePathname() === "/" ? null : <HudFrameLines />;
+}
+
+function HudFrameLines() {
   const [pct, setPct] = useState(0);
   useEffect(() => {
     let raf = 0;
@@ -217,7 +222,7 @@ export function DataField({ className }: { className?: string }) {
 
 // ---------------- estate ring ("collections") ----------------
 
-type RingItem = { account: string; slug: string; name: string; location: string; units: number | null; escrow: bigint | null; approved: number; total: number };
+export type RingItem = { account: string; slug: string; name: string; location: string; units: number | null; escrow: bigint | null; approved: number; total: number };
 
 function titleFromSlug(slug: string) {
   return slug
@@ -226,7 +231,7 @@ function titleFromSlug(slug: string) {
     .join(" ");
 }
 
-function useRingItems(): RingItem[] {
+export function useRingItems(): RingItem[] {
   const estates = useAllEstates();
   const ms = useAllMilestones();
   return ESTATES.map((account, i) => {
