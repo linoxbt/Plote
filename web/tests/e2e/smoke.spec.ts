@@ -16,7 +16,7 @@ test("check page shows a result card for a demo unit", async ({ page }) => {
   await page.goto("/check?u=a-4b");
   await expect(page.getByRole("heading", { name: "Is this unit taken?" })).toBeVisible();
   // TAKEN once seeded; until then any of the defined states (or a clear error) is acceptable.
-  await expect(page.getByText(/TAKEN|RESERVED|AVAILABLE|HANDED OVER|NOT A PLOTE UNIT|Couldn't check/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/TAKEN|RESERVED|AVAILABLE|HANDED OVER|NOT A PLOTE UNIT|Couldn't check|Awaiting deployment/).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test("check page flags a unit that isn't on Plote", async ({ page }) => {
@@ -26,12 +26,12 @@ test("check page flags a unit that isn't on Plote", async ({ page }) => {
 
 test("estate page renders milestones or an error state", async ({ page }) => {
   await page.goto("/estates/harmattan-court");
-  await expect(page.getByText(/Milestones|Couldn't load/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Milestones|Couldn't load|Awaiting deployment/).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test("proof page renders the checklist or an error", async ({ page }) => {
   await page.goto("/proof/harmattan-court/0");
-  await expect(page.getByText(/Checks|There is no evidence|Couldn't load/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Checks|There is no evidence|Couldn't load|Awaiting deployment/).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test("watch page has OG tags", async ({ page }) => {

@@ -10,6 +10,7 @@ import { approvedCount, estate as E } from "@/lib/estate";
 import { estateSlug, unitAccount } from "@/lib/estates";
 import { formatUsd, formatDuration, nsToMs, toBig } from "@/lib/format";
 import { useAllEstates, useAllMilestones } from "@/lib/hooks";
+import { explainError } from "@/lib/errors";
 import { chainName, oneclick, PICKER_CHAINS, STABLE_SYMBOLS } from "@/lib/oneclick";
 import { CheckChip, CheckInput, type CheckOutcome } from "./check";
 import { HouseNFT } from "./house-nft";
@@ -32,19 +33,27 @@ export function HeroCheck() {
 
 // ---------------- hero stats (instrument readouts) ----------------
 
+/** Live totals across the configured estates. An estate whose contract isn't deployed yet holds
+ * nothing, so it counts as zero; anything else that fails leaves the number unknown (null). */
 export function useLiveNumbers() {
   const estates = useAllEstates();
   const ms = useAllMilestones();
+  const loading = estates.some((x) => x.q.isLoading);
+  const absent = (e: unknown) => !!e && explainError(e).code === "CONTRACT_NOT_DEPLOYED";
+  const known = estates.every((x) => x.q.data || absent(x.q.error));
   const okE = estates.filter((x) => x.q.data);
   const okM = ms.filter((x) => x.q.data);
-  const loading = estates.some((x) => x.q.isLoading);
+  const any = okE.length > 0 || known;
+  const deployed = okE.length;
   return {
     loading,
+    deployed,
+    pending: known && deployed === 0,
     link: okE[0]?.account ?? DEMO_ESTATE,
-    units: okE.length ? okE.reduce((n, x) => n + (x.q.data?.unit_count ?? 0), 0) : null,
-    escrow: okE.length ? okE.reduce((n, x) => n + toBig(x.q.data?.totals.in_escrow), 0n) : null,
-    verified: okM.length ? okM.reduce((n, x) => n + (x.q.data ?? []).filter((m) => m.status === "Verified" || m.status === "Approved").length, 0) : null,
-    refunds: okE.length ? okE.reduce((n, x) => n + (x.q.data?.stats.units_refunded ?? 0), 0) : null,
+    units: any ? okE.reduce((n, x) => n + (x.q.data?.unit_count ?? 0), 0) : null,
+    escrow: any ? okE.reduce((n, x) => n + toBig(x.q.data?.totals.in_escrow), 0n) : null,
+    verified: any ? okM.reduce((n, x) => n + (x.q.data ?? []).filter((m) => m.status === "Verified" || m.status === "Approved").length, 0) : null,
+    refunds: any ? okE.reduce((n, x) => n + (x.q.data?.stats.units_refunded ?? 0), 0) : null,
   };
 }
 
@@ -93,6 +102,9 @@ export function HeroStats({ className }: { className?: string }) {
         <Stat label="USDC IN ESCROW" value={v(n.escrow === null ? null : formatUsd(n.escrow))} loading={l && n.escrow === null} right />
         <Stat label="REFUNDS PAID" value={v(n.refunds === null ? null : String(n.refunds))} loading={l && n.refunds === null} right labelBelow />
       </div>
+      {n.pending ? (
+        <p className="tech col-span-2 text-center text-[8px] text-faint lg:col-span-3">Demo estates deploying to testnet · counters start at zero</p>
+      ) : null}
     </div>
   );
 }

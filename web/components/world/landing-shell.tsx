@@ -12,6 +12,7 @@ import { houseSvgDataUri } from "@/lib/svg-house";
 import { useRingItems } from "../hud";
 import type { HelixCard, World } from "./world";
 import { collectReveal, collectStages, measure } from "./stages";
+import { Cursor, Preloader, useMagnetic } from "./fx";
 
 type WorldState = "loading" | "ready" | "failed";
 const Ctx = createContext<WorldState>("loading");
@@ -30,8 +31,8 @@ function useHelixCards(): HelixCard[] {
         const unit = it.slug === "playground" ? `P-0${r + 1}` : UNIT_LABELS[(r + i) % UNIT_LABELS.length];
         out.push({
           title: it.name,
-          sub: `${it.approved}/${it.total} stages proven`,
-          meta: `${it.units === null ? "—" : it.units} units · ${it.escrow === null ? "—" : formatUsd(it.escrow)} in escrow`,
+          sub: it.pending ? "Awaiting deployment" : `${it.approved}/${it.total} stages proven`,
+          meta: it.pending ? "Fills in from the chain once live" : `${it.units === null ? "—" : it.units} units · ${it.escrow === null ? "—" : formatUsd(it.escrow)} in escrow`,
           tag: unit,
           href: `/estates/${it.slug}`,
           art: houseSvgDataUri({
@@ -145,6 +146,7 @@ export function LandingShell({ children }: { children: ReactNode }) {
   const [state, setState] = useState<WorldState>("loading");
   const router = useRouter();
   const cards = useHelixCards();
+  useMagnetic();
   const routerRef = useRef(router);
   useEffect(() => {
     routerRef.current = router;
@@ -215,6 +217,8 @@ export function LandingShell({ children }: { children: ReactNode }) {
     <Ctx.Provider value={state}>
       <div className="landing relative">
         <canvas ref={canvas} aria-hidden className={clsx("pointer-events-none fixed inset-0 z-0 h-full w-full transition-opacity duration-1000", state === "ready" ? "opacity-100" : "opacity-0")} />
+        <Preloader ready={state !== "loading"} />
+        <Cursor />
         <GuideGrid />
         <SideNav lenis={lenis} />
         <div className="relative z-[3]">{children}</div>
