@@ -13,9 +13,9 @@
   --surface-2: #10153a;
   --line: #1d2550;
   --line-soft: rgba(140, 160, 255, 0.09);
-  --text: #d9dcea;
-  --muted: #6f789d;
-  --faint: #444c70;
+  --text: #e8eaf4;
+  --muted: #9aa3c4;
+  --faint: #636c94;
   --teal: #2dd4bf;
   --teal-dim: #0f3d45;
   --gold: #e8b04b;
@@ -59,7 +59,7 @@ html {
 body {
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
@@ -360,7 +360,7 @@ details > summary::-webkit-details-marker {
 
 /* ---- immersive landing ---- */
 .landing {
-  font-size: 13px;
+  font-size: 14px;
 }
 .landing h2 {
   text-transform: uppercase;
@@ -417,45 +417,6 @@ html.lenis body {
   100% { transform: translate(0, 0); }
 }
 
-/* ---- intro loader ---- */
-.preloader {
-  animation: preloader-failsafe 0.6s ease 4s forwards;
-}
-.preloader-half {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 50.5%;
-  background: #01020f;
-  transition: transform 1s cubic-bezier(0.77, 0, 0.18, 1);
-}
-.preloader-top {
-  top: 0;
-  border-bottom: 1px solid var(--line-soft);
-}
-.preloader-bottom {
-  bottom: 0;
-}
-.preloader-core {
-  transition: opacity 0.45s ease, transform 0.9s cubic-bezier(0.77, 0, 0.18, 1);
-}
-.preloader.is-leaving .preloader-top {
-  transform: translateY(-100%);
-}
-.preloader.is-leaving .preloader-bottom {
-  transform: translateY(100%);
-}
-.preloader.is-leaving .preloader-core {
-  opacity: 0;
-  transform: scale(1.08);
-}
-@keyframes preloader-failsafe {
-  to {
-    opacity: 0;
-    visibility: hidden;
-  }
-}
-
 /* ---- kinetic headline ---- */
 .kinetic {
   perspective: 600px;
@@ -464,11 +425,8 @@ html.lenis body {
   opacity: 0;
   transform: translateY(0.55em) rotateX(-70deg);
   filter: blur(10px);
-  animation: ch-in 1.2s cubic-bezier(0.2, 0.7, 0, 1) forwards;
-  animation-delay: calc(var(--i) * 26ms + 1.5s);
-}
-.plote-fast .kinetic .ch {
-  animation-delay: calc(var(--i) * 22ms + 0.1s);
+  animation: ch-in 0.7s cubic-bezier(0.2, 0.7, 0, 1) forwards;
+  animation-delay: calc(var(--i) * 14ms);
 }
 @keyframes ch-in {
   to {
@@ -566,5 +524,42 @@ html.cursor-on .landing textarea {
     opacity: 1;
     transform: none;
     filter: drop-shadow(0 0 3px rgba(232, 176, 75, 0.5));
+  }
+}
+
+/* ---- hero viewfinder (the logo's brackets at scale) ---- */
+.vf-corner {
+  border-width: 0;
+  border-color: var(--text);
+  animation: vf-in 0.9s cubic-bezier(0.2, 0.7, 0, 1) 0.15s both;
+}
+.vf-corner.border-l {
+  border-left-width: var(--vf-w);
+}
+.vf-corner.border-r {
+  border-right-width: var(--vf-w);
+}
+.vf-corner.border-t {
+  border-top-width: var(--vf-w);
+}
+.vf-corner.border-b {
+  border-bottom-width: var(--vf-w);
+}
+@keyframes vf-in {
+  from {
+    opacity: 0;
+    transform: translate(var(--vf-from));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* hero content recedes with the pinned scroll on desktop; on phones it simply scrolls */
+@media (min-width: 1024px) {
+  .hero-fade {
+    opacity: calc(1 - var(--p, 0) * 2.2);
+    transform: translate3d(0, calc(var(--p, 0) * -120px), 0);
   }
 }

@@ -54,57 +54,39 @@ export function useLiveNumbers() {
     escrow: any ? okE.reduce((n, x) => n + toBig(x.q.data?.totals.in_escrow), 0n) : null,
     verified: any ? okM.reduce((n, x) => n + (x.q.data ?? []).filter((m) => m.status === "Verified" || m.status === "Approved").length, 0) : null,
     refunds: any ? okE.reduce((n, x) => n + (x.q.data?.stats.units_refunded ?? 0), 0) : null,
+    paid: okE.reduce((n, x) => n + toBig(x.q.data?.totals.paid), 0n),
+    released: okE.reduce((n, x) => n + toBig(x.q.data?.totals.released), 0n),
+    refunded: okE.reduce((n, x) => n + toBig(x.q.data?.totals.refunded), 0n),
   };
 }
 
-function Stat({ label, value, loading, right, labelBelow, link }: { label: string; value: React.ReactNode; loading: boolean; right?: boolean; labelBelow?: boolean; link?: string }) {
-  const tag = <HudTag className="text-[7.5px]">{label}</HudTag>;
-  const num = (
-    <span className="readout inline-flex items-baseline gap-1 text-[26px] text-text/85 sm:text-[30px]" aria-busy={loading || undefined}>
-      {loading ? <span className="skeleton inline-block h-6 w-16" /> : value}
-      {link ? <ChainLink account={link} /> : null}
-    </span>
-  );
+function Stat({ label, value, loading, link }: { label: string; value: React.ReactNode; loading: boolean; link?: string }) {
   return (
-    <div role="listitem" className={clsx("flex flex-col gap-1.5", right ? "items-end text-right" : "items-start")}>
-      {labelBelow ? (
-        <>
-          {num}
-          {tag}
-        </>
-      ) : (
-        <>
-          {tag}
-          {num}
-        </>
-      )}
+    <div role="listitem" className="flex flex-col items-start gap-2">
+      <HudTag className="text-[7.5px]">{label}</HudTag>
+      <span className="readout inline-flex items-baseline gap-1 text-[26px] text-text/90 sm:text-[30px]" aria-busy={loading || undefined}>
+        {loading ? <span className="skeleton inline-block h-6 w-16" /> : value}
+        {link ? <ChainLink account={link} /> : null}
+      </span>
     </div>
   );
 }
 
-/** The four live numbers under the hero band, laid out like a gallery plate:
- * label-over-number on the first row, number-over-label on the second, SCROLL in the middle. */
+/** The four live numbers under the hero: boxed label over a thin readout, one row on desktop. */
 export function HeroStats({ className }: { className?: string }) {
   const n = useLiveNumbers();
   const dash = <span aria-label="not available">—</span>;
   const v = (x: string | null) => (x === null ? dash : x);
   const l = n.loading;
   return (
-    <div role="list" aria-label="Live numbers" className={clsx("grid grid-cols-2 gap-x-6 gap-y-6 lg:grid-cols-[1fr_auto_1fr]", className)}>
-      <div className="flex flex-col gap-8">
+    <div className={className}>
+      <div role="list" aria-label="Live numbers" className="grid grid-cols-2 gap-x-6 gap-y-6 border-t border-[var(--line-soft)] pt-6 lg:grid-cols-4">
         <Stat label="UNITS ON PLOTE" value={v(n.units === null ? null : String(n.units))} loading={l && n.units === null} link={n.link} />
-        <Stat label="MILESTONES VERIFIED" value={v(n.verified === null ? null : String(n.verified))} loading={l && n.verified === null} labelBelow />
+        <Stat label="USDC IN ESCROW" value={v(n.escrow === null ? null : formatUsd(n.escrow))} loading={l && n.escrow === null} />
+        <Stat label="MILESTONES VERIFIED" value={v(n.verified === null ? null : String(n.verified))} loading={l && n.verified === null} />
+        <Stat label="REFUNDS PAID" value={v(n.refunds === null ? null : String(n.refunds))} loading={l && n.refunds === null} />
       </div>
-      <div className="hidden items-end justify-center pb-6 lg:flex">
-        <span className="tech text-[9px] text-text/70">Scroll</span>
-      </div>
-      <div className="flex flex-col gap-8">
-        <Stat label="USDC IN ESCROW" value={v(n.escrow === null ? null : formatUsd(n.escrow))} loading={l && n.escrow === null} right />
-        <Stat label="REFUNDS PAID" value={v(n.refunds === null ? null : String(n.refunds))} loading={l && n.refunds === null} right labelBelow />
-      </div>
-      {n.pending ? (
-        <p className="tech col-span-2 text-center text-[8px] text-faint lg:col-span-3">Demo estates deploying to testnet · counters start at zero</p>
-      ) : null}
+      {n.pending ? <p className="tech mt-4 text-[8.5px] text-faint">Demo estates deploying to testnet · counters start at zero</p> : null}
     </div>
   );
 }

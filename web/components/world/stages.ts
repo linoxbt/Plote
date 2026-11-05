@@ -25,7 +25,8 @@ export function measure(stages: Map<StageName, Stage>, reveal: HTMLElement[]) {
   const vh = window.innerHeight;
   for (const s of stages.values()) {
     const r = s.el.getBoundingClientRect();
-    const total = Math.max(1, r.height - vh);
+    // pinned stages scroll through their extra height; an unpinned one (the hero on phones) over 60% of a screen
+    const total = Math.max(vh * 0.6, r.height - vh);
     s.p = clamp(-r.top / total);
     s.enter = clamp((vh - r.top) / vh);
     s.exit = clamp((vh - r.bottom) / vh);

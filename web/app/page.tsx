@@ -8,6 +8,8 @@ import { DataField, EstateRing, HudTag, SectionHead } from "@/components/hud";
 import { EstateLinks, LandingShell, WorldFallback } from "@/components/world/landing-shell";
 import { KineticTitle, Marquee } from "@/components/world/fx";
 import { GITHUB_URL, IS_MAINNET } from "@/lib/config";
+import { Mark } from "@/components/logo";
+import { houseSvgDataUri } from "@/lib/svg-house";
 import { FAQ } from "@/components/faq-data";
 
 // SPEC §12 — copy is final. Layout: an immersive, scroll-driven WebGL world (components/world)
@@ -55,60 +57,100 @@ const TOKEN: [string, string][] = [
 
 const PANEL = "bg-[rgba(2,3,20,0.7)]";
 
+const CORNERS = [
+  ["left-0 top-0 border-l border-t", "-14px, -14px"],
+  ["right-0 top-0 border-r border-t", "14px, -14px"],
+  ["right-0 bottom-0 border-b border-r", "14px, 14px"],
+  ["left-0 bottom-0 border-b border-l", "-14px, 14px"],
+] as const;
+
+/** The logo's viewfinder at hero scale. The WebGL world reads this box: it clears the strands inside
+ * it and assembles the house within it. Without WebGL it shows the drawing of the same unit. */
+function Viewfinder() {
+  return (
+    <div data-viewfinder className="relative aspect-square w-[min(80vw,42vh)] lg:w-[min(36vw,56vh)]">
+      {CORNERS.map(([pos, from]) => (
+        <span
+          key={pos}
+          aria-hidden
+          className={`vf-corner absolute h-[22%] w-[22%] border-text [border-width:0] ${pos} [--vf-w:5px]`}
+          style={{ ["--vf-from" as string]: from }}
+        />
+      ))}
+      <WorldFallback>
+        <img
+          src={houseSvgDataUri({ estateName: "Harmattan Court", unitLabel: "A-4B", unitId: "a-4b", approvedCount: 2, total: 4, status: "Allocated", paid: "0", price: "0" })}
+          alt=""
+          className="absolute inset-[14%] h-[72%] w-[72%] object-contain opacity-80"
+        />
+      </WorldFallback>
+      <span className="hud-tag absolute left-[7%] top-[7%] text-[7.5px]">Site view</span>
+      <span className="tech absolute right-[7%] top-[7%] text-[8px] text-faint">Proof before payment</span>
+      <span className="hud-tag hud-tag-ghost absolute bottom-[7%] right-[7%] text-[7.5px]">A-4B · Harmattan Court · demo</span>
+    </div>
+  );
+}
+
 export default function Landing() {
   const net = IS_MAINNET ? "mainnet" : "testnet";
   return (
     <main id="main">
       <LandingShell>
-        {/* ═════════ Stage 1 · the painting ═════════ */}
-        <section id="top" data-world="hero" aria-label="Introduction" className="relative h-[230vh]">
-          <div className="sticky top-0 flex h-[100dvh] flex-col justify-center overflow-hidden">
+        {/* ═════════ Stage 1 · promise → proof ═════════
+            Outside the viewfinder: the noise of off-plan promises. Inside it: the house you can see.
+            The strands take their colours from the money on chain (teal released, gold held, red refunded). */}
+        <section id="top" data-world="hero" aria-label="Introduction" className="relative lg:h-[200vh]">
+          <div className="relative lg:sticky lg:top-0 lg:h-[100dvh] lg:overflow-hidden">
             <WorldFallback>
               <div className="absolute inset-0 -z-10">
                 <DataField />
               </div>
             </WorldFallback>
             <div
-              className="relative"
-              style={{
-                opacity: "calc(1 - var(--p, 0) * 2.4)",
-                transform: "translate3d(0, calc(var(--p, 0) * -140px), 0) scale(calc(1 - var(--p, 0) * 0.12))",
-              }}
+              className="hero-fade relative mx-auto grid min-h-[100dvh] w-full max-w-6xl grid-cols-1 content-center gap-8 px-5 pb-12 pt-24 sm:px-8 lg:h-full lg:min-h-0 lg:w-[84%] lg:grid-cols-[minmax(0,1fr)_auto] lg:content-center lg:gap-x-14 lg:gap-y-10 lg:px-0 lg:pb-8 lg:pt-20"
             >
-              <div className="glass border-y border-[var(--line-soft)] px-5 py-9 text-center sm:py-12">
-                <KineticTitle text="Pay for the house you can see." className="mx-auto max-w-5xl text-[24px] uppercase tracking-[0.08em] text-text sm:text-[36px] lg:text-[42px]" />
-                <p className="tech-wide mt-4 text-[8.5px] text-text/70 sm:text-[9.5px]">Plote · Off-plan escrow on NEAR</p>
+              <div className="order-1 flex justify-center lg:order-2">
+                <Viewfinder />
               </div>
-              <div className="mx-auto mt-5 w-[86%] sm:w-[70%]">
+              <div className="order-2 space-y-6 lg:order-1">
+                <div className="flex items-center gap-3">
+                  <Mark size={22} title="" animated />
+                  <span className="tech-wide text-[9.5px] text-muted">Off-plan escrow · Built on NEAR</span>
+                </div>
+                <KineticTitle
+                  text="Pay for the house you can see."
+                  className="text-[32px] font-light uppercase leading-[1.05] tracking-[0.04em] text-text sm:text-[46px] lg:text-[52px]"
+                />
+                <p className="max-w-md text-[15px] leading-relaxed text-muted">
+                  Plote gives every off-plan unit its own account. Your money waits there and moves to the developer only when a photo of the next stage
+                  passes an independent check. If the build stalls, you take it back.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <span data-magnetic className="inline-block">
+                    <LinkButton href="/check" variant="primary">
+                      Check a unit →
+                    </LinkButton>
+                  </span>
+                  <span data-magnetic className="inline-block">
+                    <LinkButton href={`/estates/${LANDING_ESTATE_SLUG}`}>See a live estate</LinkButton>
+                  </span>
+                </div>
+              </div>
+              <div className="order-3 lg:col-span-2">
                 <HeroStats />
-                <p className="mt-6 text-center text-[10px] text-faint">Live from NEAR {net}. Every number links to the chain.</p>
+                <p className="mt-4 text-[11px] text-faint">Live from NEAR {net}. Every number links to the chain.</p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* ═════════ The promise ═════════ */}
-        <Section label="The promise" className="-mt-[40vh]">
-          <div className="glass corners mx-auto max-w-3xl px-6 py-10 text-center sm:px-12">
+        {/* ═════════ Check first ═════════ */}
+        <Section label="Check a unit first" className="lg:-mt-[45vh]">
+          <div className="glass corners mx-auto max-w-2xl px-6 py-10 text-center sm:px-12">
             <HudTag tone="ghost" className="text-[7.5px]">
-              00 · The promise
+              00 · Check first
             </HudTag>
-            <p className="mx-auto mt-6 max-w-xl text-[13.5px] text-muted">
-              Plote gives every off-plan unit its own account. Your money waits there and moves to the developer only when a photo of the next stage
-              passes an independent check. If the build stalls, you take it back.
-            </p>
-            <div className="mt-7 flex flex-wrap justify-center gap-3">
-              <span data-magnetic className="inline-block">
-                <LinkButton href="/check" variant="primary" size="sm">
-                  Check a unit →
-                </LinkButton>
-              </span>
-              <span data-magnetic className="inline-block">
-                <LinkButton href={`/estates/${LANDING_ESTATE_SLUG}`} size="sm">
-                  See a live estate
-                </LinkButton>
-              </span>
-            </div>
+            <p className="mx-auto mt-5 max-w-md text-[14px] text-muted">Every unit has an address. Type one in and see who holds it, what&apos;s been paid and what&apos;s been proven.</p>
             <div className="mx-auto mt-7 max-w-md text-left">
               <HeroCheck />
             </div>
