@@ -522,3 +522,49 @@ html.cursor-on .landing textarea {
 .rise-2 {
   animation: rise 0.9s cubic-bezier(0.2, 0.7, 0, 1) 0.12s both;
 }
+
+/* ---- animated mark (intro loader) ---- */
+.mark-animated .mk-stem {
+  clip-path: inset(0 0 100% 0);
+  animation: mk-stake 0.9s cubic-bezier(0.77, 0, 0.18, 1) 0.15s forwards;
+}
+.mark-animated .mk-tr {
+  opacity: 0;
+  transform: translate(5px, -5px);
+  animation: mk-snap 0.7s cubic-bezier(0.2, 0.7, 0, 1) 0.75s forwards;
+}
+.mark-animated .mk-br {
+  opacity: 0;
+  transform: translate(5px, 5px);
+  animation: mk-snap 0.7s cubic-bezier(0.2, 0.7, 0, 1) 0.88s forwards;
+}
+.mark-animated .mk-tile {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.2);
+  animation: mk-tile 0.8s cubic-bezier(0.2, 0.7, 0, 1) 1.15s forwards;
+}
+@keyframes mk-stake {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes mk-snap {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mk-tile {
+  60% {
+    opacity: 1;
+    transform: scale(1.18);
+    filter: drop-shadow(0 0 6px rgba(232, 176, 75, 0.9));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: drop-shadow(0 0 3px rgba(232, 176, 75, 0.5));
+  }
+}
