@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
+import { Mark, Wordmark } from "../logo";
 
 // ---------------- intro loader ----------------
 
@@ -42,7 +43,7 @@ export function Preloader({ ready }: { ready: boolean }) {
       const cap = readyRef.current || el > 2600 ? 100 : 90;
       cur = Math.min(cap, cur + Math.max(0.6, (cap - cur) * 0.06));
       setN(Math.round(cur));
-      if (cur >= 99.5 && el > 900) {
+      if (cur >= 99.5 && el > 1900) {
         setN(100);
         setLeaving(true);
         setTimeout(() => setGone(true), 1100);
@@ -60,7 +61,8 @@ export function Preloader({ ready }: { ready: boolean }) {
       <div className="preloader-half preloader-top" />
       <div className="preloader-half preloader-bottom" />
       <div className="preloader-core absolute inset-0 flex flex-col items-center justify-center gap-6">
-        <span className="tech-wide text-[11px] text-text/80">PL<span className="text-teal">[ ]</span>TE</span>
+        <Mark size={64} title="" animated />
+        <Wordmark title="" className="mt-1 text-[12px] text-text/80" />
         <span className="readout text-[64px] text-text/90 tabular-nums sm:text-[88px]">{String(n).padStart(3, "0")}</span>
         <span className="relative block h-px w-48 bg-[var(--line)]">
           <span className="absolute inset-y-0 left-0 bg-teal" style={{ width: `${n}%` }} />
