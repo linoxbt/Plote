@@ -14,7 +14,7 @@ import { chainName, oneclick, PICKER_CHAINS, STABLE_SYMBOLS } from "@/lib/onecli
 import { CheckChip, CheckInput, type CheckOutcome } from "./check";
 import { HouseNFT } from "./house-nft";
 import { BracketCard, ChainLink, LinkButton } from "./ui";
-import { Readout } from "./hud";
+import { HudTag } from "./hud";
 
 const DEMO_ESTATE = ESTATES.find((e) => estateSlug(e) === "harmattan-court") ?? ESTATES[0] ?? "harmattan-court.plote.testnet";
 
@@ -48,31 +48,51 @@ export function useLiveNumbers() {
   };
 }
 
-/** The four live numbers as boxed-label readouts: a 2×2 grid on small screens, pinned to the corners
- * of the hero (the nearest positioned ancestor) from `lg` up. One instance, so each label exists once. */
+function Stat({ label, value, loading, right, labelBelow, link }: { label: string; value: React.ReactNode; loading: boolean; right?: boolean; labelBelow?: boolean; link?: string }) {
+  const tag = <HudTag className="text-[7.5px]">{label}</HudTag>;
+  const num = (
+    <span className="readout inline-flex items-baseline gap-1 text-[26px] text-text/85 sm:text-[30px]" aria-busy={loading || undefined}>
+      {loading ? <span className="skeleton inline-block h-6 w-16" /> : value}
+      {link ? <ChainLink account={link} /> : null}
+    </span>
+  );
+  return (
+    <div role="listitem" className={clsx("flex flex-col gap-1.5", right ? "items-end text-right" : "items-start")}>
+      {labelBelow ? (
+        <>
+          {num}
+          {tag}
+        </>
+      ) : (
+        <>
+          {tag}
+          {num}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The four live numbers under the hero band, laid out like a gallery plate:
+ * label-over-number on the first row, number-over-label on the second, SCROLL in the middle. */
 export function HeroStats({ className }: { className?: string }) {
   const n = useLiveNumbers();
   const dash = <span aria-label="not available">—</span>;
-  const items = [
-    { label: "UNITS ON PLOTE", value: n.units === null ? dash : String(n.units) },
-    { label: "USDC IN ESCROW", value: n.escrow === null ? dash : formatUsd(n.escrow) },
-    { label: "MILESTONES VERIFIED", value: n.verified === null ? dash : String(n.verified) },
-    { label: "REFUNDS PAID", value: n.refunds === null ? dash : String(n.refunds) },
-  ];
-  const pos = ["lg:left-0 lg:top-0", "lg:right-0 lg:top-0", "lg:left-0 lg:bottom-0", "lg:right-0 lg:bottom-0"];
+  const v = (x: string | null) => (x === null ? dash : x);
+  const l = n.loading;
   return (
-    <div role="list" aria-label="Live numbers" className={clsx("grid grid-cols-2 gap-x-6 gap-y-7 lg:pointer-events-none lg:absolute lg:inset-0 lg:block", className)}>
-      {items.map((it, i) => (
-        <div key={it.label} role="listitem" className={clsx("lg:pointer-events-auto lg:absolute", pos[i])}>
-          <Readout
-            label={it.label}
-            value={<span className="inline-flex items-baseline gap-1">{it.value}<ChainLink account={n.link} /></span>}
-            loading={n.loading && it.value === dash}
-            align={i % 2 ? "right" : "left"}
-            size="lg"
-          />
-        </div>
-      ))}
+    <div role="list" aria-label="Live numbers" className={clsx("grid grid-cols-2 gap-x-6 gap-y-6 lg:grid-cols-[1fr_auto_1fr]", className)}>
+      <div className="flex flex-col gap-8">
+        <Stat label="UNITS ON PLOTE" value={v(n.units === null ? null : String(n.units))} loading={l && n.units === null} link={n.link} />
+        <Stat label="MILESTONES VERIFIED" value={v(n.verified === null ? null : String(n.verified))} loading={l && n.verified === null} labelBelow />
+      </div>
+      <div className="hidden items-end justify-center pb-6 lg:flex">
+        <span className="tech text-[9px] text-text/70">Scroll</span>
+      </div>
+      <div className="flex flex-col gap-8">
+        <Stat label="USDC IN ESCROW" value={v(n.escrow === null ? null : formatUsd(n.escrow))} loading={l && n.escrow === null} right />
+        <Stat label="REFUNDS PAID" value={v(n.refunds === null ? null : String(n.refunds))} loading={l && n.refunds === null} right labelBelow />
+      </div>
     </div>
   );
 }

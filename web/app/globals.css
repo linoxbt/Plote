@@ -13,9 +13,9 @@
   --surface-2: #10153a;
   --line: #1d2550;
   --line-soft: rgba(140, 160, 255, 0.09);
-  --text: #e8eaf4;
-  --muted: #8d96b8;
-  --faint: #59628a;
+  --text: #d9dcea;
+  --muted: #6f789d;
+  --faint: #444c70;
   --teal: #2dd4bf;
   --teal-dim: #0f3d45;
   --gold: #e8b04b;
@@ -55,6 +55,7 @@ html {
 body {
   color: var(--text);
   font-family: var(--font-sans);
+  font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
@@ -358,13 +359,48 @@ details > summary::-webkit-details-marker {
   display: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+/* ---- immersive landing ---- */
+body:has(.landing) {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #080b40 0%, rgba(8, 11, 64, 0) 62%),
+    radial-gradient(90% 70% at 50% 110%, #05062e 0%, rgba(5, 6, 46, 0) 70%),
+    #01020f;
+  background-attachment: fixed;
+}
+.landing {
+  font-size: 13px;
+}
+.landing h2 {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 300;
+}
+
+/* Lenis smooth scroll */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+[data-reveal] {
+  will-change: transform, opacity;
+  transform-origin: 50% 0%;
+}
+.landing .text-lg {
+  font-size: 14px;
+}
+.landing h2 {
+  font-size: clamp(22px, 2.6vw, 34px);
+  line-height: 1.15;
+}
+.landing h3 {
+  font-size: 15px;
 }

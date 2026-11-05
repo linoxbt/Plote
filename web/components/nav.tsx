@@ -21,14 +21,16 @@ const LINKS = [
 export function Nav() {
   const [open, setOpen] = useState(false);
   const path = usePathname();
+  // On the immersive landing the bar floats over the painting and the section nav sits on the left.
+  const immersive = path === "/";
   return (
-    <header className="sticky top-0 z-50 h-16 bg-bg/55 backdrop-blur-xl">
+    <header className={clsx("top-0 z-50 h-16", immersive ? "fixed inset-x-0 bg-gradient-to-b from-[#01020f]/90 via-[#01020f]/45 to-transparent" : "sticky bg-bg/55 backdrop-blur-xl")}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[70] focus:bg-teal focus:px-3 focus:py-2 focus:text-bg">
         Skip to content
       </a>
       <div className="mx-auto flex h-full max-w-6xl items-center gap-4 px-4 sm:px-6">
         <Logo />
-        <nav className="ml-6 hidden items-center lg:flex" aria-label="Main">
+        <nav className={clsx("ml-6 hidden items-center", !immersive && "lg:flex")} aria-label="Main">
           {LINKS.map((l) => {
             const active = path?.startsWith(l.href);
             return (
@@ -51,7 +53,7 @@ export function Nav() {
           <NetworkPill />
           <button
             type="button"
-            className="inline-flex h-11 w-11 items-center justify-center text-muted hover:text-text lg:hidden"
+            className={clsx("inline-flex h-11 w-11 items-center justify-center text-muted hover:text-text", !immersive && "lg:hidden")}
             aria-expanded={open}
             aria-controls="mobile-nav"
             aria-label={open ? "Close menu" : "Open menu"}
@@ -62,7 +64,7 @@ export function Nav() {
         </div>
       </div>
       {open ? (
-        <div id="mobile-nav" className="glass fixed inset-x-0 top-16 bottom-0 overflow-y-auto px-6 pb-10 pt-6 lg:hidden">
+        <div id="mobile-nav" className={clsx("glass fixed inset-x-0 top-16 bottom-0 overflow-y-auto px-6 pb-10 pt-6", !immersive && "lg:hidden")}>
           <nav className="flex flex-col" aria-label="Mobile" onClick={() => setOpen(false)}>
             {[...LINKS, { href: "/me", label: "My units" }, { href: "/qs", label: "Surveyor app" }].map((l, i) => (
               <Link key={l.href} href={l.href} className="flex min-h-14 items-center gap-5 border-b border-[var(--line-soft)]">
