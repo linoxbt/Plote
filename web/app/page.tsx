@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { LinkButton } from "@/components/ui";
 import {
-  ChainChips, FinalCta, HeroCheck, HeroStats, LANDING_ESTATE_SLUG, LiveProofCard, NftShowcase, PhoneMockup, SourceLinks, WatchExampleLink,
+  ChainChips, FinalCta, HeroCheck, HeroStats, LANDING_ESTATE_SLUG, LiveProofCard, PhoneMockup, SourceLinks, WatchExampleLink,
 } from "@/components/landing";
 import { DataField, EstateRing, HudTag, SectionHead } from "@/components/hud";
 import { EstateLinks, LandingShell, WorldFallback } from "@/components/world/landing-shell";
@@ -11,6 +11,7 @@ import { GITHUB_URL, IS_MAINNET } from "@/lib/config";
 import { Mark } from "@/components/logo";
 import { houseSvgDataUri } from "@/lib/svg-house";
 import { FAQ } from "@/components/faq-data";
+import { NftSection } from "@/components/nft-section";
 
 // SPEC §12 — copy is final. Layout: an immersive, scroll-driven WebGL world (components/world)
 // with three pinned stages — the painting (hero), the house that builds itself (how it works) and
@@ -46,15 +47,6 @@ const STEPS: [string, ReactNode, string, string][] = [
 const STEP_ON = ["group-data-[step=0]:opacity-100", "group-data-[step=1]:opacity-100", "group-data-[step=2]:opacity-100", "group-data-[step=3]:opacity-100"];
 const STEP_TXT = ["group-data-[step=0]:text-text", "group-data-[step=1]:text-text", "group-data-[step=2]:text-text", "group-data-[step=3]:text-text"];
 
-const TOKEN: [string, string][] = [
-  ["Holds the money", "your payments sit in the unit's account until a stage is proven."],
-  ["Gets you refunds", "if a deadline passes, the token is what lets you pull your money back."],
-  ["Sells in one step", "list it; a buyer pays, you're paid and the token moves in a single transaction."],
-  ["Protects you if you fall behind", "miss instalments and it's resold for what you paid, minus a fixed 5%. Not forfeited."],
-  ["Gives you a vote", "one per unit: replace the surveyor, veto a sign-off or freeze payments."],
-  ["Opens the gate", "after handover, it's your gate pass and service-charge account."],
-];
-
 const PANEL = "bg-[rgba(2,3,20,0.7)]";
 
 const CORNERS = [
@@ -84,9 +76,10 @@ function Viewfinder() {
           className="absolute inset-[14%] h-[72%] w-[72%] object-contain opacity-80"
         />
       </WorldFallback>
-      <span className="hud-tag absolute left-[7%] top-[7%] text-[7.5px]">Site view</span>
-      <span className="tech absolute right-[7%] top-[7%] text-[8px] text-faint">Proof before payment</span>
-      <span className="hud-tag hud-tag-ghost absolute bottom-[7%] right-[7%] text-[7.5px]">A-4B · Harmattan Court · demo</span>
+      <span className="hud-tag absolute left-[7%] top-[7%] text-[7.5px]">NFT · Token a-4b</span>
+      <span className="tech absolute right-[7%] top-[7%] text-[8px] text-faint">NEP-171 · Art drawn on-chain</span>
+      <span className="tech absolute bottom-[7%] left-[7%] hidden text-[8px] text-faint sm:block">Holds its own escrow</span>
+      <span className="hud-tag hud-tag-ghost absolute bottom-[7%] right-[7%] text-[7.5px]">Harmattan Court · demo</span>
     </div>
   );
 }
@@ -109,19 +102,25 @@ export default function Landing() {
             <div
               className="hero-fade relative mx-auto grid min-h-[100dvh] w-full max-w-6xl grid-cols-1 content-center gap-8 px-5 pb-12 pt-24 sm:px-8 lg:h-full lg:min-h-0 lg:w-[84%] lg:grid-cols-[minmax(0,1fr)_auto] lg:content-center lg:gap-x-14 lg:gap-y-10 lg:px-0 lg:pb-8 lg:pt-20"
             >
-              <div className="order-1 flex justify-center lg:order-2">
+              <div className="order-1 flex flex-col items-center gap-3 lg:order-2">
                 <Viewfinder />
+                <a href="#nft" className="tech inline-flex min-h-11 items-center gap-3 text-[9px] text-muted hover:text-teal">
+                  Inspect the token <span className="block h-px w-8 bg-current" aria-hidden />
+                </a>
               </div>
               <div className="order-2 space-y-6 lg:order-1">
                 <div className="flex items-center gap-3">
                   <Mark size={22} title="" animated />
-                  <span className="tech-wide text-[9.5px] text-muted">Off-plan escrow · Built on NEAR</span>
+                  <span className="tech-wide text-[9.5px] text-muted">Every unit is an NFT · Built on NEAR</span>
                 </div>
                 <KineticTitle
                   text="Pay for the house you can see."
                   className="text-[32px] font-light uppercase leading-[1.05] tracking-[0.04em] text-text sm:text-[46px] lg:text-[52px]"
                 />
-                <p className="max-w-md text-[15px] leading-relaxed text-muted">
+                <p className="max-w-md text-[15px] leading-relaxed text-text/90">
+                  Each off-plan unit is one NFT. The token holds the unit&apos;s escrow, its refund right, its vote and, at handover, its keys.
+                </p>
+                <p className="max-w-md text-[14px] leading-relaxed text-muted">
                   Plote gives every off-plan unit its own account. Your money waits there and moves to the developer only when a photo of the next stage
                   passes an independent check. If the build stalls, you take it back.
                 </p>
@@ -158,9 +157,22 @@ export default function Landing() {
           </div>
         </Section>
 
-        {/* ═════════ 01 · The problem ═════════ */}
+        {/* ═════════ 01 · The NFT is the unit ═════════ */}
+        <Section label="The NFT" id="nft">
+          <SectionHead
+            index="01"
+            label="The NFT"
+            title={<>Your token isn&apos;t a picture. It&apos;s the unit.</>}
+            lead="Hold it and you hold the money, the vote and the keys. Everything below is checked by the contract against whoever holds the token."
+          />
+          <div className="mt-12">
+            <NftSection />
+          </div>
+        </Section>
+
+        {/* ═════════ 02 · The problem ═════════ */}
         <Section label="The problem">
-          <SectionHead index="01" label="The problem" title="Off-plan is a promise. Plote makes it a receipt." />
+          <SectionHead index="02" label="The problem" title="Off-plan is a promise. Plote makes it a receipt." />
           <ol className="mt-10 border-b border-[var(--line)]">
             <Row index="R-01" title="Sold twice.">
               Some developers sell the same unit to more than one buyer. You find out at handover.
@@ -177,14 +189,14 @@ export default function Landing() {
           </div>
         </Section>
 
-        <Marquee rows={["Pay for the house you can see", "Proof before payment · Escrow per unit"]} />
+        <Marquee rows={["Pay for the house you can see", "One unit · One NFT · Its own escrow"]} />
 
         {/* ═════════ Stage 2 · the house builds itself ═════════ */}
         <section id="how" data-world="house" data-step="0" aria-label="How it works" className="group relative h-[420vh]">
           <div className="sticky top-0 h-[100dvh] overflow-hidden">
             <div className="mx-auto flex h-full w-full max-w-6xl flex-col justify-end gap-8 px-5 pb-16 pt-24 sm:px-8 lg:w-[80%] lg:justify-center lg:px-0 lg:pb-0">
               <div className="max-w-md space-y-8" style={{ opacity: "calc(var(--enter, 1) * 1.6 - 0.4 - var(--exit, 0) * 3.2)" }}>
-                <SectionHead index="02" label="How it works" title="Four steps. No middleman holding your money." />
+                <SectionHead index="03" label="How it works" title="Four steps. No middleman holding your money." />
                 <div className="grid [grid-template-areas:'s']">
                   {STEPS.map(([t, b], i) => (
                     <div key={t} className={`space-y-3 opacity-0 transition-opacity duration-500 [grid-area:s] ${STEP_ON[i]}`}>
@@ -215,7 +227,7 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ═════════ Stage 3 · the estate helix ═════════ */}
+        {/* ═════════ Stage 3 · the unit-token helix ═════════ */}
         <section id="estates" data-world="helix" aria-label="Estates" className="relative h-[380vh]">
           <div className="sticky top-0 h-[100dvh] overflow-hidden">
             <div
@@ -223,7 +235,7 @@ export default function Landing() {
               style={{ opacity: "calc(var(--enter, 1) * 1.6 - 0.4 - var(--exit, 0) * 3.2)" }}
             >
               <div className="max-w-sm">
-                <SectionHead index="03" label="Estates" title="Every estate, every unit, in the open." lead="Each plate is a live estate on NEAR. Open one to see its units, its escrow and every proven stage." />
+                <SectionHead index="04" label="Unit NFTs" title="Every unit is a token you can inspect." lead="Each plate is a unit token from a live estate contract. Open one to see who holds it, what it holds and every proven stage." />
               </div>
               <div className="flex items-end justify-between gap-6">
                 <p className="tech text-[8.5px] text-faint">Scroll to turn · Click a plate to open</p>
@@ -240,29 +252,6 @@ export default function Landing() {
             <EstateLinks />
           </div>
         </section>
-
-        {/* ═════════ 04 · The token ═════════ */}
-        <Section label="The token">
-          <div className="grid gap-12 lg:grid-cols-[1.35fr_1fr]">
-            <div>
-              <SectionHead index="04" label="The token" title={<>Your token isn&apos;t a picture. It&apos;s the unit.</>} lead="Hold it and you hold the money, the vote and the keys." />
-              <dl className="mt-10 grid gap-px bg-[var(--line-soft)] sm:grid-cols-2">
-                {TOKEN.map(([t, b], i) => (
-                  <div key={t} className={`${PANEL} p-5`}>
-                    <dt className="flex items-center gap-3">
-                      <span className="tech text-[8.5px] text-teal tabular-nums">{String(i + 1).padStart(2, "0")}</span>
-                      <span className="tech text-[10px] text-text">{t}</span>
-                    </dt>
-                    <dd className="mt-2 text-[12px] text-muted">— {b}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-            <div className="lg:pt-16">
-              <NftShowcase />
-            </div>
-          </div>
-        </Section>
 
         {/* ═════════ 05 · Data points ═════════ */}
         <Section label="Proof" id="proof">
