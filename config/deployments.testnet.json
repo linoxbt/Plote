@@ -1,0 +1,12 @@
+{
+  "account:dev-harmattan": "dev-harmattan.plote.testnet",
+  "account:qs-adaeze": "qs-adaeze.plote.testnet",
+  "account:relayer": "relayer.plote.testnet",
+  "account:buyer-1": "buyer-1.plote.testnet",
+  "account:buyer-2": "buyer-2.plote.testnet",
+  "account:buyer-3": "buyer-3.plote.testnet",
+  "account:buyer-4": "buyer-4.plote.testnet",
+  "account:judge": "judge.plote.testnet",
+  "usdc": "musdc.plote.testnet",
+  "unit_code_hash": "75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9"
+}

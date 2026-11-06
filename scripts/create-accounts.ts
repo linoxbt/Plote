@@ -6,14 +6,15 @@ import { NETWORK, ROOT, ROOT_ACCOUNT, account, ensureSubAccount, loadKey, log, r
 if (NETWORK !== "testnet") usage("testnet only");
 const root = account(ROOT_ACCOUNT);
 const plan: [string, string][] = [
-  ["dev-harmattan", "5"],
-  ["qs-adaeze", "2"],
-  ["relayer", "5"],
-  ["buyer-1", "2"],
-  ["buyer-2", "2"],
-  ["buyer-3", "2"],
-  ["buyer-4", "2"],
-  ["judge", "3"],
+  // Right-sized for testnet faucet budgets: enough for each role's gas, storage and add_units deposits.
+  ["dev-harmattan", "4"], // pays add_units (0.035 NEAR/unit) for all three estates
+  ["qs-adaeze", "1.5"],
+  ["relayer", "3"], // pays gas for gasless surveyor/buyer calls (fractions of a cent each)
+  ["buyer-1", "1.5"],
+  ["buyer-2", "1.5"],
+  ["buyer-3", "1.5"],
+  ["buyer-4", "1.5"],
+  ["judge", "2"],
 ];
 for (const [prefix, amount] of plan) {
   const id = await ensureSubAccount(root, prefix, amount);

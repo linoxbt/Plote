@@ -3,7 +3,7 @@ import { NETWORK, ROOT_ACCOUNT, TGAS, account, call, ensureSubAccount, log, reco
 
 if (NETWORK !== "testnet") usage("mock USDC is testnet-only; mainnet uses Circle USDC");
 const root = account(ROOT_ACCOUNT);
-const id = await ensureSubAccount(root, "musdc", "5");
+const id = await ensureSubAccount(root, "musdc", "2.5"); // ~1.5 NEAR of contract storage + headroom
 const musdc = account(id);
 await musdc.deployContract(wasm("plote_musdc"));
 try {

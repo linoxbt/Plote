@@ -27,7 +27,7 @@ const usdc = dep.usdc ?? usage("deploy mock USDC first (deployments.usdc missing
 const hash = dep.unit_code_hash ?? usage("publish the global unit code first (deployments.unit_code_hash missing)");
 const root = account(ROOT_ACCOUNT);
 const id = estateId(cfg);
-await ensureSubAccount(root, id, "10");
+await ensureSubAccount(root, id, "7"); // ~5.7 NEAR of contract storage + state headroom
 const estate = account(id);
 await estate.deployContract(wasm("plote_estate"));
 
