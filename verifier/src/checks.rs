@@ -32,6 +32,8 @@ pub struct Verdict {
     pub ai_stage: Option<String>,
     pub ai_confidence: Option<u8>,
     pub challenge_read: Option<String>,
+    /// The model's short notes on the photo (SPEC 6.4 `observations`), for the proof page.
+    pub ai_observations: Vec<String>,
     pub ai_chat_id: Option<String>,
     pub worker_commit: String,
     pub attestation: Option<String>,
@@ -53,6 +55,7 @@ impl Verdict {
             ai_stage: None,
             ai_confidence: None,
             challenge_read: None,
+            ai_observations: vec![],
             ai_chat_id: None,
             worker_commit: crate::WORKER_COMMIT.to_string(),
             attestation: None,
@@ -87,12 +90,13 @@ pub struct ImageFacts {
     pub phash: u64,
 }
 
-/// Whether a failing code is softened by the run mode.
+/// Whether a failing code is softened by the run mode (SPEC 6.1): `ai_unavailable` in demo mode;
+/// stage, confidence and geofence in the playground. Everything else (hash, freshness, reuse, screen
+/// photo, challenge) always fails.
 fn is_warning(code: &str, demo: bool, playground: bool) -> bool {
     match code {
         "ai_unavailable" => demo,
-        "ai_stage_mismatch" | "ai_low_confidence" | "outside_geofence" | "gps_missing"
-        | "exif_missing" | "exif_stale" => playground,
+        "ai_stage_mismatch" | "ai_low_confidence" | "outside_geofence" => playground,
         _ => false,
     }
 }
@@ -237,6 +241,7 @@ pub fn decide(
             r.v.ai_stage = Some(answer.stage.clone());
             r.v.ai_confidence = Some(answer.confidence);
             r.v.challenge_read = answer.challenge_read.clone();
+            r.v.ai_observations = answer.observations.clone();
             r.v.ai_chat_id = chat_id.clone();
             if *mocked {
                 r.v.warnings.push("ai_mock".into());
@@ -259,14 +264,9 @@ pub fn decide(
 
     // 8. Challenge.
     match answer {
-        None => {
-            // The code can't be read without the model.
-            if input.demo_mode || input.playground {
-                r.v.warnings.push("challenge_unverified".into());
-            } else {
-                r.flag("ai_unavailable");
-            }
-        }
+        // The code can't be read without the model, and the challenge check fails hard in every
+        // mode (SPEC 6.1): a demo-mode AI outage softens `ai_unavailable`, not the challenge.
+        None => r.flag("challenge_unverified"),
         Some(a) => match challenge::compare(&input.challenge, a.challenge_read.as_deref()) {
             ChallengeResult::Match => {}
             ChallengeResult::Missing => r.flag("challenge_missing"),
@@ -341,6 +341,7 @@ mod tests {
                 is_photo_of_screen_or_print: false,
                 is_render: false,
                 challenge_read: Some("K7RQ4M".into()),
+                observations: vec!["roof trusses in place".into(), "paper with code".into()],
             },
             mocked: false,
         }
@@ -399,6 +400,10 @@ mod tests {
         assert_eq!(v.ai_confidence, Some(88));
         assert_eq!(v.challenge_read.as_deref(), Some("K7RQ4M"));
         assert_eq!(v.ai_chat_id.as_deref(), Some("chatcmpl-1"));
+        assert_eq!(
+            v.ai_observations,
+            vec!["roof trusses in place", "paper with code"]
+        );
         assert_eq!(v.attestation, None);
     }
 
@@ -641,10 +646,13 @@ mod tests {
     #[test]
     fn demo_mode_downgrades_ai_unavailable_only() {
         let demo = |j: &mut serde_json::Value| j["demo_mode"] = true.into();
+        // ai_unavailable is a warning, but nobody read the code: the challenge check fails.
         let (v, _) = run(demo, img(|_| {}), unavailable());
-        assert!(v.pass, "{v:?}");
-        assert_eq!(v.warnings, vec!["ai_unavailable", "challenge_unverified"]);
+        assert!(!v.pass, "{v:?}");
+        assert_eq!(v.warnings, vec!["ai_unavailable"]);
+        assert_eq!(v.reasons, vec!["challenge_unverified"]);
         assert_eq!(v.ai_stage, None);
+        assert!(v.ai_observations.is_empty());
         // Stage mismatch is still hard in demo mode.
         let (v, _) = run(demo, img(|_| {}), with_answer(|a| a.stage = "walls".into()));
         assert_eq!(v.reasons, vec!["ai_stage_mismatch"]);
@@ -677,28 +685,35 @@ mod tests {
             v.warnings,
             vec!["outside_geofence", "ai_stage_mismatch", "ai_low_confidence"]
         );
-        // gps missing + exif missing -> warnings
-        let (v, _) = run(
-            pg,
-            img(|f| {
-                f.exif_gps = None;
-                f.exif_time = None;
-            }),
-            good_answer(),
+        // Freshness and a missing location are never softened (SPEC 6.1 lists only stage,
+        // confidence and geofence for the playground).
+        let (v, c) = run(pg, img(|f| f.exif_time = None), good_answer());
+        assert_eq!(
+            (v.reasons.clone(), c),
+            (vec!["exif_missing".to_string()], false)
         );
-        assert!(v.pass, "{v:?}");
-        assert_eq!(v.warnings, vec!["exif_missing", "gps_missing"]);
-        // exif stale -> warning; exif_future stays hard
+        assert!(v.warnings.is_empty());
+        let (v, _) = run(pg, img(|f| f.exif_gps = None), good_answer());
+        assert_eq!(v.reasons, vec!["gps_missing"]);
         let (v, _) = run(
             pg,
             img(|f| f.exif_time = Some(NOW - 100 * H)),
             good_answer(),
         );
-        assert!(v.warnings.contains(&"exif_stale".to_string()));
-        // ...but a photo that old is also before the capture opened: hard.
-        assert_eq!(v.reasons, vec!["exif_before_capture"]);
+        assert_eq!(v.reasons, vec!["exif_stale"]);
         let (v, _) = run(pg, img(|f| f.exif_time = Some(NOW + H)), good_answer());
         assert_eq!(v.reasons, vec!["exif_future"]);
+        // A playground photo with a wrong or unreadable code still fails.
+        let (v, _) = run(
+            pg,
+            img(|_| {}),
+            with_answer(|a| {
+                a.stage = "not_construction".into();
+                a.challenge_read = Some("ZZZZZZ".into());
+            }),
+        );
+        assert_eq!(v.warnings, vec!["ai_stage_mismatch"]);
+        assert_eq!(v.reasons, vec!["challenge_mismatch"]);
         // Screen photo stays hard.
         let (v, _) = run(
             pg,
@@ -713,6 +728,7 @@ mod tests {
 
     #[test]
     fn playground_plus_demo_with_ai_down() {
+        // Even with every softening on, an unread challenge fails hard.
         let (v, _) = run(
             |j| {
                 j["playground"] = true.into();
@@ -722,8 +738,30 @@ mod tests {
             img(|_| {}),
             unavailable(),
         );
-        assert!(v.pass);
-        assert_eq!(v.warnings, vec!["ai_unavailable", "challenge_unverified"]);
+        assert!(!v.pass);
+        assert_eq!(v.warnings, vec!["ai_unavailable"]);
+        assert_eq!(v.reasons, vec!["challenge_unverified"]);
+    }
+
+    #[test]
+    fn challenge_unverified_is_hard_in_every_mode() {
+        for (demo, pg) in [(false, false), (true, false), (false, true), (true, true)] {
+            let (v, _) = run(
+                |j| {
+                    j["demo_mode"] = demo.into();
+                    j["playground"] = pg.into();
+                },
+                img(|_| {}),
+                unavailable(),
+            );
+            assert!(!v.pass, "demo={demo} playground={pg}: {v:?}");
+            assert!(!v.warnings.iter().any(|w| w.starts_with("challenge")));
+            if demo {
+                assert_eq!(v.reasons, vec!["challenge_unverified"]);
+            } else {
+                assert_eq!(v.reasons, vec!["ai_unavailable"]);
+            }
+        }
     }
 
     #[test]
@@ -777,13 +815,15 @@ mod tests {
             "ai_stage",
             "ai_confidence",
             "challenge_read",
+            "ai_observations",
             "ai_chat_id",
             "worker_commit",
             "attestation",
         ] {
             assert!(keys.contains(&k), "missing {k}");
         }
-        assert_eq!(keys.len(), 16);
+        assert_eq!(keys.len(), 17);
+        assert!(j["ai_observations"].is_array());
         assert!(j["exif_time"].is_u64());
         assert!(j["attestation"].is_null());
     }

@@ -31,6 +31,9 @@ new({
   "verdict_relayer": "relayer.plote.testnet",      // optional; may call submit_verdict (HTTPS fallback, SPEC 6.6)
   "verifier": { "repo": "https://github.com/<you>/plote-verifier", "commit": "<sha>", "build_target": "wasm32-wasip2" },
   // or a deployed OutLayer project: { "repo": "project:plote.testnet/plote-verifier", "commit": "<version_key or empty>", "build_target": "wasm32-wasip2" }
+  // GitHub source with a non-empty commit: a verdict whose worker_commit differs (case-insensitive) is stored as
+  // EvidenceStatus "Error" (milestone back to Open), like unparsable output. scripts/deploy-estate.ts refuses an
+  // empty commit/version_key unless run with --allow-unpinned.
   "unit_code_hash": "<base58 sha256 of plote_unit.wasm>",           // required: NEP-591 global contract hash
   "verify_mode": "outlayer",                                         // or "https" (needs verdict_relayer; SPEC 6.6)
   "name": "Harmattan Court",
@@ -89,7 +92,7 @@ Rules: `sum(milestones.bps) + mobilisation_bps == 10000`, `mobilisation_bps <= 1
 | `clear_lien` | `{ unit_id }` | the lender | — |
 | `open_capture` | `{ milestone: u8 }` | surveyor (anyone if playground) | `String` (6-char code) |
 | `submit_evidence` | `{ milestone: u8, url, sha256, captured_at: U64, device_gps: [i32, i32] \| null }` | surveyor (anyone if playground) | `U64` evidence id |
-| `submit_verdict` | `{ evidence_id: U64, verdict: Verdict }` | only `verdict_relayer` (HTTPS fallback) | — |
+| `submit_verdict` | `{ evidence_id: U64, verdict: Verdict }` | only `verdict_relayer`, and only when `verify_mode == "https"` (else `E_VERIFY_MODE`) | `bool` (pass) |
 | `qs_sign` | `{ milestone: u8 }` | surveyor (anyone if playground) | — |
 | `claim_release` | `{ unit_ids: [String] }` (≤ 6; gas) | anyone (funds go to `payout_id`) | Promise |
 | `withdraw_owed` | `{}` | anyone with an owed balance | Promise |
@@ -195,7 +198,9 @@ type Verdict = {
   phash: string; nearest_distance: number;
   exif_time: string | null; gps: [number, number] | null; gps_source: "exif" | "device" | null;
   distance_m: number | null; ai_stage: string | null; ai_confidence: number | null;
-  challenge_read: string | null; ai_chat_id: string | null;
+  challenge_read: string | null;
+  ai_observations: string[];            // the model's short notes (SPEC 6.4 "observations"), ≤ 4 × ≤ 160 chars; [] if none
+  ai_chat_id: string | null;
   worker_commit: string; attestation: string | null;
   source: "outlayer" | "https";
 };
@@ -231,7 +236,11 @@ type DevStats = {
 `defaulted {unit_id, ask}` · `listed {unit_id, ask, kind}` · `sold {unit_id, from, to, price}` ·
 `frozen {reason, refunds_open}` · `unfrozen {}` · `surveyor_changed {old, new}` · `handed_over {unit_id}` ·
 `proposal_created {proposal_id, kind, proposer, expires_at}` · `voted {proposal_id, voter, approve, tokens}` ·
-`proposal_executed {proposal_id}` · `proposal_rejected {proposal_id}` · `playground_reset {}`.
+`proposal_executed {proposal_id}` · `proposal_rejected {proposal_id}` · `payout_redirected {old, new}` (executed `StepIn`) ·
+`playground_reset {}`.
+
+`verdict.reasons` in the `verdict` event is `["worker_error"]` when OutLayer failed or the output was unparsable, and
+`["worker_commit_mismatch"]` when the verdict came from another build than the pinned commit.
 
 ### 1.5 Error codes
 
@@ -240,7 +249,11 @@ E_UNIT_NOT_FOUND E_UNIT_EXISTS E_BAD_UNIT_ID E_BALANCE_PENDING E_RESERVATION_ACT
 E_MILESTONE_STATE E_NOT_VERIFIED E_VETO_WINDOW E_FROZEN E_NO_REFUND_YET E_NOTHING_TO_REFUND E_LIEN E_LISTING
 E_UNDERPAID E_IN_FLIGHT E_BUDGET E_BAD_TOKEN E_BPS_SUM E_DEADLINES E_NO_CHALLENGE E_CHALLENGE_EXPIRED
 E_NOTHING_TO_SWEEP E_NO_EXCESS E_NOT_ELIGIBLE E_ALREADY_VOTED E_PROPOSAL_STATE E_PROPOSAL_OPEN E_PLAYGROUND_ONLY
-E_NOT_DUE E_HANDOVER E_RECOVERY E_TOO_MANY E_BAD_ARGS E_NOT_UNIT E_ALREADY_SOLD`
+E_NOT_DUE E_HANDOVER E_RECOVERY E_TOO_MANY E_BAD_ARGS E_NOT_UNIT E_ALREADY_SOLD E_VERIFY_MODE E_NOT_ESTATE E_STORAGE`
+
+`E_VERIFY_MODE`: `submit_verdict` on an estate whose `verify_mode` isn't `"https"`. `E_NOT_ESTATE` (plote-unit): a
+caller other than the estate tried to initialise the unit or move its funds. `E_STORAGE` (plote-musdc): the receiver
+isn't registered on the token and no storage deposit was attached.
 
 ---
 
@@ -265,4 +278,8 @@ receiver if needed when ≥ 0.00125 NEAR is attached. Name "Plote test USDC", sy
 
 See SPEC §6.3. stdin adds `"playground": bool`, `"challenge": "K7RQ4M"`, `"challenge_opened_at": U64-as-number`.
 stdout (one line JSON): `Verdict` fields above **minus** `source`, plus `evidence_id`. Numbers for `exif_time` may be
-numbers or strings; the estate accepts both.
+numbers or strings; the estate accepts both. `ai_observations` is the model's `observations` list (strings only, ≤ 4).
+
+Run modes (SPEC 6.1): `demo_mode` turns `ai_unavailable` into a warning; `playground` turns `ai_stage_mismatch`,
+`ai_low_confidence` and `outside_geofence` into warnings. Nothing else is ever softened: when the model can't be asked,
+the challenge can't be read, so the verdict fails with `challenge_unverified` in every mode.

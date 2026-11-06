@@ -286,12 +286,8 @@ impl Env {
     }
 
     fn verdict(&mut self, ev: u64, pass: bool, reasons: &[&str]) -> bool {
-        let v = json!({ "evidence_id": ev, "pass": pass, "reasons": reasons, "warnings": [], "phash": PHASH,
-            "nearest_distance": 27, "exif_time": 1793739420000000000u64, "gps": [6447118, 3474201], "gps_source": "exif",
-            "distance_m": 23, "ai_stage": "roofing", "ai_confidence": 88, "challenge_read": "K7RQ4M", "ai_chat_id": "chatcmpl-1",
-            "worker_commit": "abc" });
-        self.cb(vec![PromiseResult::Successful(v.to_string().into_bytes())]);
-        self.c.on_verdict(ev)
+        let v = Self::verdict_json(ev, pass, reasons, "abc");
+        self.resume(ev, &v)
     }
 
     /// Conservation (SPEC 5.10 #2) for every unit, against the simulated chain balances.
@@ -308,13 +304,71 @@ impl Env {
                 id,
                 (u.paid, u.unattributed, u.released, u.refunded_out, bal)
             );
+        }
+        self.check_release_cap();
+    }
+
+    /// Release cap (SPEC 5.10 #3): `released ≤ min(paid, price) × approved_bps / 10_000`, for every unit.
+    fn check_release_cap(&self) {
+        let bps = self.c.approved_bps(self.now);
+        for id in self.bal.keys() {
+            let u = self.unit(id);
+            let cap = u.paid.0.min(u.price.0) * bps / BPS;
             assert!(
-                u.released.0 <= u.paid.0.min(u.price.0),
-                "release cap broken for {}",
-                id
+                u.released.0 <= cap,
+                "release cap broken for {}: released {} > min(paid {}, price {}) × {} bps",
+                id,
+                u.released.0,
+                u.paid.0,
+                u.price.0,
+                bps
             );
+            assert_eq!(u.approved_bps as u128, bps);
         }
     }
+
+    /// A verdict as the worker prints it, from `worker_commit`.
+    fn verdict_json(ev: u64, pass: bool, reasons: &[&str], commit: &str) -> serde_json::Value {
+        json!({ "evidence_id": ev, "pass": pass, "reasons": reasons, "warnings": [], "phash": PHASH,
+            "nearest_distance": 27, "exif_time": 1793739420000000000u64, "gps": [6447118, 3474201], "gps_source": "exif",
+            "distance_m": 23, "ai_stage": "roofing", "ai_confidence": 88, "challenge_read": "K7RQ4M", "ai_chat_id": "chatcmpl-1",
+            "ai_observations": ["roof trusses in place", "paper with code visible"], "worker_commit": commit })
+    }
+
+    /// OutLayer resumes `on_verdict` with this JSON.
+    fn resume(&mut self, ev: u64, v: &serde_json::Value) -> bool {
+        self.cb(vec![PromiseResult::Successful(v.to_string().into_bytes())]);
+        self.c.on_verdict(ev)
+    }
+}
+
+/// The worker's JSON as the contract's `Verdict` (the relayer route sends `exif_time` as a string).
+fn verdict_of(v: serde_json::Value) -> Verdict {
+    extract_verdict(&v, 0).unwrap().0
+}
+
+/// Every `transfer_out` receipt created by the last call: (unit account, receiver, amount).
+fn transfer_outs() -> Vec<(AccountId, AccountId, u128)> {
+    let mut out = vec![];
+    for r in get_created_receipts() {
+        for a in r.actions {
+            if let MockAction::FunctionCallWeight {
+                method_name, args, ..
+            } = a
+            {
+                if method_name == b"transfer_out" {
+                    let v: serde_json::Value = serde_json::from_slice(&args).unwrap();
+                    let amt: u128 = v["amount"].as_str().unwrap().parse().unwrap();
+                    out.push((
+                        r.receiver_id.clone(),
+                        v["receiver_id"].as_str().unwrap().parse().unwrap(),
+                        amt,
+                    ));
+                }
+            }
+        }
+    }
+    out
 }
 
 fn ft_transfers() -> Vec<(String, AccountId, u128)> {
@@ -1025,9 +1079,10 @@ fn verify_extracts_wrapped_verdicts() {
 #[test]
 fn verify_https_fallback_by_relayer_only() {
     let mut e = Env::standard();
+    e.c.verify_mode = "https".into();
     let ev = e.submit(0, "qs.testnet");
     let v: Verdict =
-        serde_json::from_value(json!({ "pass": true, "phash": PHASH, "worker_commit": "c" }))
+        serde_json::from_value(json!({ "pass": true, "phash": PHASH, "worker_commit": "abc" }))
             .unwrap();
     e.as_("mallory.testnet");
     let v2 = v.clone();
@@ -1074,6 +1129,144 @@ fn verify_budget_enforced() {
             e.c.submit_evidence(0, "https://x/1.jpg".into(), "a".repeat(64), U64(0), None);
         }),
     );
+}
+
+#[test]
+fn verify_submit_verdict_rejected_in_outlayer_mode() {
+    // SPEC 3 / 6.6: an OutLayer-mode estate takes verdicts only from OutLayer's callback, never the relayer.
+    let mut e = Env::standard();
+    assert_eq!(e.c.get_estate().verify_mode, "outlayer");
+    let ev = e.submit(0, "qs.testnet");
+    let v: Verdict =
+        serde_json::from_value(json!({ "pass": true, "phash": PHASH, "worker_commit": "abc" }))
+            .unwrap();
+    e.as_("relayer.testnet");
+    panics(
+        "E_VERIFY_MODE",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.submit_verdict(U64(ev), v);
+        }),
+    );
+    let got = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(got.status, EvidenceStatus::Pending);
+    assert!(got.verdict.is_none());
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Checking);
+}
+
+#[test]
+fn verify_submit_verdict_accepted_in_https_mode() {
+    let d = [
+        T0 + 60 * MIN,
+        T0 + 120 * MIN,
+        T0 + 180 * MIN,
+        T0 + 240 * MIN,
+    ];
+    let mut a = new_args(params(false), d);
+    a.verify_mode = Some("https".into());
+    let mut e = fresh(a);
+    assert_eq!(e.c.get_estate().verify_mode, "https");
+    let budget = e.c.verification_budget;
+    let ev = e.submit(0, "qs.testnet");
+    // No OutLayer call and no budget spent in https mode.
+    assert!(get_created_receipts().is_empty());
+    assert_eq!(e.c.verification_budget, budget);
+    let v: Verdict = verdict_of(Env::verdict_json(ev, true, &[], "abc"));
+    e.as_("relayer.testnet");
+    assert!(e.c.submit_verdict(U64(ev), v));
+    let got = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(got.status, EvidenceStatus::Pass);
+    assert_eq!(got.verdict.unwrap().source.as_deref(), Some("https"));
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Verified);
+}
+
+#[test]
+fn verify_worker_commit_must_match_pinned_commit() {
+    // GitHub source pinned to "abc" (SPEC 5.6): a verdict from another build is an Error, not a verdict.
+    let mut e = Env::standard();
+    let ev = e.submit(0, "qs.testnet");
+    let v = Env::verdict_json(ev, true, &[], "deadbeef");
+    assert!(!e.resume(ev, &v));
+    let got = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(got.status, EvidenceStatus::Error);
+    assert!(got.verdict.is_none());
+    assert!(got.raw_response_hash.is_some());
+    assert!(got
+        .error
+        .unwrap()
+        .contains("does not match the pinned verifier commit abc"));
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Open);
+    assert!(get_logs()
+        .iter()
+        .any(|l| l.contains("worker_commit_mismatch")));
+    assert_eq!(e.c.dev_stats().evidence_passed, 0);
+    // The surveyor resubmits; the pinned build's verdict lands (commit compared case-insensitively).
+    let ev2 = e.submit(0, "qs.testnet");
+    assert!(e.resume(ev2, &Env::verdict_json(ev2, true, &[], "ABC")));
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Verified);
+
+    // The same rule on the HTTPS path (own thread: the mocked chain is thread-local).
+    std::thread::spawn(https_commit_mismatch).join().unwrap();
+
+    // Unpinned GitHub commit or an OutLayer project source: worker_commit isn't compared.
+    for (repo, commit) in [
+        ("https://github.com/x/plote-verifier", ""),
+        ("project:plote.testnet/plote-verifier", "v3"),
+    ] {
+        std::thread::spawn(move || {
+            let mut e = Env::standard();
+            e.c.verifier.repo = repo.into();
+            e.c.verifier.commit = commit.into();
+            let ev = e.submit(0, "qs.testnet");
+            assert!(e.resume(ev, &Env::verdict_json(ev, true, &[], "anything")));
+        })
+        .join()
+        .unwrap();
+    }
+}
+
+fn https_commit_mismatch() {
+    let mut e = Env::standard();
+    e.c.verify_mode = "https".into();
+    let ev = e.submit(0, "qs.testnet");
+    let v: Verdict = verdict_of(Env::verdict_json(ev, true, &[], "other"));
+    e.as_("relayer.testnet");
+    assert!(!e.c.submit_verdict(U64(ev), v));
+    assert_eq!(
+        e.c.get_evidence(U64(ev)).unwrap().status,
+        EvidenceStatus::Error
+    );
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Open);
+}
+
+#[test]
+fn verify_ai_observations_stored_and_bounded() {
+    let mut e = Env::standard();
+    let ev = e.submit(1, "qs.testnet");
+    let mut v = Env::verdict_json(ev, true, &[], "abc");
+    v["ai_observations"] = json!(["a", "b", "x".repeat(500), "d", "e", "f"]);
+    assert!(e.resume(ev, &v));
+    let obs =
+        e.c.get_evidence(U64(ev))
+            .unwrap()
+            .verdict
+            .unwrap()
+            .ai_observations;
+    assert_eq!(obs.len(), 4);
+    assert_eq!(obs[0], "a");
+    assert_eq!(obs[2].chars().count(), 160);
+    // Older workers that don't send observations still parse.
+    let ev2 = e.submit(0, "qs.testnet");
+    let mut v = Env::verdict_json(ev2, true, &[], "abc");
+    v.as_object_mut().unwrap().remove("ai_observations");
+    assert!(e.resume(ev2, &v));
+    assert!(e
+        .c
+        .get_evidence(U64(ev2))
+        .unwrap()
+        .verdict
+        .unwrap()
+        .ai_observations
+        .is_empty());
 }
 
 // ---------------------------------------------------------------- votes
@@ -1225,6 +1418,42 @@ fn vote_token_allocated_after_proposal_cant_vote() {
         e.c.get_proposal(pid).unwrap().status,
         ProposalStatus::Expired
     );
+}
+
+#[test]
+fn vote_step_in_redirects_payout_and_emits_event() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    e.approve_milestone(0);
+    e.advance(3 * MIN);
+    e.as_("alice.testnet");
+    let pid = e.c.propose(ProposalKind::StepIn {
+        new_payout_id: acc("contractor.testnet"),
+    });
+    e.as_("alice.testnet");
+    e.c.vote(pid, true);
+    let logs = get_logs();
+    let ev = logs
+        .iter()
+        .find(|l| l.contains("\"payout_redirected\""))
+        .expect("StepIn emits payout_redirected");
+    let j: serde_json::Value =
+        serde_json::from_str(ev.strip_prefix("EVENT_JSON:").unwrap()).unwrap();
+    assert_eq!(j["standard"], "plote");
+    assert_eq!(j["version"], "1.0.0");
+    assert_eq!(j["data"][0]["old"], "payout.testnet");
+    assert_eq!(j["data"][0]["new"], "contractor.testnet");
+    assert!(logs.iter().any(|l| l.contains("proposal_executed")));
+    assert_eq!(
+        e.c.get_estate().payout_redirect,
+        Some(acc("contractor.testnet"))
+    );
+    // Releases now go to the replacement contractor.
+    e.as_("anyone.testnet");
+    e.c.claim_release(vec!["a-4b".into()]);
+    let outs = transfer_outs();
+    assert_eq!(outs.len(), 1);
+    assert_eq!(outs[0].1, acc("contractor.testnet"));
 }
 
 // ---------------------------------------------------------------- playground
@@ -1392,9 +1621,44 @@ fn handover_requires_last_milestone() {
 
 // ---------------------------------------------------------------- invariants
 
-/// Randomised sequence of 200 actions; conservation and the release cap hold after each.
-#[test]
-fn invariants_conservation() {
+/// Where a unit's USDC may go (SPEC 5.10 #4), from the unit's state before the call: the payout account
+/// (release), the holder or the holder's lender (refund, excess), the current or last reserver
+/// (expired/cancelled reservation, late claim), or recovery_id (swept unattributed money).
+fn assert_exits(e: &Env, before: &UnitView, kind: &str, seen: &mut HashMap<String, u32>) {
+    let outs = transfer_outs();
+    for (from, to, amount) in &outs {
+        assert_eq!(
+            from, &before.account,
+            "{} moved money out of another unit",
+            kind
+        );
+        let allowed = match kind {
+            "release" => to == &e.c.payout_account(),
+            "refund" => {
+                before.holder.as_ref() == Some(to)
+                    || before.lien.as_ref().map(|l| &l.lender) == Some(to)
+            }
+            "excess" => before.holder.as_ref() == Some(to),
+            "reservation" => before.reservation.as_ref().map(|r| &r.by) == Some(to),
+            "sweep" => {
+                before.last_reservation.as_ref().map(|r| &r.by) == Some(to)
+                    || to == &acc("plote.testnet")
+            }
+            _ => false,
+        };
+        assert!(
+            allowed,
+            "{} of {} from {} went to {}, which isn't allowed",
+            kind, amount, before.id, to
+        );
+        *seen.entry(kind.to_string()).or_default() += 1;
+    }
+}
+
+/// Randomised sequence of actions. After each: conservation (#2), the release cap against
+/// approved_bps (#3), and every transfer out of a unit goes to an allowed place (#4).
+/// Returns how many transfers of each kind it saw.
+fn random_walk(mut seed: u64, steps: usize) -> HashMap<String, u32> {
     let d = [T0 + 40 * MIN, T0 + 80 * MIN, T0 + 400 * MIN, T0 + 800 * MIN];
     let units = [
         ("u-1", PRICE, vec![]),
@@ -1404,18 +1668,18 @@ fn invariants_conservation() {
     let mut e = Env::new_with(params(false), d, &units);
     let ids = ["u-1", "u-2", "u-3"];
     let people = ["alice.testnet", "bob.testnet", "carol.testnet"];
-    let mut seed: u64 = 0x9e3779b97f4a7c15;
+    let mut seen = HashMap::new();
     let mut rnd = |n: u64| {
         seed ^= seed << 13;
         seed ^= seed >> 7;
         seed ^= seed << 17;
         seed % n
     };
-    for _ in 0..200 {
+    for _ in 0..steps {
         let id = ids[rnd(3) as usize];
         let who = people[rnd(3) as usize];
         let u = e.unit(id);
-        match rnd(9) {
+        match rnd(10) {
             0 if u.status == UnitStatus::Available && u.unattributed.0 <= USDC => {
                 e.reserve(id, who)
             }
@@ -1442,6 +1706,7 @@ fn invariants_conservation() {
                 if due > 0 && u.in_flight.0 == 0 {
                     e.as_("anyone.testnet");
                     e.c.claim_release(vec![id.into()]);
+                    assert_exits(&e, &u, "release", &mut seen);
                     let ok = rnd(4) != 0;
                     e.finish_out(id, OutKind::Release, "payout.testnet", due, ok);
                 }
@@ -1451,6 +1716,7 @@ fn invariants_conservation() {
                     let holder = u.holder.clone().unwrap();
                     e.ctx(&holder, NearToken::from_yoctonear(1), vec![]);
                     let _ = e.c.refund(id.into());
+                    assert_exits(&e, &u, "refund", &mut seen);
                     let to = u
                         .lien
                         .as_ref()
@@ -1465,6 +1731,7 @@ fn invariants_conservation() {
                     let holder = u.holder.clone().unwrap();
                     e.ctx(&holder, NearToken::from_yoctonear(1), vec![]);
                     let _ = e.c.withdraw_excess(id.into());
+                    assert_exits(&e, &u, "excess", &mut seen);
                     e.finish_out(id, OutKind::Excess, holder.as_str(), u.excess_now.0, true);
                 }
             }
@@ -1472,11 +1739,23 @@ fn invariants_conservation() {
                 if u.unattributed.0 > USDC && u.in_flight.0 == 0 {
                     e.as_("anyone.testnet");
                     let _ = e.c.sweep_unattributed(id.into());
+                    assert_exits(&e, &u, "sweep", &mut seen);
                     let to = match &u.last_reservation {
                         Some(r) if e.now < r.expires_at.0 + 10 * MIN => r.by.to_string(),
                         _ => "plote.testnet".to_string(),
                     };
                     e.finish_out(id, OutKind::Sweep, &to, u.unattributed.0, true);
+                }
+            }
+            8 => {
+                if u.status == UnitStatus::Reserved && u.in_flight.0 == 0 {
+                    let r = u.reservation.clone().unwrap();
+                    e.as_(r.by.as_str());
+                    if let PromiseOrValue::Promise(_) = e.c.cancel_reservation(id.into()) {
+                        assert_exits(&e, &u, "reservation", &mut seen);
+                        let amt = u.paid.0 - u.refunded_out.0;
+                        e.finish_out(id, OutKind::ReservationRefund, r.by.as_str(), amt, true);
+                    }
                 }
             }
             _ => {
@@ -1486,6 +1765,7 @@ fn invariants_conservation() {
                         if e.now >= r.expires_at.0 {
                             e.as_("anyone.testnet");
                             if let PromiseOrValue::Promise(_) = e.c.expire_reservation(id.into()) {
+                                assert_exits(&e, &u, "reservation", &mut seen);
                                 let by = r.by.to_string();
                                 let amt = u.paid.0 - u.refunded_out.0;
                                 e.finish_out(id, OutKind::ReservationRefund, &by, amt, true);
@@ -1497,6 +1777,228 @@ fn invariants_conservation() {
         }
         e.check_conservation();
     }
+    seen
+}
+
+/// SPEC 5.10 #2 (and #3, #4 on the way): 200 random actions.
+#[test]
+fn invariants_conservation() {
+    random_walk(0x9e3779b97f4a7c15, 200);
+}
+
+/// SPEC 5.10 #3: the cap follows approved_bps exactly — nothing before the veto window ends, the
+/// stage's share of min(paid, price) after it, and never more.
+#[test]
+fn invariants_release_cap_against_approved_bps() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", PRICE + 5_000 * USDC); // overpaid: the cap uses price
+    e.buy("a-1a", "bob.testnet", 10_000 * USDC); // underpaid: the cap uses paid
+    e.approve_milestone(0);
+    e.check_release_cap();
+    assert_eq!(e.c.approved_bps(e.now), 0, "veto window still open");
+    assert_eq!(e.unit("a-4b").releasable_now.0, 0);
+    e.advance(3 * MIN);
+    assert_eq!(e.c.approved_bps(e.now), 2_000);
+    for (id, base) in [("a-4b", PRICE), ("a-1a", 10_000 * USDC)] {
+        let due = e.unit(id).releasable_now.0;
+        assert_eq!(due, base * 2_000 / BPS);
+        e.as_("anyone.testnet");
+        e.c.claim_release(vec![id.into()]);
+        e.finish_out(id, OutKind::Release, "payout.testnet", due, true);
+        e.check_release_cap();
+        assert_eq!(e.unit(id).released.0, base * 2_000 / BPS);
+        assert_eq!(
+            e.unit(id).releasable_now.0,
+            0,
+            "nothing more until the next stage"
+        );
+    }
+    // A second claim moves nothing.
+    e.as_("anyone.testnet");
+    e.c.claim_release(vec!["a-4b".into(), "a-1a".into()]);
+    assert!(transfer_outs().is_empty());
+    // Paying more raises the cap only up to price × approved_bps.
+    e.wallet_pay("a-1a", "bob.testnet", 100_000 * USDC);
+    assert_eq!(
+        e.unit("a-1a").releasable_now.0,
+        PRICE * 2_000 / BPS - 10_000 * USDC * 2_000 / BPS
+    );
+    e.check_conservation();
+}
+
+/// SPEC 5.10 #4: exits only to payout_id, the holder (or the holder's lender), the reserver or
+/// recovery_id. Every kind of transfer out, once each, then a random walk with a different seed.
+#[test]
+fn invariants_exits_only_to_allowed_places() {
+    let mut seen: HashMap<String, u32> = HashMap::new();
+    let mut e = Env::standard();
+    // Cancelled reservation with money on it → back to the reserver.
+    e.reserve("a-1a", "alice.testnet");
+    e.wallet_pay("a-1a", "alice.testnet", 1_000 * USDC);
+    let u = e.unit("a-1a");
+    e.as_("alice.testnet");
+    let _ = e.c.cancel_reservation("a-1a".into());
+    assert_exits(&e, &u, "reservation", &mut seen);
+    e.finish_out(
+        "a-1a",
+        OutKind::ReservationRefund,
+        "alice.testnet",
+        1_000 * USDC,
+        true,
+    );
+    // Expired reservation → back to the reserver.
+    e.reserve("b-2a", "bob.testnet");
+    e.wallet_pay("b-2a", "bob.testnet", 500 * USDC);
+    e.advance(31 * MIN);
+    let u = e.unit("b-2a");
+    e.as_("anyone.testnet");
+    let _ = e.c.expire_reservation("b-2a".into());
+    assert_exits(&e, &u, "reservation", &mut seen);
+    e.finish_out(
+        "b-2a",
+        OutKind::ReservationRefund,
+        "bob.testnet",
+        500 * USDC,
+        true,
+    );
+    // Late delivery inside the late-claim window → the last reserver; after it → recovery_id.
+    e.land("b-2a", 5 * USDC);
+    e.sync("b-2a");
+    let u = e.unit("b-2a");
+    e.as_("anyone.testnet");
+    let _ = e.c.sweep_unattributed("b-2a".into());
+    assert_exits(&e, &u, "sweep", &mut seen);
+    e.finish_out("b-2a", OutKind::Sweep, "bob.testnet", 5 * USDC, true);
+    e.land("b-2a", 7 * USDC);
+    e.sync("b-2a");
+    e.advance(11 * MIN);
+    let u = e.unit("b-2a");
+    e.as_("anyone.testnet");
+    let _ = e.c.sweep_unattributed("b-2a".into());
+    assert_exits(&e, &u, "sweep", &mut seen);
+    assert_eq!(transfer_outs()[0].1, acc("plote.testnet"));
+    e.finish_out("b-2a", OutKind::Sweep, "plote.testnet", 7 * USDC, true);
+    // Release → payout_id; excess → the holder.
+    e.buy("a-4b", "alice.testnet", PRICE + 1_000 * USDC);
+    e.approve_milestone(0);
+    e.advance(3 * MIN);
+    let u = e.unit("a-4b");
+    e.as_("anyone.testnet");
+    e.c.claim_release(vec!["a-4b".into()]);
+    assert_exits(&e, &u, "release", &mut seen);
+    e.finish_out(
+        "a-4b",
+        OutKind::Release,
+        "payout.testnet",
+        u.releasable_now.0,
+        true,
+    );
+    let u = e.unit("a-4b");
+    e.as_dep("alice.testnet", NearToken::from_yoctonear(1));
+    let _ = e.c.withdraw_excess("a-4b".into());
+    assert_exits(&e, &u, "excess", &mut seen);
+    e.finish_out("a-4b", OutKind::Excess, "alice.testnet", 1_000 * USDC, true);
+    // Refund after a missed deadline → the lender first, then the holder.
+    e.buy("a-1a", "carol.testnet", 10_000 * USDC);
+    e.as_("carol.testnet");
+    e.c.set_lien("a-1a".into(), acc("bank.testnet"), U128(6_000 * USDC));
+    e.now = T0 + 123 * MIN;
+    for (to, amount) in [
+        ("bank.testnet", 6_000 * USDC),
+        ("carol.testnet", 4_000 * USDC),
+    ] {
+        let u = e.unit("a-1a");
+        e.as_dep("carol.testnet", NearToken::from_yoctonear(1));
+        let _ = e.c.refund("a-1a".into());
+        assert_exits(&e, &u, "refund", &mut seen);
+        assert_eq!(transfer_outs()[0].1, acc(to));
+        e.finish_out("a-1a", OutKind::Refund, to, amount, true);
+    }
+    e.check_conservation();
+    for kind in ["release", "refund", "excess", "reservation", "sweep"] {
+        assert!(
+            seen.get(kind).copied().unwrap_or(0) > 0,
+            "no {} transfer",
+            kind
+        );
+    }
+    // And a random walk with another seed (assert_exits runs on every transfer it makes).
+    // Own thread: the mocked chain (and its storage) is thread-local.
+    std::thread::spawn(|| random_walk(0x2545f4914f6cdd1d, 200))
+        .join()
+        .unwrap();
+}
+
+/// SPEC 5.10 #8: a verdict only attaches to evidence whose SHA-256 was stored before the OutLayer call.
+#[test]
+fn invariants_evidence_committed_before_check() {
+    let mut e = Env::standard();
+    e.as_("qs.testnet");
+    e.c.open_capture(1);
+    let sha = "b".repeat(64);
+    let ev =
+        e.c.submit_evidence(
+            1,
+            "https://x.supabase.co/e/9.jpg".into(),
+            sha.clone(),
+            U64(e.now),
+            None,
+        )
+        .0;
+    // The record exists, Pending, with the hash, in the same receipt that starts the OutLayer call...
+    let stored = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(stored.status, EvidenceStatus::Pending);
+    assert_eq!(stored.sha256, sha);
+    // ...and the worker is asked to check exactly that hash for exactly that id.
+    let mut calls = 0;
+    for r in get_created_receipts() {
+        for a in r.actions {
+            if let MockAction::FunctionCallWeight {
+                method_name, args, ..
+            } = a
+            {
+                if method_name == b"request_execution" {
+                    calls += 1;
+                    assert_eq!(r.receiver_id, acc("outlayer.testnet"));
+                    let v: serde_json::Value = serde_json::from_slice(&args).unwrap();
+                    let input: serde_json::Value =
+                        serde_json::from_str(v["input_data"].as_str().unwrap()).unwrap();
+                    assert_eq!(input["sha256"], sha);
+                    assert_eq!(input["evidence_id"], ev);
+                }
+            }
+        }
+    }
+    assert_eq!(calls, 1);
+
+    // A verdict for an evidence id that was never committed attaches nowhere.
+    let ghost = ev + 100;
+    assert!(!e.resume(ghost, &Env::verdict_json(ghost, true, &[], "abc")));
+    assert!(e.c.get_evidence(U64(ghost)).is_none());
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Open);
+    e.c.verify_mode = "https".into();
+    e.as_("relayer.testnet");
+    let v: Verdict = verdict_of(Env::verdict_json(ghost, true, &[], "abc"));
+    panics(
+        "E_BAD_ARGS",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.submit_verdict(U64(ghost), v);
+        }),
+    );
+    e.c.verify_mode = "outlayer".into();
+
+    // The verdict attaches to the committed record and can't rewrite its hash.
+    assert!(e.resume(ev, &Env::verdict_json(ev, true, &[], "abc")));
+    let after = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(after.status, EvidenceStatus::Pass);
+    assert_eq!(after.sha256, sha);
+    // Once decided, a second (replayed or late) verdict is ignored.
+    assert!(!e.resume(ev, &Env::verdict_json(ev, false, &["phash_reuse:0"], "abc")));
+    assert_eq!(
+        e.c.get_evidence(U64(ev)).unwrap().status,
+        EvidenceStatus::Pass
+    );
+    assert_eq!(e.c.get_milestones()[1].status, MilestoneStatus::Verified);
 }
 
 #[test]

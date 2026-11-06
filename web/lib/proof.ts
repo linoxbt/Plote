@@ -14,7 +14,7 @@ const GROUP: Record<string, CheckKey> = {
   outside_geofence: "location", gps_missing: "location",
   phash_reuse: "reuse",
   ai_stage_mismatch: "stage", ai_low_confidence: "stage", ai_screen_photo: "stage", ai_unavailable: "stage",
-  challenge_missing: "challenge", challenge_mismatch: "challenge", exif_before_capture: "challenge",
+  challenge_missing: "challenge", challenge_mismatch: "challenge", challenge_unverified: "challenge", worker_commit_mismatch: "integrity", exif_before_capture: "challenge",
 };
 
 export const REASON_TEXT: Record<string, string> = {
@@ -33,6 +33,8 @@ export const REASON_TEXT: Record<string, string> = {
   ai_unavailable: "The stage check (NEAR AI) was unavailable.",
   challenge_missing: "No challenge code was visible in the photo.",
   challenge_mismatch: "The code in the photo doesn't match the one issued on-chain.",
+  challenge_unverified: "The challenge code couldn't be read from the photo, so the check fails.",
+  worker_commit_mismatch: "The check ran on a different version of the checking code than the one pinned on-chain.",
   exif_before_capture: "The photo was taken before the capture was opened.",
 };
 

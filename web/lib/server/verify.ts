@@ -3,6 +3,11 @@
 
 export type WorkerVerdict = Record<string, unknown> & { pass: boolean };
 
+/** The relayer may only submit verdicts to estates in `verify_mode: "https"` (contract: E_VERIFY_MODE). */
+export function relayAllowed(verifyMode: string | null | undefined): boolean {
+  return verifyMode === "https";
+}
+
 /** Find the verdict in whatever OutLayer returns: a bare verdict, a JSON string, or a wrapper. Mirrors the contract. */
 export function extractVerdict(v: unknown, depth = 0): { verdict: WorkerVerdict; attestation: string | null } | null {
   if (depth > 4 || v == null) return null;
@@ -52,6 +57,7 @@ export function toContractVerdict(v: WorkerVerdict, attestation: string | null):
     ai_stage: str(v.ai_stage),
     ai_confidence: num(v.ai_confidence),
     challenge_read: str(v.challenge_read),
+    ai_observations: list(v.ai_observations).slice(0, 4).map((o) => o.slice(0, 160)),
     ai_chat_id: str(v.ai_chat_id),
     worker_commit: typeof v.worker_commit === "string" ? v.worker_commit : "unknown",
     attestation: str(v.attestation) ?? attestation,

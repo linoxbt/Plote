@@ -7,7 +7,7 @@ export const PLOTE_EVENTS = [
   "capture_opened", "evidence_submitted", "verdict", "qs_signed", "released",
   "refunded", "excess_withdrawn", "unattributed_swept", "defaulted", "listed", "sold",
   "frozen", "unfrozen", "surveyor_changed", "handed_over", "proposal_created", "voted",
-  "proposal_executed", "proposal_rejected", "playground_reset",
+  "proposal_executed", "proposal_rejected", "playground_reset", "payout_redirected",
 ] as const;
 
 export type PloteEventName = (typeof PLOTE_EVENTS)[number];
@@ -102,6 +102,7 @@ export function describeEvent(row: { event: string; data: Record<string, unknown
     case "proposal_executed": return `Proposal #${s("proposal_id")} passed`;
     case "proposal_rejected": return `Proposal #${s("proposal_id")} rejected`;
     case "playground_reset": return "Playground reset";
+    case "payout_redirected": return `Releases redirected to ${s("new")} by holder vote`;
     case "nft_mint": return `Allocation token minted`;
     case "nft_transfer": return `Allocation token transferred`;
     case "nft_burn": return `Allocation token burned`;

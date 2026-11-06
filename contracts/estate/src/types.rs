@@ -230,6 +230,9 @@ pub struct Verdict {
     pub ai_confidence: Option<u8>,
     #[serde(default)]
     pub challenge_read: Option<String>,
+    /// The model's short notes on what it saw (SPEC 6.4 `observations`; ≤ 4, shown on the proof page).
+    #[serde(default)]
+    pub ai_observations: Vec<String>,
     #[serde(default)]
     pub ai_chat_id: Option<String>,
     #[serde(default)]

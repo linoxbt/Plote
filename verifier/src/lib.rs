@@ -212,6 +212,7 @@ mod tests {
         assert_eq!(v.nearest_distance, 64);
         assert_eq!(v.warnings, vec!["ai_mock"]);
         assert_eq!(v.ai_chat_id.as_deref(), Some("mock"));
+        assert_eq!(v.ai_observations, vec!["trusses"]);
         assert_eq!(v.worker_commit, WORKER_COMMIT);
         // One JSON line.
         let line = serde_json::to_string(&v).unwrap();
@@ -263,9 +264,17 @@ mod tests {
         let orig = photo(13, Some((6.447118, 3.474201)), Some(EXIF_T));
         let first = run(&input_for(&orig, |_| {}), &good_ai(), &NoNet);
         assert!(first.pass);
-        // Re-encoded + resized copy, EXIF stripped; device GPS saves location
-        // but EXIF is gone -> use playground to get past freshness and hit reuse.
-        let copy = synth::reencode(&orig, 0.9, 70);
+        // Re-encoded + resized copy with fresh EXIF written back (freshness is never softened,
+        // so a reused photo must also look fresh to reach the reuse check), in the playground too.
+        let copy = synth::with_exif(
+            &synth::reencode(&orig, 0.9, 70),
+            &synth::ExifSpec {
+                datetime: Some(synth::exif_datetime(EXIF_T, 60)),
+                offset: Some("+01:00".into()),
+                gps: Some((6.447118, 3.474201)),
+                orientation: Some(1),
+            },
+        );
         let known = first.phash.clone();
         let v = run(
             &input_for(&copy, |j| {
@@ -295,13 +304,15 @@ mod tests {
         let none = ai::AiConfig::default();
         let v = run(&input_for(&p, |_| {}), &none, &NoNet);
         assert_eq!(v.reasons, vec!["ai_unavailable"]);
+        // demo_mode softens ai_unavailable, but the unread challenge still fails (SPEC 6.1).
         let v = run(
             &input_for(&p, |j| j["demo_mode"] = true.into()),
             &none,
             &NoNet,
         );
-        assert!(v.pass);
-        assert_eq!(v.warnings, vec!["ai_unavailable", "challenge_unverified"]);
+        assert!(!v.pass);
+        assert_eq!(v.warnings, vec!["ai_unavailable"]);
+        assert_eq!(v.reasons, vec!["challenge_unverified"]);
     }
 
     #[test]

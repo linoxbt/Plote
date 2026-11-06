@@ -270,6 +270,11 @@ impl Estate {
                 self.milestones[milestone as usize].deadline = new_deadline.0;
             }
             ProposalKind::StepIn { new_payout_id } => {
+                let old = self.payout_account();
+                emit(
+                    "payout_redirected",
+                    json!({ "old": old, "new": new_payout_id }),
+                );
                 self.payout_redirect = Some(new_payout_id);
             }
         }

@@ -15,15 +15,15 @@ This directory is its own Cargo workspace (`[workspace]` in `Cargo.toml`), so it
 | 5 | EXIF GPS (else `device_gps`, marked `gps_source: "device"`) within `geofence.radius_m` (haversine). Skipped, and nothing about location reported, when `radius_m == 0` | `outside_geofence`, `gps_missing` |
 | 6 | 64-bit pHash, Hamming distance to every `known_phashes` > `max_phash_distance` | `phash_reuse:<distance>` |
 | 7 | NEAR AI vision: stage matches the milestone, confidence ≥ `min_ai_confidence`, not a screen/print/render | `ai_stage_mismatch`, `ai_low_confidence`, `ai_screen_photo`, `ai_unavailable` |
-| 8 | The challenge code the model read matches `challenge` (case-insensitive, spaces/dashes ignored, O≡0, I≡1≡L, ≤ 1 edit); EXIF time ≥ `challenge_opened_at` − 5 min | `challenge_missing`, `challenge_mismatch`, `exif_before_capture` |
+| 8 | The challenge code the model read matches `challenge` (case-insensitive, spaces/dashes ignored, O≡0, I≡1≡L, ≤ 1 edit); EXIF time ≥ `challenge_opened_at` − 5 min. If the model couldn't be asked, the code is unread and this fails | `challenge_missing`, `challenge_mismatch`, `challenge_unverified`, `exif_before_capture` |
 
 Stages accepted per milestone: foundation → `foundation`/`walls`; roofing → `roofing`; finishing → `finishing`/`complete`; handover → `complete`. Any other milestone key accepts only the stage with the same name.
 
 Warnings instead of failures (they go in `warnings`, and `pass` can still be `true`):
 
-- `demo_mode`: `ai_unavailable` becomes a warning, plus `challenge_unverified`, since the code can't be read without the model.
-- `playground`: `ai_stage_mismatch`, `ai_low_confidence`, `outside_geofence`, `gps_missing`, `exif_missing` and `exif_stale` become warnings.
-- These always fail, in every mode: `hash_mismatch`, `bad_image`, `exif_future`, `phash_reuse`, `ai_screen_photo`, `challenge_*` and `exif_before_capture`.
+- `demo_mode`: `ai_unavailable` becomes a warning. The code on the paper still can't be read without the model, so the verdict then fails with `challenge_unverified` (SPEC 6.1: the challenge check fails hard in every mode).
+- `playground`: `ai_stage_mismatch`, `ai_low_confidence` and `outside_geofence` become warnings (SPEC 6.1), so a judge can photograph the code anywhere.
+- Everything else always fails, in every mode: `fetch_failed`, `hash_mismatch`, `bad_image`, `exif_missing`, `exif_stale`, `exif_future`, `gps_missing`, `phash_reuse`, `ai_screen_photo`, `challenge_*` and `exif_before_capture`.
 - `ai_mock` is added whenever the answer came from `PLOTE_AI_MOCK` and not from NEAR AI.
 
 ## Input / output
@@ -35,7 +35,7 @@ Output:
 ```json
 {"evidence_id":17,"pass":true,"reasons":[],"warnings":[],"phash":"65400d2596050400","nearest_distance":29,
  "exif_time":1793739420000000000,"gps":[6447118,3474201],"gps_source":"exif","distance_m":26,
- "ai_stage":"roofing","ai_confidence":88,"challenge_read":"K7RQ4M","ai_chat_id":"chatcmpl-…",
+ "ai_stage":"roofing","ai_confidence":88,"challenge_read":"K7RQ4M","ai_observations":["roof trusses in place"],"ai_chat_id":"chatcmpl-…",
  "worker_commit":"<git sha>","attestation":null}
 ```
 
@@ -70,7 +70,7 @@ Native, fully offline. `fixtures/offline-input.json` inlines a synthetic photo a
 ```sh
 PLOTE_AI_MOCK='{"stage":"roofing","confidence":88,"is_photo_of_screen_or_print":false,"is_render":false,"challenge_read":"K7RQ4M"}' \
   cargo run --release < fixtures/offline-input.json
-cargo run --release < fixtures/offline-input.json          # no key: demo_mode → ai_unavailable warning
+cargo run --release < fixtures/offline-input.json          # no key: demo_mode → ai_unavailable warning, challenge_unverified fail
 PLOTE_AI_MOCK=unavailable cargo run --release < fixtures/offline-input.json
 ```
 

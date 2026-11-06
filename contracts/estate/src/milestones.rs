@@ -10,6 +10,9 @@ use near_sdk::{env, near, Promise};
 const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CODE_LEN: usize = 6;
 const MAX_VERDICT_BYTES: usize = 16 * 1024;
+/// The model returns up to 4 short observations (SPEC 6.4); keep what is stored bounded.
+const MAX_OBSERVATIONS: usize = 4;
+const MAX_OBSERVATION_CHARS: usize = 160;
 
 pub(crate) fn make_code(seed: &[u8]) -> String {
     let h = env::sha256(seed);
@@ -261,11 +264,18 @@ impl Estate {
     }
 
     /// HTTPS fallback (SPEC 6.6): the relayer passes through a verdict it fetched from OutLayer's API.
+    /// Only for estates in `verify_mode: "https"`; an OutLayer-mode estate takes verdicts from OutLayer only.
     pub fn submit_verdict(&mut self, evidence_id: U64, verdict: Verdict) -> bool {
         ensure!(
             self.verdict_relayer.as_ref() == Some(&env::predecessor_account_id()),
             "E_NOT_RELAYER",
             "only the verdict relayer can submit verdicts"
+        );
+        ensure!(
+            self.verify_mode == "https",
+            "E_VERIFY_MODE",
+            "this estate's verify_mode is {}; verdicts come only from OutLayer",
+            self.verify_mode
         );
         let ev = self
             .evidence
@@ -422,11 +432,26 @@ impl Estate {
         }
     }
 
+    /// The pinned GitHub commit a verdict must come from, if any. `project:` sources are pinned by
+    /// OutLayer's version key instead (the worker can't know it), and an empty commit pins nothing.
+    pub(crate) fn pinned_commit(&self) -> Option<&str> {
+        if self.verifier.repo.starts_with("project:") {
+            return None;
+        }
+        let c = self.verifier.commit.trim();
+        (!c.is_empty()).then_some(c)
+    }
+
+    /// Mark a Pending (or earlier Error) evidence as Error and reopen its milestone, so the surveyor can resubmit.
     fn set_error(&mut self, evidence_id: u64, msg: &str) {
+        self.set_error_with(evidence_id, msg, "worker_error");
+    }
+
+    fn set_error_with(&mut self, evidence_id: u64, msg: &str, reason: &str) {
         let Some(mut ev) = self.evidence.get(&evidence_id).cloned() else {
             return;
         };
-        if ev.status != EvidenceStatus::Pending {
+        if !matches!(ev.status, EvidenceStatus::Pending | EvidenceStatus::Error) {
             return;
         }
         ev.status = EvidenceStatus::Error;
@@ -439,7 +464,7 @@ impl Estate {
         }
         emit(
             "verdict",
-            json!({ "evidence_id": U64(evidence_id), "pass": false, "reasons": ["worker_error"] }),
+            json!({ "evidence_id": U64(evidence_id), "pass": false, "reasons": [reason] }),
         );
     }
 
@@ -456,12 +481,38 @@ impl Estate {
         if !matches!(ev.status, EvidenceStatus::Pending | EvidenceStatus::Error) {
             return false;
         }
+        // A verdict from any other build than the pinned commit is not a verdict on this estate's checks
+        // (SPEC 5.6): treat it like unparsable output, so the milestone reopens.
+        if let Some(pinned) = self.pinned_commit() {
+            let got = verdict.worker_commit.trim();
+            if !got.eq_ignore_ascii_case(pinned) {
+                let msg = format!(
+                    "worker_commit {} does not match the pinned verifier commit {}",
+                    got.chars().take(64).collect::<String>(),
+                    pinned
+                );
+                self.set_error_with(evidence_id, &msg, "worker_commit_mismatch");
+                if raw_hash.is_some() {
+                    if let Some(mut ev) = self.evidence.get(&evidence_id).cloned() {
+                        ev.raw_response_hash = raw_hash;
+                        self.evidence.insert(evidence_id, ev);
+                    }
+                }
+                return false;
+            }
+        }
         // A pass with reasons attached is a fail; reasons win.
         let pass = verdict.pass && verdict.reasons.is_empty();
         verdict.pass = pass;
         verdict.source = Some(source.to_string());
         verdict.reasons.truncate(16);
         verdict.warnings.truncate(16);
+        verdict.ai_observations.truncate(MAX_OBSERVATIONS);
+        for o in verdict.ai_observations.iter_mut() {
+            if o.chars().count() > MAX_OBSERVATION_CHARS {
+                *o = o.chars().take(MAX_OBSERVATION_CHARS).collect();
+            }
+        }
         let phash = u64::from_str_radix(verdict.phash.trim(), 16).ok();
         ev.status = if pass {
             EvidenceStatus::Pass
