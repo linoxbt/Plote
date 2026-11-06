@@ -333,29 +333,75 @@ export async function sendTxs(specs: TxSpec[]): Promise<TxResult[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Login function-call key: lets non-payable calls (vote, propose, sync…) go without a popup.
-// The key is created in the browser, added to the user's account by one wallet approval
-// (AddKey, function-call permission for one contract, 0.25 NEAR allowance), and kept in localStorage.
+// Function-call keys the app holds in this browser (SPEC §4 "Keys on each account", §9.1).
+//  - "login": added during sign-in (near-connect `addFunctionCallKey`) or later from the votes page, for the
+//    frequent non-payable estate calls (vote, propose, sync, qs_sign, submit_evidence, declare_default…).
+//  - "dev": the developer's day-to-day key for claim_release / propose (deadline extensions), added from /dev.
+// Each key is created in the browser, added to the user's account by one wallet approval (function-call
+// permission for one contract, 0.25 NEAR allowance), and kept in localStorage.
 
 const FCK_PREFIX = "plote:fck:";
 export const LOGIN_KEY_ALLOWANCE = "250000000000000000000000"; // 0.25 NEAR
 
-function fckKey(accountId: string, contractId: string) {
-  return `${FCK_PREFIX}${NETWORK}:${accountId}:${contractId}`;
+export type AppKeyRole = "login" | "dev";
+type StoredKey = { sk: string; methods: string[] | null; pk?: string };
+
+function fckKey(accountId: string, contractId: string, role: AppKeyRole = "login") {
+  return `${FCK_PREFIX}${NETWORK}:${accountId}:${contractId}${role === "login" ? "" : `:${role}`}`;
 }
 
-export function getLoginKey(accountId: string, contractId: string): string | null {
+function readStored(accountId: string, contractId: string, role: AppKeyRole): StoredKey | null {
+  let raw: string | null = null;
   try {
-    return window.localStorage.getItem(fckKey(accountId, contractId));
+    raw = window.localStorage.getItem(fckKey(accountId, contractId, role));
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  if (raw.startsWith("ed25519:")) return { sk: raw, methods: null }; // legacy: bare secret, methods unknown
+  try {
+    const j = JSON.parse(raw) as Partial<StoredKey>;
+    return typeof j.sk === "string" ? { sk: j.sk, methods: Array.isArray(j.methods) ? j.methods : null, pk: j.pk } : null;
   } catch {
     return null;
   }
 }
 
-export async function addLoginKey(accountId: string, contractId: string, methodNames: string[]): Promise<string> {
+/** Remember a key pair this browser created (call only after the AddKey was approved). */
+export function saveAppKey(accountId: string, contractId: string, role: AppKeyRole, secret: string, methods: string[], publicKey?: string) {
+  try {
+    window.localStorage.setItem(fckKey(accountId, contractId, role), JSON.stringify({ sk: secret, methods, pk: publicKey } satisfies StoredKey));
+  } catch {
+    /* if storage is blocked the key just isn't remembered */
+  }
+}
+
+export function getLoginKey(accountId: string, contractId: string, role: AppKeyRole = "login"): string | null {
+  return readStored(accountId, contractId, role)?.sk ?? null;
+}
+
+/** Public key of a stored app key ("ed25519:…"), for checking it on-chain with `viewAccessKey`. */
+export async function appKeyPublic(accountId: string, contractId: string, role: AppKeyRole = "login"): Promise<string | null> {
+  const k = readStored(accountId, contractId, role);
+  if (!k) return null;
+  if (k.pk) return k.pk;
+  try {
+    const { KeyPair } = await import("near-api-js");
+    return KeyPair.fromString(k.sk as `ed25519:${string}`).getPublicKey().toString();
+  } catch {
+    return null;
+  }
+}
+
+/** A fresh ed25519 key pair (browser only). */
+export async function newKeyPair(): Promise<{ secret: string; publicKey: string }> {
   const { KeyPair } = await import("near-api-js");
   const kp = KeyPair.fromRandom("ed25519");
-  const publicKey = kp.getPublicKey().toString();
+  return { secret: kp.toString(), publicKey: kp.getPublicKey().toString() };
+}
+
+export async function addLoginKey(accountId: string, contractId: string, methodNames: string[], role: AppKeyRole = "login"): Promise<string> {
+  const { secret, publicKey } = await newKeyPair();
   const w = await getWallet();
   await w.signAndSendTransaction({
     receiverId: accountId,
@@ -369,20 +415,64 @@ export async function addLoginKey(accountId: string, contractId: string, methodN
       },
     ],
   });
-  try {
-    window.localStorage.setItem(fckKey(accountId, contractId), kp.toString());
-  } catch {
-    /* if storage is blocked the key just isn't remembered */
-  }
+  saveAppKey(accountId, contractId, role, secret, methodNames, publicKey);
   return publicKey;
 }
 
-export function forgetLoginKey(accountId: string, contractId: string) {
+export function forgetLoginKey(accountId: string, contractId: string, role: AppKeyRole = "login") {
   try {
-    window.localStorage.removeItem(fckKey(accountId, contractId));
+    window.localStorage.removeItem(fckKey(accountId, contractId, role));
   } catch {
     /* ignore */
   }
+}
+
+/** Delete an app key from the account (one wallet approval) and forget it locally. */
+export async function removeAppKey(accountId: string, contractId: string, role: AppKeyRole): Promise<void> {
+  const publicKey = await appKeyPublic(accountId, contractId, role);
+  if (publicKey) {
+    const w = await getWallet();
+    await w.signAndSendTransaction({ receiverId: accountId, actions: [{ type: "DeleteKey", params: { publicKey } }] });
+  }
+  forgetLoginKey(accountId, contractId, role);
+}
+
+/**
+ * Sign in through near-connect and, when the chosen wallet supports it, ask for the login function-call key
+ * for `contractId` in the same step (SPEC §9.1). Wallets without `signInWithFunctionCallKey` sign in normally;
+ * the votes page still offers to add the key afterwards. Returns the signed-in account and whether a key was asked for.
+ */
+export async function signInWithLoginKey(contractId: string | null, methodNames: string[]): Promise<{ wallet: NearWalletBase; accountId: string | null; keyRequested: boolean }> {
+  const c = await getConnector();
+  const walletId = await c.selectWallet();
+  const manifest = c.availableWallets.find((w) => w.manifest.id === walletId)?.manifest;
+  const supportsKey = !!contractId && !!manifest?.features?.signInWithFunctionCallKey;
+  if (supportsKey) {
+    const kp = await newKeyPair();
+    try {
+      const wallet = await c.connect({
+        walletId,
+        addFunctionCallKey: {
+          contractId: contractId!,
+          publicKey: kp.publicKey,
+          allowMethods: { anyMethod: false, methodNames },
+          gasAllowance: { kind: "limited", amount: LOGIN_KEY_ALLOWANCE },
+        },
+      });
+      const accounts = await wallet.getAccounts();
+      const accountId = accounts[0]?.accountId ?? null;
+      // Kept locally; `callNoPopup` falls back to the wallet if the wallet didn't actually add it.
+      if (accountId) saveAppKey(accountId, contractId!, "login", kp.secret, methodNames, kp.publicKey);
+      return { wallet, accountId, keyRequested: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/reject|cancel|closed|denied/i.test(msg)) throw e;
+      // The wallet advertised the feature but failed: sign in without the key rather than not at all.
+    }
+  }
+  const wallet = await c.connect({ walletId });
+  const accounts = await wallet.getAccounts();
+  return { wallet, accountId: accounts[0]?.accountId ?? null, keyRequested: false };
 }
 
 async function sendWithKey(accountId: string, secret: string, spec: TxSpec): Promise<TxResult> {
@@ -400,17 +490,20 @@ async function sendWithKey(accountId: string, secret: string, spec: TxSpec): Pro
 }
 
 /**
- * Non-payable call: uses the login function-call key when one exists for this contract,
- * otherwise falls back to the wallet (one popup).
+ * Non-payable call: uses an app function-call key for this contract when one is stored (the developer key first
+ * for the methods it covers, then the login key), otherwise falls back to the wallet (one popup).
  */
 export async function callNoPopup(accountId: string, spec: TxSpec): Promise<TxResult> {
   if (isNonPayable(spec)) {
-    const secret = getLoginKey(accountId, spec.receiverId);
-    if (secret) {
+    const methods = spec.actions.map((a) => a.method);
+    for (const role of ["dev", "login"] as const) {
+      const k = typeof window === "undefined" ? null : readStored(accountId, spec.receiverId, role);
+      if (!k) continue;
+      if (k.methods && !methods.every((m) => k.methods!.includes(m))) continue;
       try {
-        return await sendWithKey(accountId, secret, spec);
+        return await sendWithKey(accountId, k.sk, spec);
       } catch (e) {
-        // A contract panic is a real answer; key problems fall back to the wallet.
+        // A contract panic is a real answer; key problems fall back to the next key / the wallet.
         if (e instanceof PloteError && e.code.startsWith("E_")) throw e;
       }
     }

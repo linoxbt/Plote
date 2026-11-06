@@ -6,13 +6,14 @@ import { EstateBanners } from "@/components/banners";
 import { MonoAmount, StatusBadge } from "@/components/chain";
 import { EstateHeader } from "@/components/estate-bits";
 import { useTx } from "@/components/toast";
-import { RequireWallet } from "@/components/wallet";
+import { AppKeyToggle } from "@/components/app-key";
+import { RequireWallet, useWallet } from "@/components/wallet";
 import { BracketCard, Button, EmptyState, ErrorState, LoadingCard, Page, explorerTxUrl } from "@/components/ui";
-import { estate as E, MAX_UNITS_PER_CLAIM } from "@/lib/estate";
+import { DEV_KEY_METHODS, estate as E, MAX_UNITS_PER_CLAIM } from "@/lib/estate";
 import { estateAccount, estateSlug } from "@/lib/estates";
 import { formatUsd, timeAgo, toBig, unitDisplay } from "@/lib/format";
 import { useEstate, useUnits } from "@/lib/hooks";
-import { sendTx } from "@/lib/near";
+import { callNoPopup, sendTx } from "@/lib/near";
 import { recentEvents, supabaseConfigured } from "@/lib/supabase";
 
 export function ReleasesClient({ slug }: { slug: string }) {
@@ -21,6 +22,7 @@ export function ReleasesClient({ slug }: { slug: string }) {
   const units = useUnits(account, { poll: 15_000 });
   const history = useQuery({ queryKey: ["release-history", account], queryFn: async () => (await recentEvents(account, { limit: 100 })).filter((r) => r.event === "released"), enabled: supabaseConfigured(), retry: 0 });
   const { run } = useTx();
+  const { accountId } = useWallet();
   const qc = useQueryClient();
   const [sel, setSel] = useState<Set<string>>(new Set());
   if (est.isLoading) return <Page><LoadingCard lines={5} /></Page>;
@@ -33,7 +35,7 @@ export function ReleasesClient({ slug }: { slug: string }) {
     const ids = [...sel];
     for (let i = 0; i < ids.length; i += MAX_UNITS_PER_CLAIM) {
       const chunk = ids.slice(i, i + MAX_UNITS_PER_CLAIM);
-      const r = await run(`Claim ${chunk.length} unit(s)`, () => sendTx(E.claimRelease(account, chunk)), { success: `Sent to ${e.payout_redirect ?? e.payout_id}.` });
+      const r = await run(`Claim ${chunk.length} unit(s)`, () => (accountId ? callNoPopup(accountId, E.claimRelease(account, chunk)) : sendTx(E.claimRelease(account, chunk))), { success: `Sent to ${e.payout_redirect ?? e.payout_id}.` });
       if (!r) break;
     }
     setSel(new Set());
@@ -53,6 +55,7 @@ export function ReleasesClient({ slug }: { slug: string }) {
             </div>
           </div>
           <p className="text-sm text-muted">Anyone can call claim_release; funds always go to <span className="mono">{e.payout_redirect ?? e.payout_id}</span>. Only milestones whose veto window has passed count. {e.frozen ? <span className="text-red">Releases are frozen.</span> : null}</p>
+          {accountId === e.developer_id ? <AppKeyToggle contractId={account} role="dev" methods={DEV_KEY_METHODS} enableLabel="Add claim key (no popup per claim)" activeLabel="Claim key is on: claims sign without a popup." success="Key added. claim_release now signs from this browser." /> : null}
           {units.error ? <ErrorState error={units.error} /> : !units.data ? <LoadingCard /> : !list.length ? <EmptyState title="No paid units yet" /> : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-sm">

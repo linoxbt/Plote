@@ -2,7 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { LogOut, Wallet as WalletIcon } from "lucide-react";
-import { getConnector } from "@/lib/near";
+import { LOGIN_KEY_METHODS } from "@/lib/estate";
+import { loginKeyContract } from "@/lib/estates";
+import { getConnector, signInWithLoginKey } from "@/lib/near";
 import { truncateAccount } from "@/lib/format";
 import { Button } from "./ui";
 
@@ -63,11 +65,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setConnecting(true);
     setError(null);
     try {
-      const c = await getConnector();
-      const w = await c.connect();
-      const accounts = await w.getAccounts();
-      setAccountId(accounts[0]?.accountId ?? null);
-      setWalletName(w.manifest?.name ?? null);
+      // SPEC §9.1: sign-in also asks for the login function-call key for the estate in view (when the wallet supports it).
+      const { wallet, accountId } = await signInWithLoginKey(loginKeyContract(window.location.pathname), LOGIN_KEY_METHODS);
+      setAccountId(accountId);
+      setWalletName(wallet.manifest?.name ?? null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (!/reject|cancel|closed/i.test(msg)) setError(msg);

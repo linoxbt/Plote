@@ -25,6 +25,18 @@ export function unitAccount(estate: string, unitId: string): string {
   return `${unitId}.${estate}`;
 }
 
+const ESTATE_PATH = /^\/(?:estates|buy|me\/units|dev\/estates|qs|w|gate|proof)\/([a-z0-9-]+(?:\.[a-z0-9-]+)*)/;
+
+/**
+ * The estate contract the sign-in login key is for (SPEC §9.1): the estate in the URL path
+ * (`/estates/harmattan-court/…`, `/buy/…`, `/qs/…`), else the first configured estate, else null.
+ */
+export function loginKeyContract(pathname: string): string | null {
+  const m = ESTATE_PATH.exec(pathname);
+  if (m && m[1] !== "new" && m[1] !== "setup") return estateAccount(m[1]);
+  return ESTATES[0] ?? null;
+}
+
 export function isKnownEstate(account: string): boolean {
   return ESTATES.includes(account);
 }

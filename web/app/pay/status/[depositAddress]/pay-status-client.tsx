@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Copy, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
-import { MonoAmount } from "@/components/chain";
+import { CountdownChip, MonoAmount } from "@/components/chain";
+import { QrImage } from "@/components/oneclick-pay";
 import { useTx } from "@/components/toast";
 import { useWallet } from "@/components/wallet";
 import { BracketCard, Button, ErrorState, KV, LoadingCard, Page, PageHeader, explorerTxUrl } from "@/components/ui";
@@ -12,12 +13,12 @@ import { estate as E } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { shortHash, toBig, unitDisplay } from "@/lib/format";
 import { sendTx } from "@/lib/near";
-import { explorerUrl, oneclick, statusStep } from "@/lib/oneclick";
+import { chainName, explorerUrl, oneclick, statusStep } from "@/lib/oneclick";
 import { unit as U } from "@/lib/unit";
 
 const STEPS = ["Waiting for deposit", "Deposit seen", "Swapping", "Delivered to unit"];
 
-export function PayStatusClient({ depositAddress }: { depositAddress: string }) {
+export function PayStatusClient({ depositAddress, hint }: { depositAddress: string; hint?: { send?: string; symbol?: string; chain?: string } }) {
   const q = useQuery({
     queryKey: ["oneclick-status", depositAddress],
     queryFn: () => oneclick.status(depositAddress),
@@ -46,6 +47,23 @@ export function PayStatusClient({ depositAddress }: { depositAddress: string }) 
       <PageHeader eyebrow="CROSS-CHAIN PAYMENT · NEAR INTENTS" title={failed ? (st.status === "REFUNDED" ? "Refunded" : "Payment failed") : st.status === "SUCCESS" ? "Delivered to the unit" : "Payment in progress"}>
         <span className="mono break-all text-xs">{depositAddress}</span>
       </PageHeader>
+      {st.status === "PENDING_DEPOSIT" ? (
+        <BracketCard tone="teal" className="mb-6 space-y-4">
+          <p className="font-display text-xl font-semibold">
+            Send exactly {quote?.amountInFormatted ?? hint?.send ?? "the quoted amount"}{hint?.symbol ? ` ${hint.symbol}` : ""}{hint?.chain ? ` on ${chainName(hint.chain)}` : ""}
+          </p>
+          <div className="flex flex-col items-start gap-4 sm:flex-row">
+            <QrImage text={depositAddress} label="QR code of the deposit address" />
+            <div className="min-w-0 space-y-2">
+              <p className="label">Deposit address</p>
+              <p className="mono break-all text-sm">{depositAddress}</p>
+              <Button size="sm" onClick={() => navigator.clipboard?.writeText(depositAddress).catch(() => {})}><Copy className="h-4 w-4" aria-hidden /> Copy</Button>
+              {quote?.deadline ? <div><CountdownChip until={String(Date.parse(quote.deadline) * 1e6)} label="quote valid" /></div> : null}
+              <p className="text-sm text-muted">Send it from your own wallet. This page updates by itself; cross-chain payments can take up to 15 minutes.</p>
+            </div>
+          </div>
+        </BracketCard>
+      ) : null}
       <BracketCard tone={failed ? "red" : st.status === "SUCCESS" ? "teal" : "amber"} className="space-y-6">
         <ol className="grid gap-3 sm:grid-cols-4" aria-label="Progress">
           {STEPS.map((t, i) => {

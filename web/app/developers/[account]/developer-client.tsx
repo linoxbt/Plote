@@ -6,7 +6,18 @@ import { Bar, BracketCard, ChainLink, Collapsible, EmptyState, LoadingCard, Page
 import { estateSlug } from "@/lib/estates";
 import { formatDate } from "@/lib/format";
 import { useAllEstates, useAllMilestones } from "@/lib/hooks";
-import { devScore, sumStats } from "@/lib/score";
+import { devScore, sumStats, type ScoreComponent } from "@/lib/score";
+import type { DevStats } from "@/lib/types";
+import { ScoreSources } from "./score-sources";
+
+/** dev_stats keys behind each score component, so the raw counts can point at their per-estate sources. */
+const INPUTS: Record<ScoreComponent["key"], (keyof DevStats)[]> = {
+  on_time: ["milestones_on_time", "milestones_due"],
+  refund_free: ["units_refunded", "units_sold"],
+  clean_evidence: ["evidence_passed", "evidence_submitted"],
+  no_vetoes: ["vetoes", "signoffs"],
+  track_length: ["units_handed_over"],
+};
 
 function Dial({ score, isNew }: { score: number; isNew: boolean }) {
   const r = 52;
@@ -46,7 +57,16 @@ export function DeveloperClient({ account }: { account: string }) {
                 <div key={c.key} className="space-y-1">
                   <div className="flex justify-between text-sm"><span>{c.label} <span className="mono text-xs text-muted">({c.weight})</span></span><span className="mono">{c.points}</span></div>
                   <Bar value={c.ratio * 100} label={`${c.label}: ${Math.round(c.ratio * 100)}%`} />
-                  <p className="mono text-xs text-muted">{c.raw}</p>
+                  <p className="mono text-xs text-muted">
+                    {c.raw} · from{" "}
+                    {mine.map(({ account: e, q }, i) => (
+                      <span key={e}>
+                        {i ? ", " : ""}
+                        <a className="underline hover:text-teal" href={`#sources-${estateSlug(e)}`}>{q.data!.name}</a>{" "}
+                        <span className="text-muted/70">({INPUTS[c.key].map((k) => `${k} ${q.data!.stats[k]}`).join(" / ")})</span>
+                      </span>
+                    ))}
+                  </p>
                 </div>
               ))}
             </div>
@@ -66,7 +86,7 @@ export function DeveloperClient({ account }: { account: string }) {
                       <li key={m.index} className="text-sm"><p>{m.title}</p><p className="mono text-xs text-muted">due {formatDate(m.deadline)}</p><StatusBadge kind="milestone" status={m.status} /></li>
                     ))}
                   </ul>
-                  <p className="mono text-xs text-muted">{JSON.stringify(q.data!.stats)} <ChainLink account={e} /></p>
+                  <ScoreSources estate={e} e={q.data!} milestones={list} />
                 </BracketCard>
               );
             })}
@@ -82,7 +102,7 @@ export function DeveloperClient({ account }: { account: string }) {
                 <tr><td>Track length</td><td>10</td><td>min(1, units handed over ÷ 20)</td></tr>
               </tbody>
             </table>
-            <p className="mt-2">Fewer than 4 milestones due shows “New on Plote” instead of a score. Every input is the estate contract&apos;s <span className="mono">dev_stats</span> view.</p>
+            <p className="mt-2">Fewer than 4 milestones due shows “New on Plote” instead of a score. Every input is the estate contract&apos;s <span className="mono">dev_stats</span> view; each estate card lists the proofs, milestones, units and transactions behind every number.</p>
           </Collapsible>
         </div>
       )}

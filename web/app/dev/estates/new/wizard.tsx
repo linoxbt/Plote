@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { clsx } from "clsx";
 import { Copy } from "lucide-react";
+import { PickMap } from "@/components/pick-map";
 import { useWallet } from "@/components/wallet";
 import { BracketCard, Button, Field } from "@/components/ui";
 import { NETWORK, ROOT_ACCOUNT, USDC_ID } from "@/lib/config";
@@ -21,7 +22,8 @@ const schema = z
     lon: z.coerce.number().min(-180).max(180),
     radius: z.coerce.number().int().min(0).max(5000),
     mobilisation: z.coerce.number().min(0).max(10),
-    milestones: z.array(z.object({ key: z.string().min(2), title: z.string().min(2), pct: z.coerce.number().min(1).max(100), deadline: z.string().min(1, "pick a date") })).min(1).max(8),
+    // SPEC M5 / §13.6: exactly 4 milestones (default 20/30/30/20).
+    milestones: z.array(z.object({ key: z.string().min(2), title: z.string().min(2), pct: z.coerce.number().min(1).max(100), deadline: z.string().min(1, "pick a date") })).length(4, "An estate has exactly 4 milestones"),
     payout: acct,
     surveyor: acct,
     developer: acct,
@@ -45,7 +47,7 @@ export function NewEstateWizard() {
   const [step, setStep] = useState(0);
   const [config, setConfig] = useState<Out | null>(null);
   const y = new Date().getUTCFullYear() + 1;
-  const { register, control, handleSubmit, watch, formState: { errors } } = useForm<In, unknown, Out>({
+  const { register, control, handleSubmit, watch, setValue, formState: { errors } } = useForm<In, unknown, Out>({
     resolver: zodResolver(schema),
     defaultValues: {
       name: "", slug: "", location: "", lat: 6.447, lon: 3.474, radius: 300, mobilisation: 0,
@@ -64,6 +66,9 @@ export function NewEstateWizard() {
   const mob = Number(watch("mobilisation") || 0);
   const sum = (ms ?? []).reduce((n, m) => n + Number(m.pct || 0), 0) + mob;
   const units = Number(watch("units") || 0);
+  const lat = Number(watch("lat"));
+  const lon = Number(watch("lon"));
+  const radius = Number(watch("radius") || 0);
   const preview = `${slug || "your-estate"}.${ROOT_ACCOUNT || `plote.${NETWORK}`}`;
   const nearNeeded = useMemo(() => (8 + units * 0.03 + 5).toFixed(2), [units]);
 
@@ -103,6 +108,11 @@ export function NewEstateWizard() {
           <Field label="Estate name" htmlFor="name" error={errors.name?.message}><input id="name" className="input" {...register("name")} placeholder="Harmattan Court" /></Field>
           <Field label="Slug" htmlFor="slug" error={errors.slug?.message} hint={<>Account: <span className="mono text-text">{preview}</span>. Units become <span className="mono">a-4b.{preview}</span>.</>}><input id="slug" className="input" {...register("slug")} placeholder="harmattan-court" /></Field>
           <Field label="Location" htmlFor="location" error={errors.location?.message}><input id="location" className="input" {...register("location")} placeholder="Lekki, Lagos" /></Field>
+          <div className="space-y-2">
+            <p className="label">Location pin</p>
+            <PickMap lat={lat} lon={lon} radiusM={radius} onPick={(la, lo) => { setValue("lat", la, { shouldValidate: true, shouldDirty: true }); setValue("lon", lo, { shouldValidate: true, shouldDirty: true }); }} />
+            <p className="text-xs text-muted">Click the map to drop the pin (drag to move around). The dashed circle is the geofence photos must be taken inside. Or type exact coordinates below.</p>
+          </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Latitude" htmlFor="lat" error={errors.lat?.message}><input id="lat" className="input" inputMode="decimal" {...register("lat")} /></Field>
             <Field label="Longitude" htmlFor="lon" error={errors.lon?.message}><input id="lon" className="input" inputMode="decimal" {...register("lon")} /></Field>
@@ -110,6 +120,7 @@ export function NewEstateWizard() {
           </div>
         </div>
         <div className={step === 1 ? "space-y-3" : "hidden"}>
+          <p className="text-sm text-muted">Four stages, each released only when its photo passes the check and the surveyor signs. Shares plus mobilisation add up to 100%.</p>
           {fields.map((f, i) => (
             <div key={f.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_90px_160px]">
               <Field label={`${i + 1}. key`} htmlFor={`mk${i}`}><input id={`mk${i}`} className="input" {...register(`milestones.${i}.key`)} /></Field>

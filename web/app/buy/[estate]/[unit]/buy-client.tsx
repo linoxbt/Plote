@@ -7,6 +7,7 @@ import { Check, Coins, Globe, Wallet } from "lucide-react";
 import { clsx } from "clsx";
 import { EstateBanners } from "@/components/banners";
 import { NftReveal } from "@/components/celebration";
+import { DefaultExplainer } from "@/components/default-resale";
 import { CountdownChip, MonoAmount } from "@/components/chain";
 import { OneClickPay } from "@/components/oneclick-pay";
 import { useTx } from "@/components/toast";
@@ -103,6 +104,7 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
             <p className="text-muted">Reserving locks {unitDisplay(u.id)} for you for <strong className="text-text">{formatDuration(nsToMs(e.params.reserve_ttl_ns))}</strong>. It needs a <strong className="text-text">0.05 NEAR storage deposit</strong> — storage, not price — which you get back if the reservation ends or the unit is refunded.</p>
             <p className="text-sm text-muted">Then pay at least {formatUsd(minBase)} ({e.params.min_initial_bps / 100}% of the price) into the unit&apos;s own account, <span className="mono">{u.account}</span>, to receive the allocation token.</p>
             <AmountPicker value={amountStr} onChange={setAmountStr} presets={presets} err={amountErr} min={minBase} />
+            <BracketCard tone="amber" className="bg-surface-2"><DefaultExplainer e={e} u={u} /></BracketCard>
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" onClick={() => reserve(true)}><Wallet className="h-4 w-4" aria-hidden /> Reserve and pay (one approval)</Button>
               <Button onClick={() => reserve(false)}>Reserve only</Button>
@@ -123,6 +125,7 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
             </div>
             {!ONECLICK_ENABLED ? <p className="text-xs text-muted">Paying from Base, Solana or Ethereum uses NEAR Intents, which has no testnet. The mainnet demo build shows it.</p> : null}
             <AmountPicker value={amountStr} onChange={setAmountStr} presets={presets} err={amountErr} min={minBase} />
+            <DefaultExplainer e={e} u={u} className="border-l-2 border-amber pl-3" />
             {method === "wallet" ? (
               <div className="space-y-3">
                 <p className="mono text-sm text-muted">Your USDC: {bal.data ? formatUsd(bal.data) : "—"} {reg.data === false ? "· not registered yet (adds a 0.00125 NEAR registration)" : ""}</p>
