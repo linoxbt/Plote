@@ -12,10 +12,13 @@ version = "0.1.0"
 near-sdk = { version = "=5.29.1" }
 near-contract-standards = { version = "=5.29.1" }
 
+# NEAR contract release profile (near-sdk / cargo-near defaults): small and deterministic. cargo-near also runs
+# wasm-opt on the output. overflow-checks stays on: an overflow in money maths must panic, not wrap.
 [profile.release]
 codegen-units = 1
 opt-level = "z"
 lto = true
 debug = false
+strip = true
 panic = "abort"
 overflow-checks = true
