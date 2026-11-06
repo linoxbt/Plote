@@ -27,5 +27,5 @@
   },
   "units": [],
   "generate_units": { "prefix": "p", "count": 60, "label": "Playground · Unit {n} · studio", "price": "1000000000" },
-  "fund_verification_near": "5"
+  "fund_verification_near": "2"
 }

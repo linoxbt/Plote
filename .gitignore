@@ -22,3 +22,6 @@ out/
 coverage/
 playwright-report/
 test-results/
+
+# Shared judge wallet holds a (testnet) private key — share it deliberately, never commit it
+docs/judge-wallet.md
