@@ -12,7 +12,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 }
 
-const MARK = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="9 3 30 42"><path d="M10 4h12v6h-6v16h6v6h-6v6l-3 6-3-6z" fill="#E8EAF4"/><path d="M26 4h12v12h-6v-6h-6z" fill="#E8EAF4"/><path d="M32 20h6v12H26v-6h6z" fill="#E8EAF4"/><rect x="20" y="14" width="8" height="8" fill="#E8B04B"/></svg>')}`;
+const MARK = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none"><path d="M6 18V6h12M46 6h12v12M58 46v12H46M18 58H6V46" stroke="#2DD4BF" stroke-width="4"/><rect x="20" y="18" width="6" height="28" fill="#E9ECEF"/><rect x="26" y="18" width="18" height="16" fill="#E9ECEF"/><rect x="32" y="24" width="6" height="4" fill="#0A0B0D"/><rect x="40" y="40" width="6" height="6" fill="#E8B04B"/></svg>')}`;
 
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
@@ -32,10 +32,10 @@ export async function GET(req: Request) {
   const sub = unitId ? (ms ? `${done} of ${total} stages proven · every payment checked on-chain` : "Every stage of this home, with the proof behind each payment.") : "Every off-plan home gets its own on-chain account.";
   return new ImageResponse(
     (
-      <div style={{ width: 1200, height: 630, display: "flex", background: "linear-gradient(180deg, #0b1050 0%, #03051f 55%, #01020f 100%)", color: "#E8EAF4", padding: 56, fontFamily: "sans-serif" }}>
+      <div style={{ width: 1200, height: 630, display: "flex", background: "#0A0B0D", color: "#E9ECEF", padding: 56, fontFamily: "sans-serif" }}>
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", width: 640 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <img src={MARK} width={40} height={56} alt="" />
+            <img src={MARK} width={56} height={56} alt="" />
             <span style={{ fontSize: 40, letterSpacing: -1 }}>plote</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {Array.from({ length: total }).map((_, i) => (
-              <div key={i} style={{ width: 120, height: 10, background: i < (unitId ? done : 3) ? "#2DD4BF" : "#1d2550" }} />
+              <div key={i} style={{ width: 120, height: 10, background: i < (unitId ? done : 3) ? "#2DD4BF" : "#252A31" }} />
             ))}
           </div>
         </div>
