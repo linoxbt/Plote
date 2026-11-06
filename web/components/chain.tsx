@@ -42,7 +42,7 @@ export function MonoAmount({
         {unit && !dollar ? ` ${unit}` : ""}
       </span>
       {naira && rate ? (
-        <span className="mono text-xs text-muted/70 tabular-nums" title="Approximate naira value, display only">
+        <span className="mono text-xs text-muted tabular-nums" title="Approximate naira value, display only">
           ≈{formatNaira(value, rate)} <span className="sr-only">approximately</span>
         </span>
       ) : null}
@@ -69,7 +69,7 @@ export function AccountChip({ account, max = 22, className, label }: { account: 
     <span className={clsx("mono inline-flex max-w-full items-center gap-1 bg-surface-2 py-0.5 pl-2 text-sm", className)} title={account}>
       {label ? <span className="text-muted">{label}</span> : null}
       <span className="truncate">{truncateAccount(account, max)}</span>
-      <button type="button" onClick={copy} className="inline-flex h-7 w-7 items-center justify-center text-muted hover:text-teal" aria-label={`Copy ${account}`}>
+      <button type="button" onClick={copy} className="relative inline-flex h-7 w-7 items-center justify-center text-muted before:absolute before:-inset-2 before:content-[''] hover:text-teal" aria-label={`Copy ${account}`}>
         {copied ? <BadgeCheck className="h-3.5 w-3.5 text-teal" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
       </button>
       <ChainLink account={account} />
@@ -114,18 +114,18 @@ const PROPOSAL_BADGE: Record<ProposalStatus, BadgeDef> = {
 };
 
 const TONE = {
-  teal: "text-teal shadow-[inset_0_0_0_1px_rgba(45,212,191,0.35)]",
-  amber: "text-amber shadow-[inset_0_0_0_1px_rgba(242,169,59,0.35)]",
-  red: "text-red shadow-[inset_0_0_0_1px_rgba(240,106,106,0.4)]",
-  gold: "text-gold shadow-[inset_0_0_0_1px_rgba(232,176,75,0.4)]",
-  muted: "text-muted shadow-[inset_0_0_0_1px_var(--line)]",
+  teal: "text-teal bg-teal-dim/40",
+  amber: "text-amber bg-amber/10",
+  red: "text-red bg-red/10",
+  gold: "text-gold bg-gold/10",
+  muted: "text-muted bg-surface-2",
 };
 
 function Badge({ def, className, suffix }: { def: BadgeDef; className?: string; suffix?: string }) {
   const { Icon } = def;
   return (
-    <span className={clsx("tech inline-flex items-center gap-1.5 px-2 py-1 text-[10px]", TONE[def.tone], className)}>
-      <Icon className={clsx("h-3 w-3", def.Icon === Loader2 && "animate-spin")} strokeWidth={1.5} aria-hidden />
+    <span className={clsx("mono inline-flex items-center gap-1.5 px-2 py-1 text-xs font-semibold uppercase tracking-wide", TONE[def.tone], className)}>
+      <Icon className={clsx("h-3.5 w-3.5", def.Icon === Loader2 && "animate-spin")} strokeWidth={1.75} aria-hidden />
       {def.label}
       {suffix ? <span className="font-normal normal-case">{suffix}</span> : null}
     </span>
@@ -154,11 +154,11 @@ export function NetworkPill({ className }: { className?: string }) {
   const main = NETWORK === "mainnet";
   return (
     <span
-      className={clsx("tech inline-flex items-center gap-2 px-2 py-1 text-[10px]", main ? "text-gold shadow-[inset_0_0_0_1px_rgba(232,176,75,0.4)]" : "text-teal shadow-[inset_0_0_0_1px_rgba(45,212,191,0.35)]", className)}
+      className={clsx("mono inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold tracking-[0.1em]", main ? "bg-gold/10 text-gold" : "bg-teal-dim/40 text-teal", className)}
       title={main ? "Mainnet demo build" : "NEAR testnet — no real money"}
     >
-      <span className={clsx("h-1.5 w-1.5", main ? "bg-gold" : "bg-teal")} aria-hidden />
-      {main ? "Mainnet" : "Testnet"}
+      <span className={clsx("h-1.5 w-1.5 rounded-full", main ? "bg-gold" : "bg-teal")} aria-hidden />
+      {main ? "MAINNET" : "TESTNET"}
     </span>
   );
 }

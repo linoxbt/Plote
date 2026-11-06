@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { clsx } from "clsx";
-import { AlertTriangle, ChevronDown, Inbox } from "lucide-react";
+import { AlertTriangle, ChevronDown, Clock, Inbox } from "lucide-react";
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { EXPLORER, IS_MAINNET } from "@/lib/config";
 import { explainError } from "@/lib/errors";
@@ -22,7 +22,7 @@ export function BracketCard({
   return (
     <Tag
       className={clsx(
-        "corners panel relative p-4 sm:p-5",
+        "corners relative bg-surface p-4 sm:p-5",
         tone !== "default" && `corners-${tone}`,
         hover && "corners-hover",
         className,
@@ -81,7 +81,10 @@ export function ChainLink({ account, tx, className, label }: { account?: string 
       href={href}
       target="_blank"
       rel="noreferrer"
-      className={clsx("mono inline-flex min-h-6 min-w-6 items-center justify-center text-xs text-muted hover:text-teal", className)}
+      className={clsx(
+        "mono relative inline-flex h-6 w-6 items-center justify-center text-xs text-muted before:absolute before:-inset-2.5 before:content-[''] hover:text-teal",
+        className,
+      )}
       aria-label={label ?? `View ${tx ? "transaction" : account} on NearBlocks`}
       title="View on NearBlocks"
     >
@@ -110,7 +113,7 @@ export function LoadingCard({ lines = 3, className, label = "Loading" }: { lines
 export function ErrorState({ error, title, onRetry, className }: { error: unknown; title?: string; onRetry?: () => void; className?: string }) {
   const e = explainError(error);
   const [open, setOpen] = useState(false);
-  if (e.code === "CONTRACT_NOT_DEPLOYED") return <AwaitingDeployment raw={e.raw} className={className} />;
+  if (e.code === "CONTRACT_NOT_DEPLOYED") return <AwaitingDeployment raw={e.raw} code={e.code} className={className} />;
   return (
     <BracketCard tone="red" className={clsx("space-y-3", className)} role="alert">
       <div className="flex items-start gap-3">
@@ -128,7 +131,7 @@ export function ErrorState({ error, title, onRetry, className }: { error: unknow
         ) : null}
         <button
           type="button"
-          className="mono inline-flex min-h-9 items-center gap-1 text-xs text-muted hover:text-text"
+          className="mono inline-flex min-h-11 items-center gap-1 text-xs text-muted hover:text-text"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
@@ -140,32 +143,34 @@ export function ErrorState({ error, title, onRetry, className }: { error: unknow
   );
 }
 
-/** A contract that isn't on this network yet is a state, not a failure: say so calmly. */
-export function AwaitingDeployment({ raw, className }: { raw?: string; className?: string }) {
+/** A contract that isn't on this network yet is a state, not a failure: say so plainly (§13.1 states). */
+export function AwaitingDeployment({ raw, code, className }: { raw?: string; code?: string; className?: string }) {
+  const [open, setOpen] = useState(false);
   const account = raw?.match(/([a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.(?:testnet|near))/)?.[1];
   return (
-    <section className={clsx("corners panel relative overflow-hidden px-6 py-12 sm:px-10 sm:py-16", className)} aria-live="polite">
-      <div className="rings pointer-events-none absolute inset-x-0 bottom-0 h-40 opacity-70" aria-hidden />
-      <div className="relative flex flex-col items-center gap-5 text-center">
-        <span className="relative flex h-10 w-10 items-center justify-center" aria-hidden>
-          <span className="absolute inset-0 animate-ping rounded-full bg-teal/15" />
-          <span className="h-2 w-2 rounded-full bg-teal" />
-        </span>
-        <span className="hud-tag hud-tag-ghost text-[7.5px]">Awaiting deployment</span>
-        <p className="max-w-lg text-[15px] uppercase tracking-[0.08em] text-text [font-family:var(--font-tech)] font-light">
-          This contract isn&apos;t on NEAR {IS_MAINNET ? "mainnet" : "testnet"} yet
-        </p>
-        <p className="max-w-md text-[12.5px] text-muted">
-          Nothing is broken and no money is involved. This page reads straight from the chain, so it fills in by itself the moment the contract is deployed.
-        </p>
-        {account ? (
-          <span className="mono inline-flex items-center gap-1 text-[11px] text-faint">
-            {account}
-            <ChainLink account={account} />
-          </span>
-        ) : null}
+    <BracketCard className={clsx("space-y-3", className)} aria-live="polite">
+      <div className="flex items-start gap-3">
+        <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber" strokeWidth={1.5} aria-hidden />
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="font-medium">Awaiting deployment</p>
+          <p className="text-sm text-muted">
+            This contract isn&apos;t on NEAR {IS_MAINNET ? "mainnet" : "testnet"} yet. Nothing is broken and no money is involved. This page reads straight from
+            the chain, so it fills in by itself once the contract is deployed.
+          </p>
+          {account ? (
+            <p className="mono inline-flex items-center gap-1 text-xs text-muted">
+              {account} <ChainLink account={account} />
+            </p>
+          ) : null}
+        </div>
       </div>
-    </section>
+      {code ? (
+        <button type="button" className="mono inline-flex min-h-11 items-center gap-1 text-xs text-muted hover:text-text" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <ChevronDown className={clsx("h-3.5 w-3.5 transition-transform", open && "rotate-180")} aria-hidden /> {code}
+        </button>
+      ) : null}
+      {open && raw ? <pre className="mono max-h-48 overflow-auto whitespace-pre-wrap break-all bg-bg p-3 text-xs text-muted">{raw}</pre> : null}
+    </BracketCard>
   );
 }
 
@@ -173,9 +178,9 @@ export function EmptyState({ title, children, action, icon, className }: { title
   return (
     <BracketCard className={clsx("flex flex-col items-center gap-3 py-10 text-center", className)}>
       <div className="text-muted" aria-hidden>
-        {icon ?? <Inbox className="h-7 w-7" strokeWidth={1} />}
+        {icon ?? <Inbox className="h-7 w-7" strokeWidth={1.5} />}
       </div>
-      <p className="text-lg uppercase tracking-[0.1em] [font-family:var(--font-tech)] font-light">{title}</p>
+      <p className="font-display text-lg">{title}</p>
       {children ? <div className="max-w-md text-sm text-muted">{children}</div> : null}
       {action}
     </BracketCard>
@@ -186,36 +191,26 @@ export function EmptyState({ title, children, action, icon, className }: { title
 
 export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="relative mb-10 flex flex-col gap-6 pb-8 sm:mb-12 sm:flex-row sm:items-end sm:justify-between">
+    <header className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        {eyebrow ? (
-          <div className="rise mb-5 flex items-center gap-3">
-            <span className="h-px w-8 bg-teal" aria-hidden />
-            <p className="tech text-[9.5px] text-teal">{eyebrow}</p>
-          </div>
-        ) : null}
-        <h1 className="rise text-[26px] font-light uppercase tracking-[0.06em] text-text sm:text-[40px]">{title}</h1>
-        {children ? <div className="rise-2 mt-3 max-w-2xl text-[13px] text-muted">{children}</div> : null}
+        {eyebrow ? <p className="mono mb-2 text-xs uppercase tracking-[0.12em] text-teal">{eyebrow}</p> : null}
+        <h1 className="text-3xl font-semibold sm:text-[40px]">{title}</h1>
+        {children ? <div className="mt-2 max-w-2xl text-muted">{children}</div> : null}
       </div>
-      {actions ? <div className="rise-2 flex flex-wrap gap-2">{actions}</div> : null}
-      <div className="absolute inset-x-0 bottom-0 flex items-center" aria-hidden>
-        <span className="h-px flex-1 bg-[var(--line-soft)]" />
-        <span className="mx-2 block h-[7px] w-[7px] border-l border-t border-[rgba(200,210,255,0.3)]" />
-        <span className="h-px w-16 bg-[var(--line)]" />
-      </div>
+      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </header>
   );
 }
 
 export function Page({ children, className, narrow }: { children: ReactNode; className?: string; narrow?: boolean }) {
-  return <main id="main" className={clsx("mx-auto w-full px-4 py-10 sm:px-6 sm:py-16", narrow ? "max-w-3xl" : "max-w-6xl", className)}>{children}</main>;
+  return <main id="main" className={clsx("mx-auto w-full px-4 py-8 sm:px-6 sm:py-12", narrow ? "max-w-3xl" : "max-w-6xl", className)}>{children}</main>;
 }
 
 export function Stat({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
     <div className="min-w-0">
       <p className="label">{label}</p>
-      <div className="readout text-xl text-text sm:text-2xl">{children}</div>
+      <div className="mono text-lg tabular-nums">{children}</div>
       {hint ? <div className="text-xs text-muted">{hint}</div> : null}
     </div>
   );
@@ -223,7 +218,7 @@ export function Stat({ label, children, hint }: { label: string; children: React
 
 export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-[var(--line-soft)] py-2.5 text-sm last:border-0">
+    <div className="flex items-start justify-between gap-4 border-b border-line/60 py-2 text-sm last:border-0">
       <dt className="text-muted">{k}</dt>
       <dd className="mono min-w-0 break-all text-right">{children}</dd>
     </div>
@@ -232,7 +227,7 @@ export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
 
 export function Collapsible({ title, children, defaultOpen = false }: { title: ReactNode; children: ReactNode; defaultOpen?: boolean }) {
   return (
-    <details className="corners panel p-4" open={defaultOpen}>
+    <details className="corners bg-surface p-4 [&_summary::-webkit-details-marker]:hidden" open={defaultOpen}>
       <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 font-medium">
         {title}
         <ChevronDown className="h-4 w-4 text-muted" aria-hidden />
@@ -242,18 +237,28 @@ export function Collapsible({ title, children, defaultOpen = false }: { title: R
   );
 }
 
-export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+export function Tabs<T extends string>({ tabs, value, onChange, idBase = "tabs" }: { tabs: { id: T; label: string }[]; value: T; onChange: (v: T) => void; idBase?: string }) {
   return (
-    <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-[var(--line-soft)]">
+    <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-line">
       {tabs.map((t) => (
         <button
           key={t.id}
+          id={`${idBase}-tab-${t.id}`}
           role="tab"
           type="button"
           aria-selected={value === t.id}
+          aria-controls={`${idBase}-panel-${t.id}`}
+          tabIndex={value === t.id ? 0 : -1}
           onClick={() => onChange(t.id)}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+            const i = tabs.findIndex((x) => x.id === value);
+            const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+            onChange(next.id);
+            document.getElementById(`${idBase}-tab-${next.id}`)?.focus();
+          }}
           className={clsx(
-            "tech min-h-11 shrink-0 border-b px-3 text-[10.5px]",
+            "mono min-h-11 shrink-0 border-b-2 px-3 text-sm",
             value === t.id ? "border-teal text-teal" : "border-transparent text-muted hover:text-text",
           )}
         >
@@ -264,11 +269,16 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
   );
 }
 
+/** Props for the panel that a <Tabs idBase=…> controls: `<div {...tabPanelProps("unit", tab)}>`. */
+export function tabPanelProps(idBase: string, id: string) {
+  return { id: `${idBase}-panel-${id}`, role: "tabpanel" as const, "aria-labelledby": `${idBase}-tab-${id}`, tabIndex: 0 };
+}
+
 export function Bar({ value, tone = "teal", label }: { value: number; tone?: "teal" | "gold" | "amber" | "red" | "muted"; label: string }) {
   const v = Math.max(0, Math.min(100, value));
   const color = { teal: "bg-teal", gold: "bg-gold", amber: "bg-amber", red: "bg-red", muted: "bg-muted" }[tone];
   return (
-    <div className="h-1 w-full bg-[var(--line)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v)} aria-label={label}>
+    <div className="h-2 w-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v)} aria-label={label}>
       <div className={clsx("h-full", color)} style={{ width: `${v}%` }} />
     </div>
   );

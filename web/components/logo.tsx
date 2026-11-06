@@ -1,89 +1,37 @@
 import Link from "next/link";
 import { clsx } from "clsx";
 
-// Plote identity.
-//
-// The mark is a P built on a 48-unit grid. Its bowl is a camera viewfinder: four corner brackets
-// framing a gold tile, the unit you own, seen through a proof photo. The stem runs down past the
-// bowl and ends in a point, like a surveyor's stake driven into the plot.
-//
-// The wordmark is drawn, not typeset: monoline geometric caps on a 20-unit cap height, with the O
-// as the same viewfinder. Gold lives only in the mark's tile.
-
-export const INK = "#E8EAF4";
-export const GOLD = "#E8B04B";
-
-/** Stem + top-left and bottom-left arms (one shape), top-right bracket, bottom-right bracket. */
-export const MARK_PATHS = {
-  stem: "M10 4h12v6h-6v16h6v6h-6v6l-3 6-3-6z",
-  tr: "M26 4h12v12h-6v-6h-6z",
-  br: "M32 20h6v12H26v-6h6z",
-  tile: { x: 20, y: 14, w: 8, h: 8 },
-} as const;
-
-export function Mark({
-  size = 28, className, title = "Plote", ink = INK, gold = GOLD, animated = false,
-}: { size?: number; className?: string; title?: string; ink?: string; gold?: string; animated?: boolean }) {
-  // Tight crop of the 48-grid (x 9..39, y 3..45) so the mark sits on text baselines.
-  const h = size;
-  const w = (size * 30) / 42;
-  const t = MARK_PATHS.tile;
+/** SPEC §11.3 hand-built mark (64×64): survey-beacon corners, geometric P, one gold unit. */
+export function Mark({ size = 28, className, title = "Plote" }: { size?: number; className?: string; title?: string }) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="9 3 30 42"
-      width={w}
-      height={h}
-      className={clsx(animated && "mark-animated", className)}
-      role={title ? "img" : undefined}
-      aria-label={title || undefined}
-      aria-hidden={title ? undefined : true}
-    >
-      <path className="mk-stem" d={MARK_PATHS.stem} fill={ink} />
-      <path className="mk-tr" d={MARK_PATHS.tr} fill={ink} />
-      <path className="mk-br" d={MARK_PATHS.br} fill={ink} />
-      <rect className="mk-tile" x={t.x} y={t.y} width={t.w} height={t.h} fill={gold} />
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width={size} height={size} fill="none" className={className} role={title ? "img" : undefined} aria-label={title || undefined} aria-hidden={title ? undefined : true}>
+      <path d="M6 18V6h12M46 6h12v12M58 46v12H46M18 58H6V46" stroke="#2DD4BF" strokeWidth="4" strokeLinecap="square" />
+      <rect x="20" y="18" width="6" height="28" fill="#E9ECEF" />
+      <rect x="26" y="18" width="18" height="16" fill="#E9ECEF" />
+      <rect x="32" y="24" width="6" height="4" fill="#0A0B0D" />
+      <rect x="40" y="40" width="6" height="6" fill="#E8B04B" />
     </svg>
   );
 }
 
-/** Monoline wordmark. Height follows the font-size (≈0.78em of cap height); colour follows `color`. */
-export function Wordmark({ className, title = "Plote" }: { className?: string; title?: string }) {
+/** "plote" in Space Grotesk Medium, the "o" replaced by a square drawn with four corner brackets. */
+export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={clsx("inline-flex items-center text-[15px] text-text", className)}>
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 117 20"
-        height="0.78em"
-        width={`${(0.78 * 117) / 20}em`}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="square"
-        role={title ? "img" : undefined}
-        aria-label={title || undefined}
-        aria-hidden={title ? undefined : true}
-      >
-        {/* P */}
-        <path d="M1 19V1h13v12H1" />
-        {/* L */}
-        <path d="M26 1v18h11" />
-        {/* O — the viewfinder */}
-        <path d="M49 7V1h6M61 1h6v6M67 13v6h-6M55 19h-6v-6" />
-        {/* T */}
-        <path d="M78 1h15M85.5 1v18" />
-        {/* E */}
-        <path d="M116 1h-11v18h11M105 10h9" />
+    <span className={clsx("font-display inline-flex items-baseline text-[22px] font-medium tracking-[-0.02em] text-text", className)} aria-label="plote">
+      <span aria-hidden>pl</span>
+      <svg viewBox="0 0 20 20" width="0.62em" height="0.62em" className="mx-[0.04em] self-center translate-y-[0.06em]" aria-hidden>
+        <path d="M1.5 7V1.5H7M13 1.5h5.5V7M18.5 13v5.5H13M7 18.5H1.5V13" stroke="#2DD4BF" strokeWidth="2.6" fill="none" strokeLinecap="square" />
       </svg>
+      <span aria-hidden>te</span>
     </span>
   );
 }
 
 export function Logo({ className }: { className?: string }) {
   return (
-    <Link href="/" className={clsx("group inline-flex min-h-11 items-center gap-2.5", className)} aria-label="Plote home">
-      <Mark size={24} title="" className="transition-transform duration-500 group-hover:-translate-y-0.5" />
-      <Wordmark title="" className="text-[14px]" />
+    <Link href="/" className={clsx("inline-flex min-h-11 items-center gap-2", className)} aria-label="Plote home">
+      <Mark size={28} title="" />
+      <Wordmark />
     </Link>
   );
 }
