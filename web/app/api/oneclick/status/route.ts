@@ -1,13 +1,15 @@
 // GET /api/oneclick/status?depositAddress= — proxy of 1Click GET /v0/status.
-// On SUCCESS it calls unit.sync_deposits() once with the relayer key (anyone may call sync; it's idempotent).
+// On SUCCESS it calls unit.sync_deposits() once with the relayer key (anyone may call sync; it's idempotent),
+// but only when the recipient is a unit account of an estate configured on this network (NEXT_PUBLIC_ESTATES).
+// Any other recipient — e.g. the Mainnet Lite unit (scripts/mainnet-lite.ts), a bare account with no contract —
+// is skipped and the response says so: `sync: "skipped"` with `sync_note`. The USDC is on the account either way.
 
-import { TABLES } from "@/lib/config";
+import { ESTATES, NETWORK, TABLES } from "@/lib/config";
 import { unit as U } from "@/lib/unit";
 import { jsonError, ok } from "@/lib/server/http";
 import { oneclickFetch } from "@/lib/server/oneclick-server";
 import { markOnce } from "@/lib/server/rate-limit";
 import { callAsRelayer, isAllowedReceiver, relayerCredentials } from "@/lib/server/relayer";
-import { serverEnv } from "@/lib/server/env";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import type { StatusResponse } from "@/lib/oneclick";
 
@@ -32,16 +34,26 @@ export async function GET(req: Request) {
   if (sb && row) await sb.from(TABLES.oneclickQuotes).update({ status: j.status, updated_at: new Date().toISOString() }).eq("deposit_address", dep);
 
   const recipient = j.quoteResponse?.quoteRequest?.recipient as string | undefined;
-  if (j.status === "SUCCESS" && !synced && recipient && relayerCredentials() && (isAllowedReceiver(recipient) || recipient === serverEnv.mainnetUnitAccount())) {
-    if (markOnce(`sync:${dep}`, 10 * 60_000)) {
+  let sync: "done" | "pending" | "skipped" | "failed" | "not_needed" = synced ? "done" : j.status === "SUCCESS" ? "pending" : "not_needed";
+  let syncNote: string | undefined;
+  if (j.status === "SUCCESS" && !synced && recipient) {
+    if (!isAllowedReceiver(recipient) || ESTATES.includes(recipient)) {
+      // Not a unit of a configured estate on this network (Mainnet Lite's unit has no contract): nothing to sync.
+      sync = "skipped";
+      syncNote = `${recipient} isn't a unit of an estate configured on ${NETWORK}, so there is no estate to sync; the USDC stays on that account.`;
+    } else if (!relayerCredentials()) {
+      syncNote = "The relayer isn't configured here; anyone can call sync_deposits on the unit to credit the payment.";
+    } else if (markOnce(`sync:${dep}`, 10 * 60_000)) {
       try {
-        await callAsRelayer(U.syncDeposits(recipient));
+        await callAsRelayer(U.syncDeposits(recipient)); // throws on a failed transaction
         synced = true;
+        sync = "done";
         if (sb) await sb.from(TABLES.oneclickQuotes).update({ synced: true }).eq("deposit_address", dep);
-      } catch {
-        // Mainnet Lite: the unit account has no contract, so sync fails — the balance is still on the account.
+      } catch (e) {
+        sync = "failed";
+        syncNote = `sync_deposits on ${recipient} failed (${e instanceof Error ? e.message : "unknown error"}); a later poll retries it.`;
       }
     }
   }
-  return ok({ ...j, synced }, { headers: { "cache-control": "no-store" } });
+  return ok({ ...j, synced, sync, ...(syncNote ? { sync_note: syncNote } : {}) }, { headers: { "cache-control": "no-store" } });
 }

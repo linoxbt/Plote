@@ -56,6 +56,8 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
   const exifMs = v?.exif_time ? nsToMs(v.exif_time) : null;
   const subMs = nsToMs(ev.submitted_at);
   const aiModel = "Qwen/Qwen3-VL-30B-A3B-Instruct";
+  // The model's own notes (SPEC 6.4 "observations"), stored with the verdict (INTERFACE `Verdict.ai_observations`).
+  const notes = (v?.ai_observations ?? []).filter((o) => o.trim() !== "");
 
   return (
     <Page>
@@ -88,6 +90,12 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
             <BracketCard tone="amber" className="space-y-2">
               <p className="flex items-center gap-2 font-medium text-amber"><AlertTriangle className="h-4 w-4" aria-hidden /> Warnings ({e.params.playground ? "Playground" : "demo mode"})</p>
               <ul className="list-disc pl-5 text-sm text-amber">{v.warnings.map((w) => <li key={w}>{reasonText(w)} <span className="mono text-xs">({w})</span></li>)}</ul>
+            </BracketCard>
+          ) : null}
+          {ev.status === "Error" && ev.error ? (
+            <BracketCard tone="red" className="space-y-2">
+              <p className="flex items-center gap-2 font-medium text-red"><XCircle className="h-4 w-4" aria-hidden /> The check didn&apos;t produce a verdict</p>
+              <p className="text-sm">{ev.error}. The milestone is open again, so the surveyor can submit a new photo.</p>
             </BracketCard>
           ) : null}
           {v && !v.pass ? (
@@ -157,12 +165,18 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
               <KV k="Confidence">{v?.ai_confidence != null ? `${v.ai_confidence}% (min ${e.params.min_ai_confidence}%)` : "—"}</KV>
               <KV k="Claimed milestone">{m?.key ?? ev.milestone}</KV>
             </dl>
+            {notes.length ? (
+              <div>
+                <p className="label">What the model saw</p>
+                <ul className="list-disc pl-5 text-sm">{notes.map((o, i) => <li key={i}>{o}</li>)}</ul>
+              </div>
+            ) : v ? <p className="text-xs text-muted">The model recorded no observations for this photo.</p> : null}
             {v?.ai_chat_id ? (
               <p className="text-sm">
                 <a className="underline hover:text-teal" href={`${NEAR_AI_URL}/signature/${encodeURIComponent(v.ai_chat_id)}?model=${encodeURIComponent(aiModel)}&signing_algo=ecdsa`} target="_blank" rel="noreferrer">NEAR AI signature ↗</a>{" · "}
                 <a className="underline hover:text-teal" href={`${NEAR_AI_URL}/attestation/report?model=${encodeURIComponent(aiModel)}`} target="_blank" rel="noreferrer">model attestation ↗</a>
               </p>
-            ) : <p className="text-xs text-muted">Observations are not stored on-chain; the signature link appears when the worker records a NEAR AI chat id.</p>}
+            ) : <p className="text-xs text-muted">The NEAR AI signature link appears when the worker records a NEAR AI chat id.</p>}
           </BracketCard>
         </div>
       </div>
@@ -170,7 +184,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
       <div className="mt-6">
         <Collapsible title="How to verify this yourself">
           <dl>
-            <KV k="Worker repo">{e.verifier.repo ? <a className="underline" href={e.verifier.repo} target="_blank" rel="noreferrer">{e.verifier.repo} ↗</a> : "—"}</KV>
+            <KV k="Worker repo">{e.verifier.repo ? (e.verifier.repo.startsWith("project:") ? <span className="mono">OutLayer project {e.verifier.repo.slice(8)}</span> : <a className="underline" href={e.verifier.repo} target="_blank" rel="noreferrer">{e.verifier.repo} ↗</a>) : "—"}</KV>
             <KV k="Worker commit (estate)">{e.verifier.repo ? <a className="underline" href={`${e.verifier.repo.replace(/\/$/, "")}/tree/${e.verifier.commit}`} target="_blank" rel="noreferrer">{shortHash(e.verifier.commit, 8)} ↗</a> : shortHash(e.verifier.commit, 8)}</KV>
             <KV k="Worker commit (verdict)">{v ? shortHash(v.worker_commit, 8) : "—"} {v && v.worker_commit !== e.verifier.commit ? <span className="text-amber">differs</span> : v ? <CheckCircle2 className="inline h-3.5 w-3.5 text-teal" aria-label="matches" /> : null}</KV>
             <KV k="Build target">{e.verifier.build_target}</KV>

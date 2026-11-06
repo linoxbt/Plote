@@ -2,7 +2,8 @@
 // Body: { estate, evidenceId }. Reads the exact worker input from the estate (`check_input`), runs the worker on
 // OutLayer's HTTPS API, and submits the verdict with submit_verdict, signed by the relayer (the estate's
 // verdict_relayer). Weaker than yield/resume: the relayer is trusted to pass the result through, and the
-// proof page says "verdict via HTTPS".
+// proof page says "verdict via HTTPS". Only for estates whose verify_mode is "https": an OutLayer-mode estate
+// gets its verdict from OutLayer's yield/resume callback, and the contract rejects relayed ones (E_VERIFY_MODE).
 
 import { z } from "zod";
 import { ESTATES } from "@/lib/config";
@@ -12,7 +13,7 @@ import type { EstateView, EvidenceView } from "@/lib/types";
 import { clientIp, jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
 import { rateLimit } from "@/lib/server/rate-limit";
 import { callAsRelayer, relayerCredentials } from "@/lib/server/relayer";
-import { extractVerdict, toContractVerdict } from "@/lib/server/verify";
+import { extractVerdict, relayAllowed, toContractVerdict } from "@/lib/server/verify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -39,6 +40,13 @@ export async function POST(req: Request) {
     viewUncached<EvidenceView | null>(estate, "get_evidence", { id }),
     viewUncached<string | null>(estate, "check_input", { evidence_id: id }),
   ]);
+  if (!relayAllowed(e.verify_mode)) {
+    return jsonError(
+      "E_VERIFY_MODE",
+      `This estate's verify_mode is "${e.verify_mode}", so its verdicts come only from OutLayer's on-chain callback. The HTTPS fallback is for estates deployed with verify_mode "https".`,
+      409,
+    );
+  }
   if (!ev || !input) return jsonError("E_BAD_ARGS", "No such evidence.", 404);
   if (ev.status !== "Pending" && ev.status !== "Error") return ok({ status: ev.status, already: true });
   if (e.verdict_relayer !== creds.accountId) {

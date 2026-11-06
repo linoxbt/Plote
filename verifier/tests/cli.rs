@@ -49,16 +49,16 @@ fn offline_fixture_passes_with_mock() {
     assert_eq!(v["phash"].as_str().unwrap().len(), 16);
     assert!(v["attestation"].is_null());
     assert!(!v["worker_commit"].as_str().unwrap().is_empty());
+    assert_eq!(v["ai_observations"], serde_json::json!([]));
 }
 
 #[test]
-fn offline_fixture_demo_mode_survives_ai_outage() {
+fn offline_fixture_demo_mode_ai_outage_fails_the_challenge() {
+    // demo_mode softens ai_unavailable, but nobody read the code on the paper: fail (SPEC 6.1).
     let v = run(&fixture(), None);
-    assert_eq!(v["pass"], true, "{v}");
-    assert_eq!(
-        v["warnings"],
-        serde_json::json!(["ai_unavailable", "challenge_unverified"])
-    );
+    assert_eq!(v["pass"], false, "{v}");
+    assert_eq!(v["warnings"], serde_json::json!(["ai_unavailable"]));
+    assert_eq!(v["reasons"], serde_json::json!(["challenge_unverified"]));
 }
 
 #[test]

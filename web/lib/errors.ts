@@ -47,6 +47,9 @@ export const ERROR_MESSAGES = {
   E_BAD_ARGS: "The request had invalid arguments.",
   E_NOT_UNIT: "Only the unit's own account can call this.",
   E_ALREADY_SOLD: "This unit has already been sold.",
+  E_VERIFY_MODE: "This estate gets its photo verdicts straight from OutLayer, so a relayed verdict isn't accepted.",
+  E_NOT_ESTATE: "Only the estate contract can do this on a unit account.",
+  E_STORAGE: "That account isn't registered on the USDC token yet. Attach 0.00125 NEAR to register it.",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;

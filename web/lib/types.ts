@@ -86,7 +86,7 @@ export type Verdict = {
   phash: string; nearest_distance: number;
   exif_time: string | null; gps: [number, number] | null; gps_source: "exif" | "device" | null;
   distance_m: number | null; ai_stage: string | null; ai_confidence: number | null;
-  challenge_read: string | null; ai_chat_id: string | null;
+  challenge_read: string | null; ai_chat_id: string | null; ai_observations?: string[];
   worker_commit: string; attestation: string | null;
   source: "outlayer" | "https";
 };

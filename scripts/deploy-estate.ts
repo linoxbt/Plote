@@ -1,13 +1,27 @@
 // Creates the estate account, deploys the estate contract, initialises it from a config, registers it
 // (and the payout account) on USDC, and funds the verification budget.
-// Usage: pnpm tsx scripts/deploy-estate.ts config/harmattan-court.testnet.json
+// Usage: pnpm tsx scripts/deploy-estate.ts config/harmattan-court.testnet.json [--allow-unpinned]
+//
+// Verifier pinning (SPEC 5.6, "the code that checks it is public, and its fingerprint is on-chain"): the config's
+// `verifier.commit` must be filled before deploying. The checked-in configs leave it "" because the value only exists
+// once the worker is published:
+//   - `"repo": "project:<owner>/<name>"` (an OutLayer project): `commit` is the project's version key. Publish the
+//     verifier build on OutLayer (app.outlayer.ai → your project → Versions), run it once to warm the cache, and copy
+//     that version's key. Empty would mean "whatever version is active", which can change after deploy.
+//   - `"repo": "https://github.com/<you>/plote-verifier"`: `commit` is the full git SHA OutLayer builds. The worker
+//     bakes the same SHA into every verdict (`worker_commit`) and the estate rejects verdicts from any other build.
+// The script refuses an empty commit unless you pass --allow-unpinned (or PLOTE_ALLOW_UNPINNED=1), e.g. for a
+// throwaway estate wired to outlayer-mock.
 import {
   NEAR, ROOT_ACCOUNT, TGAS, account, call, deployments, ensureSubAccount, estateId, loadConfig, log, near, record,
   resolveAccount, toNs, usage, view, wasm,
 } from "./lib.js";
 
-const path = process.argv[2] ?? usage("usage: deploy-estate.ts <config.json>");
+const argv = process.argv.slice(2);
+const path = argv.find((a) => !a.startsWith("--")) ?? usage("usage: deploy-estate.ts <config.json> [--allow-unpinned]");
+const allowUnpinned = argv.includes("--allow-unpinned") || process.env.PLOTE_ALLOW_UNPINNED === "1";
 const cfg = loadConfig(path);
+assertPinned(cfg.verifier, allowUnpinned);
 const dep = deployments();
 const usdc = dep.usdc ?? usage("deploy mock USDC first (deployments.usdc missing)");
 const hash = dep.unit_code_hash ?? usage("publish the global unit code first (deployments.unit_code_hash missing)");
@@ -64,3 +78,29 @@ log(`✓ verification budget +${fund} NEAR`);
 record(`estate:${cfg.account}`, id);
 log(`next: pnpm tsx scripts/add-units.ts ${path}`);
 void NEAR;
+
+function assertPinned(v: { repo: string; commit: string }, allow: boolean) {
+  const commit = (v.commit ?? "").trim();
+  const project = v.repo.startsWith("project:");
+  if (!commit) {
+    const how = project
+      ? `Set "verifier.commit" to the OutLayer version key of ${v.repo.slice("project:".length)}: publish the verifier ` +
+        `build on OutLayer (app.outlayer.ai → the project → Versions), run it once with verifier/fixtures/example-input.json ` +
+        `to warm the build cache, and copy that version's key into ${path}.`
+      : `Set "verifier.commit" to the full git SHA of the plote-verifier commit OutLayer builds ` +
+        `(git rev-parse HEAD in that repo, after pushing). Verdicts must carry the same worker_commit.`;
+    if (!allow) {
+      usage(
+        `✗ ${path}: verifier.commit is empty, so this estate wouldn't pin the code that checks its photos (SPEC 5.6).
+` +
+          `  ${how}
+  To deploy unpinned anyway (throwaway/mock estates only), pass --allow-unpinned or PLOTE_ALLOW_UNPINNED=1.`,
+      );
+    }
+    log(`! deploying ${path} with an UNPINNED verifier (--allow-unpinned). ${how}`);
+    return;
+  }
+  if (!project && !/^[0-9a-f]{40}$/i.test(commit)) {
+    log(`! verifier.commit "${commit}" isn't a full 40-character git SHA; the worker reports the full SHA as worker_commit, so verdicts would be rejected.`);
+  }
+}

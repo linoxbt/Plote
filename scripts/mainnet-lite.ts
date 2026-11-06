@@ -2,6 +2,13 @@
 // registered on Circle native USDC so a 1Click payment can land on it. No estate contract on mainnet:
 // this shows the payment rail only; the escrow logic runs on testnet. Usage:
 //   NEAR_ENV=mainnet MAINNET_PARENT=you.near pnpm tsx scripts/mainnet-lite.ts
+//
+// The unit account deliberately has NO contract (Mainnet Lite keeps the NEAR cost at ≈0.2 NEAR), so nothing on
+// mainnet can call sync_deposits on it. The web side handles that: /api/oneclick/status only calls
+// unit.sync_deposits for recipients that are unit accounts of an estate listed in NEXT_PUBLIC_ESTATES on that
+// network (empty on mainnet by default). For this account it skips the sync and answers
+// `sync: "skipped"` with a `sync_note`; the USDC simply stays on the account, which is what the demo shows.
+// For Mainnet Full (estate + unit contracts, SPEC 17.4) deploy the estate instead and add it to NEXT_PUBLIC_ESTATES.
 import { NETWORK, TGAS, account, call, ensureSubAccount, log, near, record, usage, view } from "./lib.js";
 
 const CIRCLE_USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";

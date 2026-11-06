@@ -32,6 +32,29 @@ pub struct AiAnswer {
     pub is_photo_of_screen_or_print: bool,
     pub is_render: bool,
     pub challenge_read: Option<String>,
+    /// `observations` from the model (≤ 4 short strings).
+    pub observations: Vec<String>,
+}
+
+pub const MAX_OBSERVATIONS: usize = 4;
+pub const MAX_OBSERVATION_CHARS: usize = 160;
+
+/// The model's `observations`: an array of strings (a lone string is accepted too). Non-strings and
+/// blanks are dropped; at most 4, each at most 160 characters.
+fn as_observations(v: Option<&Value>) -> Vec<String> {
+    let items: Vec<&Value> = match v {
+        Some(Value::Array(a)) => a.iter().collect(),
+        Some(s @ Value::String(_)) => vec![s],
+        _ => vec![],
+    };
+    items
+        .into_iter()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .take(MAX_OBSERVATIONS)
+        .map(|s| s.chars().take(MAX_OBSERVATION_CHARS).collect())
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,6 +234,7 @@ pub fn parse_answer(text: &str) -> Result<AiAnswer, String> {
         is_photo_of_screen_or_print: as_bool(v.get("is_photo_of_screen_or_print")),
         is_render: as_bool(v.get("is_render")),
         challenge_read,
+        observations: as_observations(v.get("observations")),
     })
 }
 
@@ -295,6 +319,7 @@ mod tests {
         assert_eq!(a.stage, "roofing");
         assert_eq!(a.confidence, 88);
         assert_eq!(a.challenge_read.as_deref(), Some("K7RQ4M"));
+        assert_eq!(a.observations, vec!["trusses"]);
         assert!(!a.is_photo_of_screen_or_print && !a.is_render);
 
         let fenced = format!("Here you go:\n```json\n{plain}\n```\nThanks");
@@ -324,6 +349,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.challenge_read.as_deref(), Some("A}B"));
+    }
+
+    #[test]
+    fn observations_are_bounded_strings() {
+        let long = "y".repeat(400);
+        let a = parse_answer(&format!(
+            r#"{{"stage":"roofing","confidence":80,"observations":[" trusses ", 3, "", null, "{long}", "c", "d", "e"]}}"#
+        ))
+        .unwrap();
+        assert_eq!(a.observations.len(), 4);
+        assert_eq!(a.observations[0], "trusses");
+        assert_eq!(a.observations[1].chars().count(), MAX_OBSERVATION_CHARS);
+        assert_eq!(a.observations[3], "d");
+        let b = parse_answer(r#"{"stage":"roofing","confidence":80,"observations":"one note"}"#)
+            .unwrap();
+        assert_eq!(b.observations, vec!["one note"]);
+        let c = parse_answer(r#"{"stage":"roofing","confidence":80}"#).unwrap();
+        assert!(c.observations.is_empty());
     }
 
     #[test]

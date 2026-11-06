@@ -4,6 +4,8 @@
 //!
 //! Verdict rules (from the input JSON): a URL containing "reuse" fails with `phash_reuse:3`,
 //! "offsite" fails `outside_geofence`, "stale" fails `exif_stale`; anything else passes.
+//! `worker_commit` echoes the pinned `source.GitHub.commit` (the estate rejects a verdict from any other
+//! commit), or `"mock"` for a `Project` source.
 
 use near_sdk::serde_json::{self, json, Value};
 use near_sdk::{env, near, PanicOnDefault};
@@ -30,7 +32,13 @@ impl OutlayerMock {
         secrets_ref: Option<Value>,
         response_format: Option<String>,
     ) -> Value {
-        let _ = (source, resource_limits, secrets_ref, response_format);
+        let _ = (resource_limits, secrets_ref, response_format);
+        let worker_commit = source
+            .pointer("/GitHub/commit")
+            .and_then(Value::as_str)
+            .filter(|c| !c.is_empty())
+            .unwrap_or("mock")
+            .to_string();
         self.calls += 1;
         let input: Value = serde_json::from_str(&input_data).unwrap_or(json!({}));
         let url = input["url"].as_str().unwrap_or("");
@@ -58,7 +66,8 @@ impl OutlayerMock {
             "ai_confidence": 90,
             "challenge_read": input["challenge"],
             "ai_chat_id": null,
-            "worker_commit": "mock",
+            "ai_observations": ["mock verifier: no model was asked"],
+            "worker_commit": worker_commit,
         });
         // Mimic OutLayer's wrapper: stdout as a string plus an execution reference.
         json!({ "status": "Completed", "output": verdict.to_string(), "execution_id": format!("mock-{}", self.calls) })
