@@ -2,19 +2,24 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EstateBanners } from "@/components/banners";
 import { AccountChip, CountdownChip, MonoAmount, StatusBadge } from "@/components/chain";
 import { Activity } from "@/components/estate-bits";
 import { MilestoneTrack } from "@/components/milestones";
+import { DefaultCard, DefaultExplainer } from "@/components/default-resale";
+import { PayFromOtherChain } from "@/components/pay-other-chain";
+import { useTx } from "@/components/toast";
 import { EvidenceThumbs, ListingCard, PlanTable, PositionCard, UnitImage } from "@/components/unit-bits";
-import { BracketCard, ChainLink, ErrorState, KV, LinkButton, LoadingCard, Page, Tabs } from "@/components/ui";
+import { BracketCard, Button, ChainLink, ErrorState, KV, LinkButton, LoadingCard, Page, Tabs, tabPanelProps } from "@/components/ui";
 import { useWallet } from "@/components/wallet";
-import { ONECLICK_ENABLED } from "@/lib/config";
+import { nextRefundOpensAt } from "@/lib/default";
+import { estate as E } from "@/lib/estate";
 import { estateAccount, estateSlug } from "@/lib/estates";
-import { formatDate, formatNear, unitDisplay } from "@/lib/format";
+import { formatDate, formatDateTime, formatNear, formatUsd, toBig, unitDisplay } from "@/lib/format";
 import { useEstate, useEvidenceList, useMilestones, useNftToken, useUnit, useUsdcBalance } from "@/lib/hooks";
-import { viewAccount } from "@/lib/near";
+import { sendTx, viewAccount } from "@/lib/near";
+import type { EstateView, MilestoneView, UnitView } from "@/lib/types";
 
 type Tab = "timeline" | "payments" | "proofs" | "contract";
 
@@ -42,7 +47,8 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
     );
   }
   const reservedByMe = u.status === "Reserved" && u.reservation?.by === accountId;
-  const holderIsMe = !!accountId && u.holder === accountId;
+  const holderIsMe = !!accountId && (u.holder === accountId || token.data?.owner_id === accountId);
+  const taken = u.status === "Allocated" || u.status === "InDefault" || u.status === "HandedOver";
 
   return (
     <Page>
@@ -71,6 +77,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
             <BracketCard tone="teal" className="space-y-3">
               <p className="font-display text-xl font-semibold">This unit is available.</p>
               <p className="text-sm text-muted">Reserve it for {Math.round(Number(e.params.reserve_ttl_ns) / 6e10)} minutes with a 0.05 NEAR storage deposit (refundable — storage, not price), then pay at least {e.params.min_initial_bps / 100}% of the price to get the allocation token.</p>
+              <DefaultExplainer e={e} u={u} className="text-muted" />
               <LinkButton href={`/buy/${s}/${u.id}`} variant="primary">Reserve →</LinkButton>
             </BracketCard>
           ) : null}
@@ -81,7 +88,6 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
               {reservedByMe ? (
                 <div className="flex flex-wrap gap-2">
                   <LinkButton href={`/buy/${s}/${u.id}?step=pay`} variant="primary">Pay from NEAR wallet</LinkButton>
-                  {ONECLICK_ENABLED ? <LinkButton href={`/buy/${s}/${u.id}?step=pay&method=oneclick`}>Pay from another chain</LinkButton> : null}
                 </div>
               ) : null}
             </BracketCard>
@@ -92,14 +98,17 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
               {holderIsMe ? <div className="mt-4"><LinkButton href={`/me/units/${s}/${u.id}`} variant="primary">Manage my unit</LinkButton></div> : null}
             </BracketCard>
           ) : null}
+          {taken && u.status !== "HandedOver" ? <RefundCard account={account} e={e} u={u} ms={ms.data} isHolder={holderIsMe} accountId={accountId} /> : null}
+          {u.status === "Allocated" ? <DefaultCard estate={account} e={e} u={u} /> : null}
           <ListingCard estate={account} e={e} u={u} />
+          <PayFromOtherChain slug={s} u={u} />
           <BracketCard>
             <h2 className="mb-3 text-lg font-semibold">Build progress</h2>
             {ms.data ? <MilestoneTrack milestones={ms.data} detailed mobilisationBps={e.params.mobilisation_bps} /> : ms.error ? <ErrorState error={ms.error} /> : <LoadingCard lines={2} />}
           </BracketCard>
           <div>
-            <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ id: "timeline", label: "Timeline" }, { id: "payments", label: "Payments" }, { id: "proofs", label: "Proofs" }, { id: "contract", label: "Contract" }]} />
-            <div className="pt-4" role="tabpanel">
+            <Tabs<Tab> idBase="unit" value={tab} onChange={setTab} tabs={[{ id: "timeline", label: "Timeline" }, { id: "payments", label: "Payments" }, { id: "proofs", label: "Proofs" }, { id: "contract", label: "Contract" }]} />
+            <div className="pt-4" {...tabPanelProps("unit", tab)}>
               {tab === "timeline" ? (
                 <BracketCard className="space-y-4">
                   <PlanTable u={u} />
@@ -116,6 +125,49 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
         </div>
       </div>
     </Page>
+  );
+}
+
+/** M8 · Refund, on the public unit page: countdown to "refunds open" (deadline + grace) for everyone; the red button for the holder. */
+function RefundCard({ account, e, u, ms, isHolder, accountId }: { account: string; e: EstateView; u: UnitView; ms: MilestoneView[] | undefined; isHolder: boolean; accountId: string | null }) {
+  const { run } = useTx();
+  const qc = useQueryClient();
+  const refundable = toBig(u.refundable_now);
+  const opensAt = nextRefundOpensAt(ms);
+  const toLender = u.lien && toBig(u.lien.cap) > 0n;
+  if (u.refunds_open && refundable > 0n) {
+    return (
+      <BracketCard tone="red" className="space-y-3">
+        <h2 className="text-lg font-semibold">Refunds are open</h2>
+        <p className="text-sm">
+          A deadline passed without a verified stage{e.frozen?.refunds_open ? " (or holders opened refunds with a freeze vote)" : ""}. The holder can take back everything not yet
+          released: <MonoAmount value={u.refundable_now} account={u.account} size="lg" />. No vote or permission needed.
+        </p>
+        {isHolder ? (
+          <>
+            <p className="text-sm text-muted">Your allocation token will be burned and the unit goes back on sale. This can&apos;t be undone.{toLender ? " A lender's lien is set, so the lender is repaid first, up to its cap." : ""}</p>
+            <Button variant="danger" onClick={async () => {
+              const msg = `Refund ${formatUsd(u.refundable_now)} ${toLender ? `(to the lender ${u.lien!.lender} first, up to its cap)` : `to ${accountId}`}?\n\nYour token for ${unitDisplay(u.id)} will be burned and the unit goes back on sale. This can't be undone.`;
+              if (!window.confirm(msg)) return;
+              const r = await run("Get my money back", () => sendTx(E.refund(account, u.id)), { success: "Refund sent to your account." });
+              if (r) qc.invalidateQueries();
+            }}>Get my money back</Button>
+          </>
+        ) : <p className="text-xs text-muted">Only the holder of {unitDisplay(u.id)} can ask for this refund.</p>}
+      </BracketCard>
+    );
+  }
+  return (
+    <BracketCard className="space-y-2">
+      <h2 className="text-lg font-semibold">Refund rule</h2>
+      <p className="text-sm text-muted">If a stage isn&apos;t verified by its deadline plus the grace period, refunds open automatically: the holder gets back everything not yet released and the token is burned. No vote needed.</p>
+      {opensAt ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm">
+          <CountdownChip until={opensAt} label="refunds would open in" tone="teal" endedLabel="any moment now" />
+          <span className="mono text-xs text-muted">{formatDateTime(opensAt)}</span>
+        </p>
+      ) : <p className="text-sm text-muted">Every stage is approved, so refunds won&apos;t open.</p>}
+    </BracketCard>
   );
 }
 

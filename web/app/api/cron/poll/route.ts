@@ -1,10 +1,13 @@
 // GET /api/cron/poll — pulls recent estate transactions (NearBlocks), parses EVENT_JSON logs from each tx's receipts
 // (RPC EXPERIMENTAL_tx_status) into the `events` cache, then emails subscribers on qs_signed / released.
+// Also fills evidence_files.evidence_id (SPEC §14.2 "filled after submit_evidence lands") from the contract's
+// list_evidence view, matched by sha256 + storage path.
 // Auth: header `x-cron-secret: $CRON_SECRET` (called by a GitHub Actions schedule every 5 minutes).
 
 import { timingSafeEqual } from "node:crypto";
 import { APP_URL, ESTATES, NETWORK, TABLES } from "@/lib/config";
 import { eventRows, type EventRow } from "@/lib/events";
+import { estate as E } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { txStatus } from "@/lib/near";
 import { serverEnv } from "@/lib/server/env";
@@ -41,15 +44,37 @@ function secretOk(req: Request): boolean {
   return a.length > 0 && a.length === b.length && timingSafeEqual(a, b);
 }
 
+type Admin = NonNullable<ReturnType<typeof supabaseAdmin>>;
+
+/**
+ * Fill `evidence_files.evidence_id` for this estate's rows that don't have one yet. The contract's `list_evidence`
+ * (newest first, ≤ 100) gives id + sha256 + url; a row matches when the hash is equal and the url ends with its path
+ * (the same photo re-uploaded gets a new path, so retries don't steal another row's id). Returns rows updated.
+ */
+async function linkEvidenceIds(sb: Admin, estate: string): Promise<number> {
+  const { data: rows } = await sb.from(TABLES.evidenceFiles).select("id,path,sha256").eq("estate", estate).is("evidence_id", null).limit(100);
+  const pending = (rows ?? []) as { id: string; path: string; sha256: string }[];
+  if (!pending.length) return 0;
+  const onChain = await E.listEvidence(estate, { limit: 100 });
+  let n = 0;
+  for (const r of pending) {
+    const ev = onChain.find((x) => x.sha256 === r.sha256 && x.url.endsWith(r.path));
+    if (!ev) continue;
+    const { error } = await sb.from(TABLES.evidenceFiles).update({ evidence_id: Number(ev.id) }).eq("id", r.id).is("evidence_id", null);
+    if (!error) n++;
+  }
+  return n;
+}
+
 export async function GET(req: Request) {
   if (!serverEnv.cronSecret()) return notConfigured("The poller", ["CRON_SECRET"]);
   if (!secretOk(req)) return jsonError("UNAUTHORIZED", "Missing or wrong x-cron-secret header.", 401);
   const sb = supabaseAdmin();
   if (!sb) return notConfigured("The event cache", ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
 
-  const report: Record<string, { txns: number; newTxns: number; events: number; emails: number; error?: string }> = {};
+  const report: Record<string, { txns: number; newTxns: number; events: number; emails: number; evidenceLinked: number; error?: string }> = {};
   for (const estate of ESTATES) {
-    const rep = { txns: 0, newTxns: 0, events: 0, emails: 0 } as (typeof report)[string];
+    const rep = { txns: 0, newTxns: 0, events: 0, emails: 0, evidenceLinked: 0 } as (typeof report)[string];
     report[estate] = rep;
     try {
       const txns = await recentTxns(estate);
@@ -81,6 +106,8 @@ export async function GET(req: Request) {
           notifyRows.push(...rows.filter((r) => r.event === "qs_signed" || r.event === "released"));
         }
       }
+      // §14.2: link uploaded photos to their on-chain evidence id.
+      rep.evidenceLinked = await linkEvidenceIds(sb, estate).catch(() => 0);
       // C7 notifications
       for (const r of notifyRows) {
         let q = sb.from(TABLES.notifySubscriptions).select("account,unit,email").eq("estate", estate);

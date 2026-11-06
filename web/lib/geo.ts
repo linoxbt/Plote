@@ -43,3 +43,11 @@ export function hamming(a: string, b: string): number {
     return 64;
   }
 }
+
+/** Inverse of `worldPx`: world pixel coordinates at zoom z → [lat, lon]. */
+export function fromWorldPx(x: number, y: number, z: number): [number, number] {
+  const n = 256 * 2 ** z;
+  const lon = (x / n) * 360 - 180;
+  const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI;
+  return [lat, lon];
+}

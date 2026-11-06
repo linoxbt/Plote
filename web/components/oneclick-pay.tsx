@@ -3,6 +3,7 @@
 // Path B: pay from another chain through 1Click (mainnet build only, SPEC §7.3).
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import QRCode from "qrcode";
@@ -27,7 +28,18 @@ export function QrImage({ text, size = 220, label }: { text: string; size?: numb
   return src ? <img src={src} width={size} height={size} alt={label} className="bg-text p-1" /> : <div className="skeleton" style={{ width: size, height: size }} aria-hidden />;
 }
 
+/** The tracker URL for a wet quote; the query string lets the tracker repeat "send exactly X on Y" before 1Click sees the deposit. */
+export function payStatusHref(depositAddress: string, q?: { send?: string; symbol?: string; chain?: string }): string {
+  const sp = new URLSearchParams();
+  if (q?.send) sp.set("send", q.send);
+  if (q?.symbol) sp.set("sym", q.symbol);
+  if (q?.chain) sp.set("chain", q.chain);
+  const qs = sp.toString();
+  return `/pay/status/${encodeURIComponent(depositAddress)}${qs ? `?${qs}` : ""}`;
+}
+
 export function OneClickPay({ estate, unit, recipient, amount }: { estate: string; unit: string; recipient: string; amount: string }) {
+  const router = useRouter();
   const tokens = useQuery({ queryKey: ["oneclick-tokens"], queryFn: oneclick.tokens, staleTime: 600_000, retry: 1 });
   const options = useMemo(
     () => (tokens.data ?? []).filter((t) => STABLE_SYMBOLS.includes(t.symbol.toUpperCase()) && PICKER_CHAINS.includes(t.blockchain) && t.blockchain !== "near"),
@@ -48,25 +60,32 @@ export function OneClickPay({ estate, unit, recipient, amount }: { estate: strin
     refetchInterval: 30_000,
   });
 
+  const addr = wet?.quote.depositAddress;
+  const statusHref = addr ? payStatusHref(addr, { send: wet!.quote.amountInFormatted, symbol: chosen?.symbol, chain: chosen?.blockchain }) : null;
+
+  // SPEC §13.4: wet quote → deposit address → redirect to /pay/status/… (the tracker shows the address, QR and countdown).
+  useEffect(() => {
+    if (statusHref) router.push(statusHref);
+  }, [statusHref, router]);
+
   if (tokens.isLoading) return <LoadingCard lines={3} label="Loading chains" />;
   if (tokens.error) return <ErrorState error={tokens.error} title="Couldn't load the chains 1Click supports" onRetry={() => tokens.refetch()} />;
 
-  if (wet?.quote.depositAddress) {
-    const addr = wet.quote.depositAddress;
+  if (addr && statusHref) {
     return (
-      <BracketCard tone="teal" className="space-y-4">
-        <p className="font-display text-xl font-semibold">Send exactly {wet.quote.amountInFormatted} {chosen?.symbol} on {chainName(chosen?.blockchain ?? "")}</p>
+      <BracketCard tone="teal" className="space-y-4" aria-live="polite">
+        <p className="font-display text-xl font-semibold">Send exactly {wet!.quote.amountInFormatted} {chosen?.symbol} on {chainName(chosen?.blockchain ?? "")}</p>
         <div className="flex flex-col items-start gap-4 sm:flex-row">
           <QrImage text={addr} label="QR code of the deposit address" />
           <div className="min-w-0 space-y-2">
             <p className="label">Deposit address</p>
             <p className="mono break-all text-sm">{addr}</p>
             <Button size="sm" onClick={() => navigator.clipboard?.writeText(addr).catch(() => {})}><Copy className="h-4 w-4" aria-hidden /> Copy</Button>
-            {wet.quote.deadline ? <div><CountdownChip until={String(Date.parse(wet.quote.deadline) * 1e6)} label="quote valid" /></div> : null}
-            <p className="text-sm text-muted">The unit receives {wet.quote.amountOutFormatted} USDC. Cross-chain payments can take up to 15 minutes.</p>
+            {wet!.quote.deadline ? <div><CountdownChip until={String(Date.parse(wet!.quote.deadline) * 1e6)} label="quote valid" /></div> : null}
           </div>
         </div>
-        <Link href={`/pay/status/${encodeURIComponent(addr)}`} className="btn btn-primary">Track this payment →</Link>
+        <p className="text-sm text-muted">Opening the payment tracker…</p>
+        <Link href={statusHref} className="btn btn-primary">Track this payment →</Link>
       </BracketCard>
     );
   }

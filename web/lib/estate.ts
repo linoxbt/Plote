@@ -138,8 +138,16 @@ export const estate = {
     fnCall(e, "nft_revoke", { token_id, account_id }, GAS.nft_revoke, ONE_YOCTO),
 };
 
-/** Methods the login function-call key may call (non-payable only). */
-export const LOGIN_KEY_METHODS = ["vote", "propose", "expire_proposal", "sync", "sweep_unattributed", "declare_default", "expire_reservation"];
+/**
+ * Methods the login function-call key may call (non-payable only). Requested at sign-in (SPEC §9.1:
+ * `sync`, `qs_sign`, `submit_evidence`, plus votes §8.4) so frequent calls don't open the wallet.
+ */
+export const LOGIN_KEY_METHODS = [
+  "vote", "propose", "expire_proposal", "sync", "sweep_unattributed", "declare_default", "expire_reservation",
+  "open_capture", "submit_evidence", "qs_sign",
+];
+/** The developer's day-to-day key (SPEC §4 "Keys on each account"): claims, and deadline-extension proposals. */
+export const DEV_KEY_METHODS = ["claim_release", "propose"];
 /** Methods the surveyor's phone key may call (SPEC §9.3). */
 export const SURVEYOR_KEY_METHODS = ["open_capture", "submit_evidence", "qs_sign"];
 
