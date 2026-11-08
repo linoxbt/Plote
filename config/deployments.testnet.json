@@ -9,5 +9,7 @@
   "account:judge": "judge.plote.testnet",
   "usdc": "musdc.plote.testnet",
   "unit_code_hash": "75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9",
-  "estate:playground": "playground.plote.testnet"
+  "estate:playground": "playground.plote.testnet",
+  "verifier_project": "plote.testnet/plote-verifier",
+  "verifier_version": "31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8"
 }
