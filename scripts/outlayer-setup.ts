@@ -10,7 +10,7 @@
 //   4. pin      — the version key (= SHA-256 of the WASM) is set as verifier.commit via `set_verifier` (developer, only
 //                 allowed before the first unit is sold) and written into the estate configs.
 //
-// Usage: NEAR_AI_API_KEY=… pnpm -C scripts exec tsx outlayer-setup.ts [--skip-upload] [--skip-secrets]
+// Usage: NEAR_AI_API_KEY=… pnpm -C scripts exec tsx outlayer-setup.ts [--skip-upload] [--skip-secrets] [--only=<estate>]
 // The API key is read from the environment only; it is never written to disk or logged.
 import { createHash, createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -27,7 +27,10 @@ const PROJECT_NAME = "plote-verifier";
 const PROJECT_ID = `${ROOT_ACCOUNT}/${PROJECT_NAME}`;
 const PROFILE = "plote";
 const WASM_PATH = join(ROOT, "verifier/target/wasm32-wasip2/release/plote-verifier.wasm");
-const CONFIGS = ["harmattan-court", "baobab-heights", "playground"].map((n) => join(ROOT, `config/${n}.testnet.json`));
+const ONLY = argv.find((a) => a.startsWith("--only="))?.slice(7); // e.g. --only=harmattan-court
+const CONFIGS = ["harmattan-court", "baobab-heights", "playground"]
+  .filter((n) => !ONLY || n === ONLY)
+  .map((n) => join(ROOT, `config/${n}.testnet.json`));
 
 if (!existsSync(WASM_PATH)) usage(`build the verifier first: cd verifier && cargo build --release --target wasm32-wasip2`);
 const code = new Uint8Array(readFileSync(WASM_PATH));

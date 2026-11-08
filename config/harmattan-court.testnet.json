@@ -34,5 +34,5 @@
     { "id": "b-3b", "label": "Block B · 3B · 3-bed", "price": "85000000000" },
     { "id": "c-ph", "label": "Block C · Penthouse · 4-bed", "price": "140000000000" }
   ],
-  "fund_verification_near": "5"
+  "fund_verification_near": "2"
 }
