@@ -23,7 +23,7 @@ export function DemoBanner({ estate }: { estate: EstateView }) {
       <Timer className="mt-0.5 h-4 w-4 shrink-0 text-amber" strokeWidth={1.5} aria-hidden />
       <p>
         <span className="mono font-semibold text-amber">DEMO MODE</span> — short timers for the demo: veto window {formatDuration(nsToMs(p.veto_window_ns))}, grace{" "}
-        {formatDuration(nsToMs(p.grace_ns))}, votes {formatDuration(nsToMs(p.proposal_period_ns))}. A NEAR AI outage counts as a warning.
+        {formatDuration(nsToMs(p.grace_ns))}, votes {formatDuration(nsToMs(p.proposal_period_ns))}. A NEAR AI outage is only a warning, but the challenge code must still be read from the photo, so it can fail the check.
       </p>
     </div>
   );
