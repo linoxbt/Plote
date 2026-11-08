@@ -8,5 +8,6 @@
   "account:buyer-4": "buyer-4.plote.testnet",
   "account:judge": "judge.plote.testnet",
   "usdc": "musdc.plote.testnet",
-  "unit_code_hash": "75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9"
+  "unit_code_hash": "75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9",
+  "estate:playground": "playground.plote.testnet"
 }
