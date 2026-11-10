@@ -171,15 +171,17 @@ flowchart LR
 |---|---|---|
 | Judge sandbox estate | [`playground.plote.testnet`](https://testnet.nearblocks.io/address/playground.plote.testnet), 60 units at $1,000 | ✅ Live |
 | Demo estate | [`harmattan-court.plote.testnet`](https://testnet.nearblocks.io/address/harmattan-court.plote.testnet), 6 units | ✅ Live |
-| Refund-demo estate | `baobab-heights.plote.testnet` | ⏳ Pending (needs ~2 more testnet NEAR) |
+| Refund-demo estate | [`baobab-heights.plote.testnet`](https://testnet.nearblocks.io/address/baobab-heights.plote.testnet), 5 units, foundation deadline missed | ✅ Live (judge holds `b-2a`, `b-2b` with refunds open) |
+| Estate code (all three estates) | sha256 `0315a5091f907ab8a099380b5df2d20acd5045b58ccedc5d24a9a2464c4e4c47` · NEAR `code_hash` `D3NDP8Um5vQjxUxk9DPEgvUDssLGJS8XgWnbrkTcKLz` | ✅ Compare with `view_account` |
 | Unit code (global, by hash) | `75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9` (105,621 B) | ✅ Published |
 | Test USDC | [`musdc.plote.testnet`](https://testnet.nearblocks.io/address/musdc.plote.testnet) | ✅ Live |
 | Verifier project | `plote.testnet/plote-verifier` on `outlayer.testnet` | ✅ Published |
-| Verifier version (pinned on-chain) | `31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8` | ✅ Both estates pinned |
+| Verifier version (pinned on-chain) | `31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8` | ✅ All estates pinned |
+| Verifier secrets access | `Predecessor(Whitelist[estate])`: only runs requested by the estate contract itself can use its NEAR AI key | ✅ Playground, Harmattan Court |
 | Verifier binary | [FastFS](https://test.fastfs.io/plote.testnet/outlayer.testnet/31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8.wasm) (anyone can re-hash it) | ✅ |
 | Off-chain cache | Supabase (7 tables, row-level security, `evidence` bucket) | ✅ Live |
 | Gasless relayer | `relayer.plote.testnet` | ✅ Live |
-| Live photo checks | NEAR AI Cloud stage and challenge reading | ⏳ Waiting on NEAR AI credits for the API key |
+| Live photo checks | Full pipeline verified live (browser capture → relayer → upload → on-chain commit → OutLayer TEE → verdict); stage and code reading need NEAR AI credits | ⏳ Waiting on NEAR AI credits for the API key |
 | Mainnet any-chain payment (≈ $2) | One unit receiving USDC through 1Click | ⏳ Pending |
 
 Every number on the live site is read from the chain. Until a figure exists it shows "—" rather than a made-up value.
@@ -329,12 +331,13 @@ Every variable has a testnet default, so the app builds and renders with no env 
 
 | Layer | What's covered | Result |
 |---|---|---|
-| Estate contract | 48 unit tests, including the spec's invariants: no double mint, money conservation over a randomised 200-step walk, release cap against approved stages, exits only to allowed accounts, evidence committed before the check, verdict-mode and verifier-pin enforcement | ✅ pass |
+| Estate contract | 50 unit tests, including the spec's invariants: no double mint, money conservation over a randomised 200-step walk, release cap against approved stages, exits only to allowed accounts, evidence committed before the check, verdict-mode and verifier-pin enforcement | ✅ pass |
 | Unit and mock USDC contracts | 5 + 3 tests | ✅ pass |
 | Real WASMs together | `just test-integration` (near-mock with real receipts and metered gas): unit creation, buy → allocate, capture → evidence → verdict → sign → 20 % release, reused-photo failure, freeze vote, resale, refund + burn | ✅ 5/5 |
 | Verifier | 62 library tests + 4 that run the binary; challenge-is-hard in every mode | ✅ pass |
 | Web | typecheck, lint, 68 Vitest tests, production build | ✅ pass |
 | End-to-end | 14 Playwright tests on mobile and desktop against the production build | ✅ pass |
+| Live on testnet (10 Nov) | Real transactions against the deployed contracts and the live site: buy (mint → reserve → pay → NFT), photo capture through the browser phone key and relayer into the OutLayer TEE, resale in one transaction, holder vote, refund + burn, API guards. Scripts in `scripts/e2e/` | ✅ pass (a passing photo needs NEAR AI credits) |
 | Static analysis | `cargo clippy -D warnings`, `cargo fmt --check` | ✅ clean |
 
 The repository's definition of done, which every change in the history passed:

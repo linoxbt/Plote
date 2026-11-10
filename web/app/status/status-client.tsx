@@ -76,7 +76,7 @@ export function StatusClient() {
   const lastVerdict = estates.data?.map((x) => (x.ok ? x.last : null)).filter(Boolean).sort().pop() ?? null;
   rows.push({ name: "OutLayer (last verdict)", level: estates.data ? (lastVerdict ? "green" : "amber") : "loading", detail: lastVerdict ? `last verdict on evidence submitted ${timeAgo(lastVerdict)}` : "no verdict seen yet" });
   const h = health.data;
-  for (const [k, name] of [["nearai", "NEAR AI Cloud (/v1/models)"], ["oneclick", "1Click (/v0/tokens)"], ["supabase", "Supabase"], ["relayer", "Relayer"]] as const) {
+  for (const [k, name] of [["nearai", "NEAR AI Cloud (/v1/models)"], ["oneclick", "1Click (/v0/tokens)"], ["supabase", "Supabase"], ["relayer", "Relayer"], ["balances", "Gas & verification balances"]] as const) {
     const v = h?.[k];
     rows.push({ name, level: !h ? (health.error ? "red" : "loading") : v?.ok ? "green" : v?.configured === false ? "amber" : "red", detail: v?.detail ?? (health.error ? "health endpoint unreachable" : "…") });
   }

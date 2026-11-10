@@ -253,7 +253,14 @@ impl Estate {
                 self.apply_verdict(evidence_id, verdict, "outlayer", Some(raw_hash))
             }
             None => {
-                self.set_error(evidence_id, "unparsable worker output");
+                // OutLayer resumes with `null` when it didn't run the worker at all (e.g. the secrets' access
+                // condition refused the caller, or the build couldn't be fetched); say so instead of blaming the worker.
+                let msg = if parsed.as_ref().is_some_and(Value::is_null) {
+                    "OutLayer didn't run the check (it returned no output)"
+                } else {
+                    "unparsable worker output"
+                };
+                self.set_error(evidence_id, msg);
                 if let Some(mut ev) = self.evidence.get(&evidence_id).cloned() {
                     ev.raw_response_hash = Some(raw_hash);
                     self.evidence.insert(evidence_id, ev);

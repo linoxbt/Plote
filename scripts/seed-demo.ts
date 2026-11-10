@@ -67,7 +67,11 @@ async function buy(buyerId: string, estate: string, unitId: string, amount: bigi
     log(`= ${estate}/${unitId} is ${unit.status}; skipping`);
     return;
   }
-  await call(buyer, usdc!, "mint", { amount: amount.toString() }, { deposit: near("0.00125"), gas: 30n * TGAS });
+  // The mock USDC faucet mints at most 10,000 USDC per call.
+  for (let left = amount; left > 0n; left -= left > 10_000n * USDC ? 10_000n * USDC : left) {
+    const chunk = left > 10_000n * USDC ? 10_000n * USDC : left;
+    await call(buyer, usdc!, "mint", { amount: chunk.toString() }, { deposit: near("0.00125"), gas: 30n * TGAS });
+  }
   await call(buyer, estate, "reserve", { unit_id: unitId }, { deposit: near("0.05"), gas: 30n * TGAS });
   if (amount > 0n) {
     await call(buyer, usdc!, "ft_transfer_call", { receiver_id: unit.account, amount: amount.toString(), msg: "" }, {

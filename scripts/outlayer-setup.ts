@@ -137,12 +137,14 @@ async function secrets(estate: string) {
       accessor: { Project: { project_id: PROJECT_ID } },
       profile: PROFILE,
       encrypted_secrets_base64: encrypted,
-      access: { Whitelist: { accounts: [estate] } },
+      // Judged on the account that calls OutLayer (the estate contract), not the transaction's signer: captures are
+      // signed by the surveyor or relayed by the app's relayer, so a plain Whitelist[estate] refuses every real run.
+      access: { Predecessor: { condition: { Whitelist: { accounts: [estate] } } } },
       vault_id: null,
     },
     { deposit: near("0.1"), gas: 50n * TGAS },
   );
-  log(`✓ ${estate}: NEAR_AI_API_KEY stored (profile "${PROFILE}", usable by ${estate} only)`);
+  log(`✓ ${estate}: NEAR_AI_API_KEY stored (profile "${PROFILE}", usable only in runs requested by the ${estate} contract)`);
 }
 
 async function pin(estate: string, developer: string) {

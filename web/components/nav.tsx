@@ -222,7 +222,11 @@ export function Footer() {
           <span className="inline-flex items-center gap-2">
             <Mark size={18} title="" /> Plote: every off-plan home, its own account.
           </span>
-          <span>Built for NEAR HACKATHON 2026 · MIT licence · Not financial or legal advice.</span>
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Link href="/terms" className="hover:text-text">Terms</Link>
+            <Link href="/privacy" className="hover:text-text">Privacy</Link>
+            <span>Built for NEAR HACKATHON 2026 · MIT licence · Not financial or legal advice.</span>
+          </span>
         </div>
       </div>
     </footer>

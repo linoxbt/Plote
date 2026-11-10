@@ -2038,3 +2038,19 @@ fn nft_media_uses_brand_palette() {
     assert!(svg.contains("fill='#090909'"));
     assert!(!svg.contains("#2DD4BF"));
 }
+
+#[test]
+fn verify_callback_null_means_outlayer_did_not_run() {
+    let mut e = Env::standard();
+    let ev = e.submit(0, "qs.testnet");
+    e.cb(vec![PromiseResult::Successful(b"null".to_vec())]);
+    assert!(!e.c.on_verdict(ev));
+    let got = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(got.status, EvidenceStatus::Error);
+    assert_eq!(
+        got.error.as_deref(),
+        Some("OutLayer didn't run the check (it returned no output)")
+    );
+    // the milestone reopens so the surveyor can resubmit
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Open);
+}
