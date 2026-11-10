@@ -39,7 +39,7 @@ fn offline_fixture_passes_with_mock() {
     let v = run(
         &fixture(),
         Some(
-            r#"{"stage":"roofing","confidence":88,"is_photo_of_screen_or_print":false,"is_render":false,"challenge_read":"K7RQ4M"}"#,
+            r#"{"stage":"roofing","confidence":88,"is_photo_of_screen_or_print":false,"is_render":false,"has_other_instructions":false,"challenge_read":"K7RQ4M"}"#,
         ),
     );
     assert_eq!(v["pass"], true, "{v}");
@@ -66,7 +66,7 @@ fn screen_photo_fails() {
     let v = run(
         &fixture(),
         Some(
-            r#"{"stage":"roofing","confidence":95,"is_photo_of_screen_or_print":true,"is_render":false,"challenge_read":"K7RQ4M"}"#,
+            r#"{"stage":"roofing","confidence":95,"is_photo_of_screen_or_print":true,"is_render":false,"has_other_instructions":false,"challenge_read":"K7RQ4M"}"#,
         ),
     );
     assert_eq!(v["pass"], false);

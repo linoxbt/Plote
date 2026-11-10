@@ -14,10 +14,56 @@ pub struct Decoded {
 /// Long side of the working copy (also what the AI sees).
 pub const WORK_MAX: u32 = 1024;
 
-/// Decode JPEG/PNG bytes, apply EXIF orientation and downscale once so that
-/// later steps never touch the full-size frame.
-pub fn decode(bytes: &[u8], orientation: Option<u8>) -> Result<Decoded, String> {
-    let img = image::load_from_memory(bytes).map_err(|e| e.to_string())?;
+/// Largest width or height we decode. Phone cameras top out well below this
+/// (a 50 MP sensor is ~8160×6120, usually saved binned to 12 MP).
+pub const MAX_DIMENSION: u32 = 8000;
+/// Most the decoder may allocate. The worker runs with 256 MB of memory
+/// (SPEC 5.6), so a header claiming e.g. 10000×10000 must be refused before the
+/// decoder tries to allocate it (the image crate's default is 512 MiB). A 48 MP
+/// RGB frame (144 MB) is refused too; 12–24 MP photos (36–72 MB) fit.
+pub const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodeError {
+    /// Dimensions or decoded size exceed `MAX_DIMENSION` / `MAX_DECODE_ALLOC`.
+    TooLarge(String),
+    /// Not a decodable JPEG/PNG.
+    Invalid(String),
+}
+
+impl std::fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DecodeError::TooLarge(e) => write!(f, "too large: {e}"),
+            DecodeError::Invalid(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+fn limits() -> image::Limits {
+    let mut l = image::Limits::default();
+    l.max_image_width = Some(MAX_DIMENSION);
+    l.max_image_height = Some(MAX_DIMENSION);
+    l.max_alloc = Some(MAX_DECODE_ALLOC);
+    l
+}
+
+fn classify(e: image::ImageError) -> DecodeError {
+    match e {
+        image::ImageError::Limits(_) => DecodeError::TooLarge(e.to_string()),
+        e => DecodeError::Invalid(e.to_string()),
+    }
+}
+
+/// Decode JPEG/PNG bytes (within `MAX_DIMENSION` and `MAX_DECODE_ALLOC`), apply
+/// EXIF orientation and downscale once so that later steps never touch the
+/// full-size frame.
+pub fn decode(bytes: &[u8], orientation: Option<u8>) -> Result<Decoded, DecodeError> {
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| DecodeError::Invalid(e.to_string()))?;
+    reader.limits(limits());
+    let img = reader.decode().map_err(classify)?;
     let (width, height) = (img.width(), img.height());
     let mut work = downscale(img, WORK_MAX);
     if let Some(o) = orientation.and_then(Orientation::from_exif) {
@@ -67,6 +113,69 @@ mod tests {
         let p = decode(&synth::png(300, 200, 1), None).unwrap();
         assert_eq!((p.work.width(), p.work.height()), (300, 200));
         assert!(decode(b"\xFF\xD8garbage", None).is_err());
+    }
+
+    #[test]
+    fn oversized_images_are_refused_before_decoding() {
+        // Wider than MAX_DIMENSION.
+        let wide = synth::png(MAX_DIMENSION + 1, 16, 1);
+        assert!(matches!(decode(&wide, None), Err(DecodeError::TooLarge(_))));
+        let tall = synth::jpeg(16, MAX_DIMENSION + 1, 1, 50);
+        assert!(matches!(decode(&tall, None), Err(DecodeError::TooLarge(_))));
+        // Within the dimension cap but over the allocation cap: 7000×7000 RGB = 147 MB.
+        let header_only = png_header(7000, 7000);
+        assert!(matches!(
+            decode(&header_only, None),
+            Err(DecodeError::TooLarge(_))
+        ));
+        // A claimed 60000×60000 PNG is refused from the header alone.
+        assert!(matches!(
+            decode(&png_header(60_000, 60_000), None),
+            Err(DecodeError::TooLarge(_))
+        ));
+        // Garbage is Invalid, not TooLarge.
+        assert!(matches!(
+            decode(b"\xFF\xD8garbage", None),
+            Err(DecodeError::Invalid(_))
+        ));
+        // Normal photos still decode.
+        assert!(decode(&synth::jpeg(4000, 3000, 2, 60), None).is_ok());
+    }
+
+    /// A PNG signature + IHDR claiming `w`×`h` RGB8 and a tiny (invalid) IDAT:
+    /// the decoder must refuse on the header, before allocating.
+    fn png_header(w: u32, h: u32) -> Vec<u8> {
+        fn chunk(out: &mut Vec<u8>, kind: &[u8], data: &[u8]) {
+            out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            let start = out.len();
+            out.extend_from_slice(kind);
+            out.extend_from_slice(data);
+            let crc = crc32(&out[start..]);
+            out.extend_from_slice(&crc.to_be_bytes());
+        }
+        fn crc32(b: &[u8]) -> u32 {
+            let mut c = 0xFFFF_FFFFu32;
+            for &x in b {
+                c ^= u32::from(x);
+                for _ in 0..8 {
+                    c = if c & 1 != 0 {
+                        0xEDB8_8320 ^ (c >> 1)
+                    } else {
+                        c >> 1
+                    };
+                }
+            }
+            !c
+        }
+        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&w.to_be_bytes());
+        ihdr.extend_from_slice(&h.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+        chunk(&mut out, b"IHDR", &ihdr);
+        chunk(&mut out, b"IDAT", &[0x78, 0x9c, 0x03, 0x00]);
+        chunk(&mut out, b"IEND", &[]);
+        out
     }
 
     #[test]

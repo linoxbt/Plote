@@ -47,6 +47,12 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
         }
     };
     let inp = &parsed.input;
+    // Refuse unusable inputs (e.g. a geofence the playground alone may disable)
+    // before touching the network.
+    if let Some(v) = checks::reject_input(inp) {
+        log(format!("rejected input: {:?}", v.reasons));
+        return v;
+    }
 
     // 1. Fetch (or take inline bytes).
     let bytes = match &inp.image_base64 {
@@ -69,6 +75,7 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
     };
 
     let mut work = None;
+    let mut digest_seen = None;
     let observed = match bytes {
         Err(e) => {
             log(format!("fetch_failed: {e}"));
@@ -77,6 +84,7 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
         Ok(bytes) => {
             // 2. Integrity, over the exact bytes.
             let digest = hex::encode(Sha256::digest(&bytes));
+            digest_seen = Some(digest.clone());
             if !digest.eq_ignore_ascii_case(inp.sha256.trim()) {
                 log(format!("hash_mismatch: got {digest}"));
                 Observed::HashMismatch
@@ -84,17 +92,23 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
                 // 3. Decode.
                 let ex = exif::read(&bytes);
                 match img::decode(&bytes, ex.orientation) {
-                    Err(e) => {
+                    Err(img::DecodeError::TooLarge(e)) => {
+                        log(format!("image_too_large: {e}"));
+                        Observed::TooLarge
+                    }
+                    Err(img::DecodeError::Invalid(e)) => {
                         log(format!("bad_image: {e}"));
                         Observed::Undecodable
                     }
                     Ok(d) => {
+                        let variants = phash::phash_variants(&d.work);
                         let facts = ImageFacts {
                             width: d.width,
                             height: d.height,
                             exif_time: ex.time_ns,
                             exif_gps: ex.gps,
-                            phash: phash::phash(&d.work),
+                            phash: variants[0],
+                            phash_variants: variants.to_vec(),
                         };
                         work = Some(d.work);
                         Observed::Image(facts)
@@ -104,7 +118,6 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
         }
     };
 
-    let milestone = inp.milestone.clone();
     let mut ai_call = || {
         let Some(w) = work.as_ref() else {
             return ai::AiOutcome::Unavailable("no image".into());
@@ -118,13 +131,16 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
                 Err(e) => return ai::AiOutcome::Unavailable(format!("encode: {e}")),
             }
         };
-        let out = ai::classify(ai_cfg, &milestone, &jpeg);
+        // The milestone is deliberately not sent to the model (SPEC 6.4 hardening).
+        let out = ai::classify(ai_cfg, &jpeg);
         if let ai::AiOutcome::Unavailable(e) = &out {
             log(format!("ai_unavailable: {e}"));
         }
         out
     };
-    checks::decide(inp, &parsed.known, &observed, &mut ai_call)
+    let mut v = checks::decide(inp, &parsed.known, &observed, &mut ai_call);
+    v.sha256 = digest_seen;
+    v
 }
 
 #[cfg(test)]
@@ -175,7 +191,8 @@ mod tests {
     fn good_ai() -> ai::AiConfig {
         mock(
             json!({"stage":"roofing","confidence":88,"is_photo_of_screen_or_print":false,
-                    "is_render":false,"challenge_read":"K7RQ4M","observations":["trusses"]}),
+                    "is_render":false,"has_other_instructions":false,"challenge_read":"K7RQ4M",
+                    "observations":["trusses"]}),
         )
     }
 
@@ -214,6 +231,7 @@ mod tests {
         assert_eq!(v.ai_chat_id.as_deref(), Some("mock"));
         assert_eq!(v.ai_observations, vec!["trusses"]);
         assert_eq!(v.worker_commit, WORKER_COMMIT);
+        assert_eq!(v.sha256, Some(hex::encode(Sha256::digest(&p))));
         // One JSON line.
         let line = serde_json::to_string(&v).unwrap();
         assert!(!line.contains('\n'));
@@ -233,12 +251,15 @@ mod tests {
         assert!(v.pass, "{v:?}");
         let v = run(&url_input(&p), &good_ai(), &NoNet);
         assert_eq!(v.reasons, vec!["fetch_failed"]);
+        assert_eq!(v.sha256, None);
         // Tampered bytes.
         let mut tampered = p.clone();
         let n = tampered.len();
         tampered[n - 10] ^= 1;
-        let v = run(&url_input(&p), &good_ai(), &Fixed(tampered));
+        let v = run(&url_input(&p), &good_ai(), &Fixed(tampered.clone()));
         assert_eq!(v.reasons, vec!["hash_mismatch"]);
+        // The digest reported is the one of the bytes actually seen.
+        assert_eq!(v.sha256, Some(hex::encode(Sha256::digest(&tampered))));
     }
 
     #[test]
@@ -299,6 +320,69 @@ mod tests {
     }
 
     #[test]
+    fn e2e_mirrored_or_rotated_reuse_detected() {
+        let orig = photo(17, Some((6.447118, 3.474201)), Some(EXIF_T));
+        let first = run(&input_for(&orig, |_| {}), &good_ai(), &NoNet);
+        assert!(first.pass, "{first:?}");
+        let fresh = |jpeg: &[u8], orientation: u16| {
+            synth::with_exif(
+                jpeg,
+                &synth::ExifSpec {
+                    datetime: Some(synth::exif_datetime(EXIF_T, 60)),
+                    offset: Some("+01:00".into()),
+                    gps: Some((6.447118, 3.474201)),
+                    orientation: Some(orientation),
+                },
+            )
+        };
+        let pixels = image::load_from_memory(&orig).unwrap();
+        let copies = [
+            // Mirrored via the EXIF Orientation tag alone (bytes otherwise identical scene).
+            fresh(&synth::reencode(&orig, 1.0, 80), 2),
+            // Mirrored and rotated in pixels, re-encoded.
+            fresh(&synth::encode_jpeg(&pixels.fliph(), 75), 1),
+            fresh(&synth::encode_jpeg(&pixels.rotate90(), 75), 1),
+            fresh(&synth::encode_jpeg(&pixels.rotate180(), 75), 1),
+        ];
+        for (i, copy) in copies.iter().enumerate() {
+            let v = run(
+                &input_for(copy, |j| j["known_phashes"] = json!([first.phash])),
+                &good_ai(),
+                &NoNet,
+            );
+            assert!(!v.pass, "copy {i}: {v:?}");
+            assert!(v.reasons[0].starts_with("phash_reuse:"), "copy {i}: {v:?}");
+        }
+    }
+
+    #[test]
+    fn e2e_bad_geofence_never_fetches() {
+        struct Panics;
+        impl Fetcher for Panics {
+            fn get(&self, _: &str) -> Result<Vec<u8>, fetch::FetchError> {
+                panic!("must not fetch");
+            }
+        }
+        let p = photo(18, Some((6.447118, 3.474201)), Some(EXIF_T));
+        let raw = input_for(&p, |j| {
+            j.as_object_mut().unwrap().remove("image_base64");
+            j["url"] = "https://example.supabase.co/x.jpg".into();
+            j["geofence"]["radius_m"] = 0.into();
+        });
+        let v = run(&raw, &good_ai(), &Panics);
+        assert_eq!(v.reasons, vec!["bad_geofence"]);
+        assert_eq!(v.evidence_id, Some(17));
+    }
+
+    #[test]
+    fn e2e_oversized_image() {
+        let big = synth::png(img::MAX_DIMENSION + 1, 900, 5);
+        let v = run(&input_for(&big, |_| {}), &good_ai(), &NoNet);
+        assert_eq!(v.reasons, vec!["image_too_large"]);
+        assert!(v.sha256.is_some());
+    }
+
+    #[test]
     fn e2e_ai_unavailable_without_key() {
         let p = photo(14, Some((6.447118, 3.474201)), Some(EXIF_T));
         let none = ai::AiConfig::default();
@@ -319,7 +403,7 @@ mod tests {
     fn e2e_fenced_mock_and_challenge() {
         let p = photo(15, Some((6.447118, 3.474201)), Some(EXIF_T));
         let cfg = ai::AiConfig {
-            mock: Some("```json\n{\"stage\":\"roofing\",\"confidence\":91,\"is_photo_of_screen_or_print\":false,\"is_render\":false,\"challenge_read\":\"K7-RQ4N\"}\n```".into()),
+            mock: Some("```json\n{\"stage\":\"roofing\",\"confidence\":91,\"is_photo_of_screen_or_print\":false,\"is_render\":false,\"has_other_instructions\":false,\"challenge_read\":\"K7-RQ4N\"}\n```".into()),
             ..Default::default()
         };
         let v = run(&input_for(&p, |_| {}), &cfg, &NoNet);

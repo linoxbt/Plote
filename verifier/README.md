@@ -8,13 +8,14 @@ This directory is its own Cargo workspace (`[workspace]` in `Cargo.toml`), so it
 
 | # | Check | Fails with |
 |---|---|---|
+| 0 | Input sanity, before any fetch: `geofence.radius_m` must be > 0 (0 is allowed only with `playground: true`) and ≤ 5000 m | `bad_input`, `bad_geofence` |
 | 1 | Fetch `url` over HTTPS, ≤ 12 MB (or use inline `image_base64`) | `fetch_failed` |
 | 2 | `sha256(bytes) == sha256` | `hash_mismatch` |
-| 3 | Decodes as JPEG/PNG, short side ≥ 800 px | `bad_image` |
+| 3 | Decodes as JPEG/PNG, short side ≥ 800 px; at most 8000 px per side and 128 MiB decoded | `bad_image`, `image_too_large` |
 | 4 | EXIF `DateTimeOriginal` (+`OffsetTimeOriginal`, default +01:00) within `max_exif_age_h` of `now`, not > 10 min in the future | `exif_missing`, `exif_stale`, `exif_future` |
-| 5 | EXIF GPS (else `device_gps`, marked `gps_source: "device"`) within `geofence.radius_m` (haversine). Skipped, and nothing about location reported, when `radius_m == 0` | `outside_geofence`, `gps_missing` |
-| 6 | 64-bit pHash, Hamming distance to every `known_phashes` > `max_phash_distance` | `phash_reuse:<distance>` |
-| 7 | NEAR AI vision: stage matches the milestone, confidence ≥ `min_ai_confidence`, not a screen/print/render | `ai_stage_mismatch`, `ai_low_confidence`, `ai_screen_photo`, `ai_unavailable` |
+| 5 | EXIF GPS (else `device_gps`, marked `gps_source: "device"` with warning `gps_device_only` outside the playground) within `geofence.radius_m` (haversine). When both are present they must agree within 100 m. Skipped, and nothing about location reported, when `radius_m == 0` (playground only) | `gps_mismatch`, `outside_geofence`, `gps_missing` |
+| 6 | 64-bit pHash of all 8 orientations (rotations and mirrors); the smallest Hamming distance to every `known_phashes` must be > `max_phash_distance`. `phash` reports the canonical (orientation-applied) hash | `phash_reuse:<distance>` |
+| 7 | NEAR AI vision (the claimed milestone is *not* sent to the model): stage matches the milestone, confidence ≥ `min_ai_confidence`, not a screen/print/render, no text addressed to the inspector in the image. A reply that isn't exactly one JSON object, or lacks `is_photo_of_screen_or_print`, `is_render` or `has_other_instructions`, counts as unavailable | `ai_stage_mismatch`, `ai_low_confidence`, `ai_screen_photo`, `ai_instruction_text`, `ai_unavailable` |
 | 8 | The challenge code the model read matches `challenge` (case-insensitive, spaces/dashes ignored, O≡0, I≡1≡L, ≤ 1 edit); EXIF time ≥ `challenge_opened_at` − 5 min. If the model couldn't be asked, the code is unread and this fails | `challenge_missing`, `challenge_mismatch`, `challenge_unverified`, `exif_before_capture` |
 
 Stages accepted per milestone: foundation → `foundation`/`walls`; roofing → `roofing`; finishing → `finishing`/`complete`; handover → `complete`. Any other milestone key accepts only the stage with the same name.
@@ -23,8 +24,9 @@ Warnings instead of failures (they go in `warnings`, and `pass` can still be `tr
 
 - `demo_mode`: `ai_unavailable` becomes a warning. The code on the paper still can't be read without the model, so the verdict then fails with `challenge_unverified` (SPEC 6.1: the challenge check fails hard in every mode).
 - `playground`: `ai_stage_mismatch`, `ai_low_confidence` and `outside_geofence` become warnings (SPEC 6.1), so a judge can photograph the code anywhere.
-- Everything else always fails, in every mode: `fetch_failed`, `hash_mismatch`, `bad_image`, `exif_missing`, `exif_stale`, `exif_future`, `gps_missing`, `phash_reuse`, `ai_screen_photo`, `challenge_*` and `exif_before_capture`.
+- Everything else always fails, in every mode: `bad_input`, `bad_geofence`, `fetch_failed`, `hash_mismatch`, `bad_image`, `image_too_large`, `exif_missing`, `exif_stale`, `exif_future`, `gps_missing`, `gps_mismatch`, `phash_reuse`, `ai_screen_photo`, `ai_instruction_text`, `challenge_*` and `exif_before_capture`.
 - `ai_mock` is added whenever the answer came from `PLOTE_AI_MOCK` and not from NEAR AI.
+- `gps_device_only` is added (outside the playground) when the location came only from the app's `device_gps`, which the submitter's browser reports and can't be cross-checked.
 
 ## Input / output
 
@@ -36,8 +38,10 @@ Output:
 {"evidence_id":17,"pass":true,"reasons":[],"warnings":[],"phash":"65400d2596050400","nearest_distance":29,
  "exif_time":1793739420000000000,"gps":[6447118,3474201],"gps_source":"exif","distance_m":26,
  "ai_stage":"roofing","ai_confidence":88,"challenge_read":"K7RQ4M","ai_observations":["roof trusses in place"],"ai_chat_id":"chatcmpl-…",
- "worker_commit":"<git sha>","attestation":null}
+ "worker_commit":"<git sha>","attestation":null,"sha256":"8ca8c044…94ed"}
 ```
+
+`sha256` is the lowercase hex digest of the bytes the worker fetched and checked (equal to the input `sha256` unless the reason is `hash_mismatch`; `null` if nothing was fetched), so the contract can bind the verdict to the committed photo. New fields are only ever appended.
 
 `worker_commit` is baked in at build time by `build.rs`. It uses the `GIT_SHA` env var if set, then `git rev-parse HEAD`, then `"unknown"`. `attestation` is always `null` from the worker; OutLayer adds its own attestation around the output.
 
@@ -52,7 +56,7 @@ cargo build --release --target wasm32-wasip2
 GIT_SHA=$(git rev-parse HEAD) cargo build --release --target wasm32-wasip2
 ```
 
-HTTP uses `wstd` (wasi:http) on wasm32 and `ureq` natively, chosen with `cfg(target_arch)`.
+HTTP uses `wstd` (wasi:http) on wasm32 and `ureq` natively, chosen with `cfg(target_arch)`. Both have a 5 s connect timeout, 10 s first-byte and between-chunk timeouts, and a whole-request deadline of 20 s for the photo and 32 s for the AI call, so together they stay under OutLayer's 60 s. On wasm, if the host's wasi:http rejects the per-phase timeout options, the request is resent without them; the overall deadline (wasi:clocks) still applies.
 
 ## Test
 
@@ -68,7 +72,7 @@ The tests build synthetic photos in code (`src/synth.rs`): scenes, EXIF time and
 Native, fully offline. `fixtures/offline-input.json` inlines a synthetic photo as `image_base64`; regenerate it with `cargo run --example gen_fixture --features synth`.
 
 ```sh
-PLOTE_AI_MOCK='{"stage":"roofing","confidence":88,"is_photo_of_screen_or_print":false,"is_render":false,"challenge_read":"K7RQ4M"}' \
+PLOTE_AI_MOCK='{"stage":"roofing","confidence":88,"is_photo_of_screen_or_print":false,"is_render":false,"has_other_instructions":false,"challenge_read":"K7RQ4M"}' \
   cargo run --release < fixtures/offline-input.json
 cargo run --release < fixtures/offline-input.json          # no key: demo_mode → ai_unavailable warning, challenge_unverified fail
 PLOTE_AI_MOCK=unavailable cargo run --release < fixtures/offline-input.json

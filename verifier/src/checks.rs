@@ -15,6 +15,16 @@ pub const FUTURE_TOLERANCE_NS: u64 = 10 * NS_PER_MIN;
 pub const CAPTURE_TOLERANCE_NS: u64 = 5 * NS_PER_MIN;
 /// Minimum short side, pixels.
 pub const MIN_SHORT_SIDE: u32 = 800;
+/// Largest geofence radius we accept, metres. A bigger fence (up to u32::MAX)
+/// would make the location check meaningless.
+pub const MAX_RADIUS_M: f64 = 5000.0;
+/// EXIF GPS and the app's device GPS may disagree by at most this much, metres.
+pub const MAX_GPS_GAP_M: f64 = 100.0;
+
+/// Input-level failure: the geofence is unusable. Only the playground may turn
+/// the location check off (radius 0); everywhere else radius 0, or a radius over
+/// `MAX_RADIUS_M`, is refused before anything is fetched.
+pub const BAD_GEOFENCE: &str = "bad_geofence";
 
 /// One line of stdout. Field order follows SPEC 6.3 / INTERFACE `Verdict`.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -37,6 +47,10 @@ pub struct Verdict {
     pub ai_chat_id: Option<String>,
     pub worker_commit: String,
     pub attestation: Option<String>,
+    /// Lowercase hex SHA-256 of the bytes the worker fetched and checked (equal to
+    /// the input `sha256` unless the verdict is `hash_mismatch`); `null` when nothing
+    /// was fetched. Lets the contract bind the verdict to the committed photo.
+    pub sha256: Option<String>,
 }
 
 impl Verdict {
@@ -59,6 +73,7 @@ impl Verdict {
             ai_chat_id: None,
             worker_commit: crate::WORKER_COMMIT.to_string(),
             attestation: None,
+            sha256: None,
         }
     }
 
@@ -78,6 +93,9 @@ pub enum Observed {
     HashMismatch,
     /// Check 3 failed: not a decodable JPEG/PNG.
     Undecodable,
+    /// Check 3 failed: dimensions or decoded size over the worker's caps
+    /// (`img::MAX_DIMENSION`, `img::MAX_DECODE_ALLOC`).
+    TooLarge,
     Image(ImageFacts),
 }
 
@@ -87,7 +105,11 @@ pub struct ImageFacts {
     pub height: u32,
     pub exif_time: Option<u64>,
     pub exif_gps: Option<(i64, i64)>,
+    /// Canonical pHash (orientation applied); the one reported and stored.
     pub phash: u64,
+    /// pHashes of all 8 orientations (`phash::phash_variants`) used for the reuse
+    /// check. Empty means "just `phash`".
+    pub phash_variants: Vec<u64>,
 }
 
 /// Whether a failing code is softened by the run mode (SPEC 6.1): `ai_unavailable` in demo mode;
@@ -139,6 +161,23 @@ impl Run<'_> {
     }
 }
 
+/// The geofence must be usable: radius 0 (no location check) only in the
+/// playground, and never more than `MAX_RADIUS_M`.
+pub fn geofence_ok(input: &Input) -> bool {
+    let r = input.geofence.radius_m;
+    (r > 0.0 || input.playground) && r <= MAX_RADIUS_M
+}
+
+/// Input-level refusal, checked before anything is fetched.
+pub fn reject_input(input: &Input) -> Option<Verdict> {
+    if geofence_ok(input) {
+        return None;
+    }
+    let mut v = Verdict::empty(Some(input.evidence_id));
+    v.reasons.push(BAD_GEOFENCE.into());
+    Some(v)
+}
+
 /// Run checks 1–8 in order, failing fast on the first hard failure.
 pub fn decide(
     input: &Input,
@@ -146,6 +185,9 @@ pub fn decide(
     observed: &Observed,
     ai: &mut dyn FnMut() -> AiOutcome,
 ) -> Verdict {
+    if let Some(v) = reject_input(input) {
+        return v;
+    }
     let mut r = Run {
         v: Verdict::empty(Some(input.evidence_id)),
         input,
@@ -165,11 +207,20 @@ pub fn decide(
             r.flag("bad_image");
             return r.finish();
         }
+        Observed::TooLarge => {
+            r.flag("image_too_large");
+            return r.finish();
+        }
         Observed::Image(f) => f,
     };
     // Facts we always report once the image decodes.
     r.v.phash = crate::phash::to_hex(facts.phash);
-    r.v.nearest_distance = crate::phash::nearest(facts.phash, known).min(64) as u8;
+    let variants: &[u64] = if facts.phash_variants.is_empty() {
+        std::slice::from_ref(&facts.phash)
+    } else {
+        &facts.phash_variants
+    };
+    r.v.nearest_distance = crate::phash::nearest_any(variants, known).min(64) as u8;
     r.v.exif_time = facts.exif_time;
 
     if facts.width.min(facts.height) < MIN_SHORT_SIDE {
@@ -193,14 +244,28 @@ pub fn decide(
         return r.finish();
     }
 
-    // 5. Location (skipped entirely when radius_m == 0; nothing is reported
-    // so a playground photo never publishes where the judge stood).
+    // 5. Location (skipped entirely when radius_m == 0, which `reject_input` only
+    // allows in the playground; nothing is reported so a playground photo never
+    // publishes where the judge stood).
     if input.geofence.radius_m > 0.0 {
-        let pos = match (facts.exif_gps, input.device_gps) {
+        let device = input.device_gps.map(|[lat, lon]| (lat, lon));
+        // Both sources present: they must agree. A photo whose EXIF says one
+        // place while the app says another was not simply taken on site.
+        if let (Some((elat, elon)), Some((dlat, dlon))) = (facts.exif_gps, device) {
+            if crate::geo::haversine_m(elat, elon, dlat, dlon) > MAX_GPS_GAP_M {
+                r.flag("gps_mismatch");
+            }
+        }
+        let pos = match (facts.exif_gps, device) {
             (Some(g), _) => Some((g, "exif")),
-            (None, Some([lat, lon])) => Some(((lat, lon), "device")),
+            (None, Some(d)) => Some((d, "device")),
             (None, None) => None,
         };
+        // Device-only location is self-reported by the submitter's browser (iOS
+        // Safari strips EXIF GPS on upload, so it stays usable): flag it.
+        if matches!(pos, Some((_, "device"))) && !input.playground {
+            r.v.warnings.push("gps_device_only".into());
+        }
         match pos {
             None => r.flag("gps_missing"),
             Some(((lat, lon), src)) => {
@@ -248,6 +313,9 @@ pub fn decide(
             }
             if answer.is_photo_of_screen_or_print || answer.is_render {
                 r.flag("ai_screen_photo");
+            }
+            if answer.has_other_instructions {
+                r.flag("ai_instruction_text");
             }
             if !stage_accepted(&input.milestone, &answer.stage) {
                 r.flag("ai_stage_mismatch");
@@ -329,6 +397,7 @@ mod tests {
             exif_time: Some(EXIF_T),
             exif_gps: Some((6_447_118, 3_474_201)),
             phash: 0, // distance 64 to the known all-ones hash
+            phash_variants: vec![],
         }
     }
 
@@ -340,6 +409,7 @@ mod tests {
                 confidence: 88,
                 is_photo_of_screen_or_print: false,
                 is_render: false,
+                has_other_instructions: false,
                 challenge_read: Some("K7RQ4M".into()),
                 observations: vec!["roof trusses in place".into(), "paper with code".into()],
             },
@@ -413,6 +483,7 @@ mod tests {
             (Observed::FetchFailed, "fetch_failed"),
             (Observed::HashMismatch, "hash_mismatch"),
             (Observed::Undecodable, "bad_image"),
+            (Observed::TooLarge, "image_too_large"),
         ] {
             let (v, called) = run(noop, obs, good_answer());
             assert!(!called);
@@ -501,19 +572,20 @@ mod tests {
 
     #[test]
     fn geofence_exif_device_and_missing() {
-        // ~1.1 km north: outside.
+        // ~1.1 km north: outside (no device GPS, so no cross-check).
         let (v, c) = run(
-            noop,
+            |j| j["device_gps"] = serde_json::Value::Null,
             img(|f| f.exif_gps = Some((6_457_000, 3_474_000))),
             good_answer(),
         );
         assert!(!c);
         assert_eq!(v.reasons, vec!["outside_geofence"]);
         assert_eq!(v.distance_m, Some(1112));
-        // Fallback to device GPS (inside).
+        // Fallback to device GPS (inside): passes, with a warning.
         let (v, _) = run(noop, img(|f| f.exif_gps = None), good_answer());
         assert!(v.pass);
         assert_eq!(v.gps_source, Some("device"));
+        assert_eq!(v.warnings, vec!["gps_device_only"]);
         assert_eq!(v.gps, Some([6_447_123, 3_474_190]));
         // Device GPS outside.
         let (v, _) = run(
@@ -523,6 +595,7 @@ mod tests {
         );
         assert_eq!(v.reasons, vec!["outside_geofence"]);
         assert_eq!(v.gps_source, Some("device"));
+        assert_eq!(v.warnings, vec!["gps_device_only"]);
         // Nothing at all.
         let (v, _) = run(
             |j| j["device_gps"] = serde_json::Value::Null,
@@ -534,10 +607,139 @@ mod tests {
     }
 
     #[test]
+    fn gps_sources_must_agree() {
+        // EXIF and device 26 m apart (the default fixture): fine.
+        let (v, _) = run(noop, img(|_| {}), good_answer());
+        assert!(v.pass && v.warnings.is_empty(), "{v:?}");
+        // ~111 m apart, both inside the 300 m fence: gps_mismatch, and the AI is never asked.
+        let (v, c) = run(
+            |j| j["device_gps"] = serde_json::json!([6_447_000, 3_474_000]),
+            img(|f| f.exif_gps = Some((6_448_000, 3_474_000))),
+            good_answer(),
+        );
+        assert!(!c);
+        assert_eq!(v.reasons, vec!["gps_mismatch"]);
+        assert_eq!(v.gps_source, Some("exif"));
+        // ~89 m apart: within tolerance.
+        let (v, _) = run(
+            |j| j["device_gps"] = serde_json::json!([6_447_000, 3_474_000]),
+            img(|f| f.exif_gps = Some((6_447_800, 3_474_000))),
+            good_answer(),
+        );
+        assert!(v.pass, "{v:?}");
+        // Forged device GPS at the site centre with a real far-away EXIF: both reasons.
+        let (v, _) = run(
+            |j| j["device_gps"] = serde_json::json!([6_447_000, 3_474_000]),
+            img(|f| f.exif_gps = Some((9_076_000, 7_398_000))),
+            good_answer(),
+        );
+        assert_eq!(v.reasons, vec!["gps_mismatch", "outside_geofence"]);
+        // gps_mismatch is hard in playground + demo (when the playground has a fence).
+        let (v, _) = run(
+            |j| {
+                j["playground"] = true.into();
+                j["demo_mode"] = true.into();
+                j["device_gps"] = serde_json::json!([6_447_000, 3_474_000]);
+            },
+            img(|f| f.exif_gps = Some((6_457_000, 3_474_000))),
+            good_answer(),
+        );
+        assert_eq!(v.reasons, vec!["gps_mismatch"]);
+        assert_eq!(v.warnings, vec!["outside_geofence"]);
+        // No device-only warning in the playground.
+        let (v, _) = run(
+            |j| j["playground"] = true.into(),
+            img(|f| f.exif_gps = None),
+            good_answer(),
+        );
+        assert!(v.pass && v.warnings.is_empty(), "{v:?}");
+    }
+
+    #[test]
+    fn bad_geofence_outside_playground() {
+        // radius 0 or > 5 km outside the playground: refused before any check.
+        for (radius, pg, ok) in [
+            (0, false, false),
+            (5001, false, false),
+            (5001, true, false),
+            (4_000_000_000u64, false, false),
+            (0, true, true),
+            (5000, false, true),
+            (100, false, true),
+        ] {
+            let (v, c) = run(
+                |j| {
+                    j["geofence"]["radius_m"] = radius.into();
+                    j["playground"] = pg.into();
+                },
+                img(|_| {}),
+                good_answer(),
+            );
+            if ok {
+                assert!(v.pass, "radius {radius} pg {pg}: {v:?}");
+            } else {
+                assert!(!c);
+                assert!(!v.pass);
+                assert_eq!(v.reasons, vec![BAD_GEOFENCE], "radius {radius} pg {pg}");
+                assert_eq!(v.phash, "");
+            }
+        }
+        // Even demo_mode doesn't soften it.
+        let (v, _) = run(
+            |j| {
+                j["geofence"]["radius_m"] = 0.into();
+                j["demo_mode"] = true.into();
+            },
+            img(|_| {}),
+            good_answer(),
+        );
+        assert_eq!(v.reasons, vec![BAD_GEOFENCE]);
+    }
+
+    #[test]
+    fn instruction_text_fails_in_every_mode() {
+        for (demo, pg) in [(false, false), (true, false), (false, true), (true, true)] {
+            let (v, _) = run(
+                |j| {
+                    j["demo_mode"] = demo.into();
+                    j["playground"] = pg.into();
+                },
+                img(|_| {}),
+                with_answer(|a| a.has_other_instructions = true),
+            );
+            assert!(!v.pass);
+            assert_eq!(
+                v.reasons,
+                vec!["ai_instruction_text"],
+                "demo={demo} pg={pg}"
+            );
+        }
+    }
+
+    #[test]
+    fn reuse_uses_orientation_variants() {
+        // Canonical hash is far from the known one, but a variant (e.g. the mirror) is close.
+        let (v, c) = run(
+            noop,
+            img(|f| {
+                f.phash = 0;
+                f.phash_variants = vec![0, 0x0f, u64::MAX ^ 0b11, 0xff];
+            }),
+            good_answer(),
+        );
+        assert!(!c);
+        assert_eq!(v.reasons, vec!["phash_reuse:2"]);
+        assert_eq!(v.nearest_distance, 2);
+        // The reported hash stays the canonical one.
+        assert_eq!(v.phash, "0000000000000000");
+    }
+
+    #[test]
     fn radius_zero_skips_location() {
         let (v, _) = run(
             |j| {
                 j["geofence"]["radius_m"] = 0.into();
+                j["playground"] = true.into();
                 j["device_gps"] = serde_json::Value::Null;
             },
             img(|f| f.exif_gps = Some((51_000_000, 0))),
@@ -658,7 +860,10 @@ mod tests {
         assert_eq!(v.reasons, vec!["ai_stage_mismatch"]);
         // And outside_geofence too.
         let (v, _) = run(
-            demo,
+            |j| {
+                j["demo_mode"] = true.into();
+                j["device_gps"] = serde_json::Value::Null;
+            },
             img(|f| f.exif_gps = Some((7_000_000, 3_474_000))),
             good_answer(),
         );
@@ -819,10 +1024,17 @@ mod tests {
             "ai_chat_id",
             "worker_commit",
             "attestation",
+            "sha256",
         ] {
             assert!(keys.contains(&k), "missing {k}");
         }
-        assert_eq!(keys.len(), 17);
+        assert_eq!(keys.len(), 18);
+        // New fields are appended: the original 17 keep their order on the wire.
+        let line = serde_json::to_string(&v).unwrap();
+        assert!(
+            line.contains(r#""attestation":null,"sha256":null}"#),
+            "{line}"
+        );
         assert!(j["ai_observations"].is_array());
         assert!(j["exif_time"].is_u64());
         assert!(j["attestation"].is_null());
