@@ -4,7 +4,7 @@ import {
   ChainChips, EstateCards, FinalCta, HeroBlock, HeroCheck, LANDING_ESTATE_SLUG, LiveEscrowCard, LiveStrip, NftShowcase, PhoneMockup, SourceLinks,
 } from "@/components/landing";
 import {
-  Container, Dial, Eyebrow, Faq, FeatureCard, GlowPanel, Heading, Hl, Marquee, Orbit, PillLink, Section, Split, StepCard, TextLink,
+  Container, Dial, Eyebrow, Faq, FeatureCard, GlowPanel, Heading, HeroOrbs, Hl, Marquee, Orbit, PillLink, Section, Split, StepCard, TextLink,
 } from "@/components/site";
 import { STEP_ART } from "@/components/step-art";
 import { FAQ } from "@/components/faq-data";
@@ -34,22 +34,25 @@ export default function Landing() {
     <main id="main">
       {/* ── Hero ── */}
       <section aria-label="Introduction" className="hero-glow relative overflow-hidden">
+        <HeroOrbs />
         <div aria-hidden className="pointer-events-none absolute right-[-6%] top-10 hidden w-[44%] max-w-[620px] opacity-60 lg:block">
           <HeroBlock />
         </div>
         <Container className="relative pb-16 pt-16 sm:pb-24 sm:pt-24">
           <div className="max-w-4xl space-y-7">
-            <Eyebrow>Off-plan escrow · Built on NEAR</Eyebrow>
-            <h1 className="text-[46px] leading-[1.04] sm:text-[72px] lg:text-[88px] lg:leading-[88px]">
+            <div className="rise">
+              <Eyebrow>Off-plan escrow · Built on NEAR</Eyebrow>
+            </div>
+            <h1 className="rise [animation-delay:120ms] text-[46px] leading-[1.04] sm:text-[72px] lg:text-[88px] lg:leading-[88px]">
               Pay for the house you can <Hl>see</Hl>.
             </h1>
-            <p className="max-w-2xl text-base text-muted sm:text-lg">
+            <p className="rise max-w-2xl text-base text-muted [animation-delay:260ms] sm:text-lg">
               Plote gives every off-plan unit its own account. Your money waits there and moves to the developer only when a photo of the next stage passes an
               independent check. If the build stalls, you take it back.
             </p>
           </div>
           <div className="mt-12 grid gap-4 lg:grid-cols-3">
-            <div className="glass flex flex-col justify-between gap-6 rounded-2xl p-6">
+            <div data-reveal className="glass flex flex-col justify-between gap-6 rounded-2xl p-6">
               <p className="text-base text-text/85">Escrow per unit · One owner per unit · Refunds you trigger yourself.</p>
               <div className="flex flex-wrap gap-2">
                 <PillLink href="/check">Check a unit →</PillLink>
@@ -59,7 +62,7 @@ export default function Landing() {
               </div>
             </div>
             <LiveEscrowCard />
-            <div className="glass rounded-2xl p-6">
+            <div data-reveal className="glass rounded-2xl p-6">
               <p className="mb-3 text-sm text-muted">Is this unit taken? Try it now.</p>
               <HeroCheck />
             </div>

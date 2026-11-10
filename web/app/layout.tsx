@@ -4,6 +4,7 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Footer, Nav } from "@/components/nav";
 import { APP_URL } from "@/lib/config";
+import { MOTION_BOOT, MotionRoot } from "@/components/motion";
 
 const lexend = Lexend({ subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--font-lexend", display: "swap" });
 const jet = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-jet", display: "swap" });
@@ -34,9 +35,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${lexend.variable} ${jet.variable}`}>
+    <html lang="en" className={`${lexend.variable} ${jet.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: MOTION_BOOT }} />
+      </head>
       <body className="flex min-h-dvh flex-col">
         <Providers>
+          <MotionRoot />
           <Nav />
           <div className="flex-1">{children}</div>
           <Footer />

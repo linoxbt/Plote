@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
@@ -14,6 +14,7 @@ import { useAllEstates, useAllMilestones } from "@/lib/hooks";
 import { chainName, oneclick, PICKER_CHAINS, STABLE_SYMBOLS } from "@/lib/oneclick";
 import { CheckChip, CheckInput, type CheckOutcome } from "./check";
 import { HouseNFT } from "./house-nft";
+import { CountUp, usePrefersReducedMotion } from "./motion";
 import { BracketCard, ChainLink, LinkButton } from "./ui";
 
 const DEMO_ESTATE = ESTATES.find((e) => estateSlug(e) === "harmattan-court") ?? ESTATES[0] ?? "harmattan-court.plote.testnet";
@@ -50,9 +51,9 @@ export function HeroBlock() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: reduce ? 0 : 0.2 + i * 0.35, ease: "easeOut" }}
           >
-            <polygon points={left} {...stroke} />
-            <polygon points={right} {...stroke} />
-            {i === 3 ? <polygon points={top} {...stroke} /> : null}
+            <polygon points={left} {...stroke} className={dashed ? "march" : undefined} />
+            <polygon points={right} {...stroke} className={dashed ? "march" : undefined} />
+            {i === 3 ? <polygon points={top} {...stroke} className="march" /> : null}
             {[0.25, 0.55].map((t) => {
               const a: [number, number] = [P[0] + R[0] * t + 8, P[1] + R[1] * t - 12];
               return <path key={t} d={`M${a[0]} ${a[1]}l18 -10.5v-14l-18 10.5z`} stroke="#FF9211" strokeWidth="1" fill="none" opacity={dashed ? 0.5 : 0.7} strokeDasharray={dashed ? "3 3" : undefined} />;
@@ -61,6 +62,9 @@ export function HeroBlock() {
               const a: [number, number] = [P[0] + L[0] * t - 8, P[1] + L[1] * t - 12];
               return <path key={t} d={`M${a[0]} ${a[1]}l-18 -10.5v-14l18 10.5z`} stroke="#FF9211" strokeWidth="1" fill="none" opacity={dashed ? 0.5 : 0.7} strokeDasharray={dashed ? "3 3" : undefined} />;
             })}
+            {i === 3 ? (
+              <circle className="ping" cx={P[0] + R[0] * 0.55 + 17} cy={P[1] + R[1] * 0.55 - 31} r="5" fill="#FF9211" />
+            ) : null}
             {i === 3 ? (
               <motion.circle
                 cx={P[0] + R[0] * 0.55 + 17}
@@ -114,7 +118,7 @@ export function useLiveTotals() {
 
 function LiveValue({ v, loading }: { v: string | null; loading: boolean }) {
   if (loading && v === null) return <span className="skeleton inline-block h-8 w-20 align-middle" />;
-  return v === null ? <span aria-label="not available">—</span> : <>{v}</>;
+  return v === null ? <span aria-label="not available">—</span> : <CountUp value={v} />;
 }
 
 /** "Plote in numbers": four live counters, each linking to the chain. */
@@ -130,7 +134,7 @@ export function LiveStrip() {
     <div>
       <dl className="grid grid-cols-2 lg:grid-cols-4">
         {items.map(([k, v], i) => (
-          <div key={k} className={clsx("border-white/10 px-1 py-6 sm:px-6", i % 2 === 1 && "border-l", i >= 2 && "border-t lg:border-t-0", i > 0 && "lg:border-l")}>
+          <div key={k} data-reveal className={clsx("border-white/10 px-1 py-6 sm:px-6", i % 2 === 1 && "border-l", i >= 2 && "border-t lg:border-t-0", i > 0 && "lg:border-l")}>
             <dd className="mono flex items-baseline gap-2 text-[30px] tabular-nums sm:text-[40px]" aria-busy={t.loading}>
               <LiveValue v={v} loading={t.loading} />
               <ChainLink account={t.link} />
@@ -148,7 +152,7 @@ export function LiveStrip() {
 export function LiveEscrowCard() {
   const t = useLiveTotals();
   return (
-    <div className="glass flex h-full flex-col justify-between gap-4 rounded-2xl p-6">
+    <div data-reveal className="glass flex h-full flex-col justify-between gap-4 rounded-2xl p-6">
       <p className="text-sm text-muted">USDC held in unit escrow · live</p>
       <p className="mono text-[40px] leading-none tabular-nums sm:text-[48px]">
         <LiveValue v={t.escrow === null ? null : formatUsd(t.escrow)} loading={t.loading} />
@@ -171,7 +175,7 @@ export function EstateCards() {
         const slug = estateSlug(account);
         const name = e?.name ?? slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
         return (
-          <Link key={account} href={`/estates/${slug}`} className="group flex flex-col overflow-hidden rounded-2xl bg-surface ring-1 ring-white/[0.08] transition-colors hover:ring-white/20">
+          <Link key={account} href={`/estates/${slug}`} data-reveal className="group flex flex-col overflow-hidden rounded-2xl bg-surface ring-1 ring-white/[0.08] transition-[box-shadow,translate] duration-300 hover:-translate-y-1 hover:ring-orange/40">
             <div className="glow-sky relative h-40">
               <span className="absolute left-5 top-5 rounded-full bg-black/30 px-3 py-1 text-xs text-text/90 ring-1 ring-white/15">{slug === "playground" ? "Judge sandbox" : "Demo estate"}</span>
               <svg viewBox="0 0 120 80" className="absolute bottom-0 right-4 h-32 w-auto opacity-70" aria-hidden>
@@ -198,43 +202,78 @@ export function EstateCards() {
 
 const STAGES = ["Foundation", "Roofing", "Finishing", "Handover"];
 
+const STAGE_MS = 2200;
+
+/**
+ * The token drawn at each stage. It plays through the stages on its own (before → Foundation → Roofing → Finishing →
+ * Handover, then again); tap a stage to hold it, tap it again to resume. Paused off-screen and under reduced motion.
+ */
 export function NftShowcase() {
   const unitQ = useQuery({ queryKey: ["unit", DEMO_ESTATE, "a-4b"], queryFn: () => E.getUnit(DEMO_ESTATE, "a-4b"), retry: 0 });
   const msQ = useQuery({ queryKey: ["milestones", DEMO_ESTATE], queryFn: () => E.getMilestones(DEMO_ESTATE), retry: 0 });
   const estQ = useQuery({ queryKey: ["estate", DEMO_ESTATE], queryFn: () => E.getEstate(DEMO_ESTATE), retry: 0 });
   const live = approvedCount(msQ.data);
-  const [stage, setStage] = useState<number | null>(null);
-  const shown = stage === null ? live : stage + 1;
+  const reduce = usePrefersReducedMotion();
+  const [held, setHeld] = useState<number | null>(null); // a stage the visitor picked (0..3)
+  const [step, setStep] = useState(0); // autoplay position: 0 = nothing proven yet, 1..4 = stages proven
+  const [visible, setVisible] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const playing = !reduce && held === null && visible;
+
+  useEffect(() => {
+    if (!box.current || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { threshold: 0.25 });
+    io.observe(box.current);
+    return () => io.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!playing) return;
+    const t = setTimeout(() => setStep((s) => (s + 1) % 5), step === 4 ? STAGE_MS * 1.6 : STAGE_MS);
+    return () => clearTimeout(t);
+  }, [playing, step]);
+
+  const shown = held !== null ? held + 1 : reduce ? live : step;
+  const active = held !== null ? held : reduce ? null : step - 1; // chip to highlight
   const u = unitQ.data;
   return (
     <BracketCard className="space-y-4">
-      <HouseNFT
-        estateName={estQ.data?.name ?? "Harmattan Court"}
-        unitLabel="A-4B"
-        unitId="a-4b"
-        approvedCount={shown}
-        total={msQ.data?.length || 4}
-        status={stage === 3 ? "HandedOver" : (u?.status ?? "—")}
-        paid={u?.paid ?? "0"}
-        price={u?.price ?? "0"}
-      />
+      <div ref={box}>
+        <HouseNFT
+          animated
+          estateName={estQ.data?.name ?? "Harmattan Court"}
+          unitLabel="A-4B"
+          unitId="a-4b"
+          approvedCount={shown}
+          total={msQ.data?.length || 4}
+          status={shown >= 4 ? "HandedOver" : shown > 0 && !reduce ? "Allocated" : (u?.status ?? "—")}
+          paid={u?.paid ?? "0"}
+          price={u?.price ?? "0"}
+        />
+      </div>
       <div>
-        <p className="label">Show at</p>
+        <p className="label">{held !== null ? "Holding at" : reduce ? "Show at" : "Playing through each stage"}</p>
         <div className="flex flex-wrap gap-1" role="group" aria-label="Show the token at a stage">
           {STAGES.map((s, i) => (
             <button
               key={s}
               type="button"
-              aria-pressed={stage === i}
-              onClick={() => setStage(stage === i ? null : i)}
-              className={clsx("btn btn-sm corners", stage === i ? "corners-orange text-orange" : "btn-ghost")}
+              aria-pressed={held === i}
+              onClick={() => setHeld(held === i ? null : i)}
+              className={clsx("btn btn-sm relative overflow-hidden", active === i ? "border-orange/60 bg-orange/10 text-orange" : "btn-ghost")}
             >
               {s}
+              {playing && active === i ? (
+                <span key={step} aria-hidden className="chip-progress absolute inset-x-0 bottom-0 h-[2px] bg-orange" style={{ animationDuration: `${step === 4 ? STAGE_MS * 1.6 : STAGE_MS}ms` }} />
+              ) : null}
             </button>
           ))}
         </div>
         <p className="mt-2 text-xs text-muted">
-          {stage === null ? (u ? `Live: ${live} of ${msQ.data?.length ?? 4} milestones approved.` : "Live state unavailable — showing the drawing.") : "Preview. Tap again to go back to live."}
+          {held !== null
+            ? "Holding this stage. Tap it again to keep playing."
+            : reduce
+              ? u ? `Live: ${live} of ${msQ.data?.length ?? 4} milestones approved.` : "Live state unavailable — showing the drawing."
+              : `A preview of how the token changes. Live: ${live} of ${msQ.data?.length ?? 4} approved.`}
           <ChainLink account={unitAccount(DEMO_ESTATE, "a-4b")} />
         </p>
       </div>

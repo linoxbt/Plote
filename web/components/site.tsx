@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { clsx } from "clsx";
 import { ArrowRight, Plus } from "lucide-react";
+import { CountUp } from "./motion";
 
 export function Container({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={clsx("mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8", className)}>{children}</div>;
@@ -35,7 +36,7 @@ export function Heading({
 }: { eyebrow?: ReactNode; title: ReactNode; lead?: ReactNode; align?: "left" | "center"; as?: "h1" | "h2"; className?: string; tone?: "accent" | "orange" | "red" }) {
   const H = as;
   return (
-    <div className={clsx("space-y-5", align === "center" && "mx-auto max-w-3xl text-center", className)}>
+    <div data-reveal className={clsx("space-y-5", align === "center" && "mx-auto max-w-3xl text-center", className)}>
       {eyebrow ? <Eyebrow tone={tone}>{eyebrow}</Eyebrow> : null}
       <H className={clsx(as === "h1" ? "text-[44px] leading-[1.05] sm:text-[64px] lg:text-[88px] lg:leading-[88px]" : "text-[34px] leading-[1.1] sm:text-[48px] sm:leading-[52.8px]", align === "left" && "max-w-3xl")}>{title}</H>
       {lead ? <p className={clsx("text-base leading-[22.4px] text-text-2/80", align === "left" ? "max-w-2xl" : "mx-auto max-w-2xl")}>{lead}</p> : null}
@@ -88,14 +89,14 @@ export function TextLink({ href, children, className }: { href: string; children
 
 /** Big rounded gradient panel (Core's "Satoshi Plus" / community cards). */
 export function GlowPanel({ children, tone = "accent", className }: { children: ReactNode; tone?: "accent" | "sky" | "orange"; className?: string }) {
-  return <div className={clsx("relative overflow-hidden rounded-[24px] ring-1 ring-white/10", `glow-${tone}`, className)}>{children}</div>;
+  return <div data-reveal className={clsx("relative overflow-hidden rounded-[24px] ring-1 ring-white/10", `glow-${tone}`, className)}>{children}</div>;
 }
 
 /** Dark card with an icon tile, title, body and optional link. */
 export function FeatureCard({ icon, title, children, href, cta, className }: { icon?: ReactNode; title: ReactNode; children?: ReactNode; href?: string; cta?: string; className?: string }) {
   return (
-    <div className={clsx("flex flex-col gap-4 rounded-2xl bg-surface p-6 ring-1 ring-white/10 transition-colors hover:ring-white/30 sm:p-8", className)}>
-      {icon ? <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange/10 text-orange ring-1 ring-orange/30">{icon}</div> : null}
+    <div data-reveal className={clsx("group/card flex flex-col gap-4 rounded-2xl bg-surface p-6 ring-1 ring-white/10 transition-[box-shadow,translate,background-color] duration-300 hover:-translate-y-1 hover:bg-surface-2 hover:ring-orange/40 sm:p-8", className)}>
+      {icon ? <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange/10 text-orange ring-1 ring-orange/30 transition-transform duration-300 group-hover/card:scale-110 group-hover/card:rotate-[-6deg]">{icon}</div> : null}
       <h3 className="text-2xl font-light leading-[33.6px]">{title}</h3>
       {children ? <div className="text-base leading-[22.4px] text-muted">{children}</div> : null}
       {href ? <TextLink href={href} className="mt-auto">{cta ?? "Learn more"}</TextLink> : null}
@@ -106,7 +107,7 @@ export function FeatureCard({ icon, title, children, href, cta, className }: { i
 /** Numbered step card. */
 export function StepCard({ n, title, children, art }: { n: number; title: ReactNode; children: ReactNode; art?: ReactNode }) {
   return (
-    <li className="flex flex-col gap-4 rounded-2xl bg-surface p-6 ring-1 ring-white/10 sm:p-8">
+    <li data-reveal className="flex flex-col gap-4 rounded-2xl bg-surface p-6 ring-1 ring-white/10 transition-[box-shadow,translate] duration-300 hover:-translate-y-1 hover:ring-orange/40 sm:p-8">
       <div className="flex items-center justify-between">
         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange text-sm font-normal text-ink">0{n}</span>
         {art}
@@ -122,8 +123,8 @@ export function StatGrid({ items, className }: { items: { label: ReactNode; valu
   return (
     <dl className={clsx("grid grid-cols-2 lg:grid-cols-4", className)}>
       {items.map((it, i) => (
-        <div key={i} className={clsx("border-white/10 px-1 py-6 sm:px-6", i % 2 === 1 && "border-l", i >= 2 && "border-t lg:border-t-0", i > 0 && "lg:border-l")}>
-          <dd className="text-[34px] font-light tabular-nums sm:text-[48px] sm:leading-[52.8px]">{it.value}</dd>
+        <div key={i} data-reveal className={clsx("border-white/10 px-1 py-6 sm:px-6", i % 2 === 1 && "border-l", i >= 2 && "border-t lg:border-t-0", i > 0 && "lg:border-l")}>
+          <dd className="text-[34px] font-light tabular-nums sm:text-[48px] sm:leading-[52.8px]">{typeof it.value === "string" ? <CountUp value={it.value} /> : it.value}</dd>
           <dt className="mt-1 text-sm text-muted">{it.label}</dt>
           {it.hint ? <div className="mt-1 text-xs text-muted">{it.hint}</div> : null}
         </div>
@@ -141,19 +142,22 @@ export function Orbit({ center, items, className }: { center: ReactNode; items: 
         <div key={s} className="absolute rounded-full ring-1 ring-white/10" style={{ inset: `${((1 - s) / 2) * 100}%` }} />
       ))}
       <div className="absolute inset-[38%] flex items-center justify-center rounded-full bg-surface ring-1 ring-white/15">{center}</div>
+      <div className="absolute inset-0 overflow-hidden rounded-full">
+      <div className="spin-slow absolute inset-0">
       {items.map((label, i) => {
         const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-        const r = i % 2 ? 33 : 44; // keep labels inside the box on narrow screens
+        const r = i % 2 ? 27 : 37; // labels sweep a full circle, so keep them inside it on narrow screens
         return (
-          <span
-            key={label}
-            className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text ring-1 ring-white/15"
-            style={{ left: `${50 + Math.cos(a) * r}%`, top: `${50 + Math.sin(a) * r}%` }}
-          >
-            {label}
+          <span key={label} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${50 + Math.cos(a) * r}%`, top: `${50 + Math.sin(a) * r}%` }}>
+            <span className="spin-slow-reverse block whitespace-nowrap rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text ring-1 ring-white/15">{label}</span>
           </span>
         );
       })}
+      </div>
+      </div>
+      {[0, 1].map((k) => (
+        <span key={k} className="ping absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange/60" style={{ animationDelay: `${k * 1.2}s` }} />
+      ))}
     </div>
   );
 }
@@ -179,7 +183,7 @@ export function Faq({ items }: { items: [string, ReactNode][] }) {
   return (
     <div className="divide-y divide-white/10 border-y border-white/10">
       {items.map(([q, a]) => (
-        <details key={q} className="group">
+        <details key={q} data-reveal className="group">
           <summary className="flex min-h-16 cursor-pointer items-center justify-between gap-6 py-5 text-left text-lg sm:text-2xl sm:leading-[33.6px]">
             <span>{q}</span>
             <Plus className="h-5 w-5 shrink-0 text-orange transition-transform group-open:rotate-45" strokeWidth={1.5} aria-hidden />
@@ -217,12 +221,13 @@ export function CtaBand({ title, lead, primary, secondary }: { title: ReactNode;
 export function PageHero({ eyebrow, title, lead, actions, art, tone }: { eyebrow?: ReactNode; title: ReactNode; lead?: ReactNode; actions?: ReactNode; art?: ReactNode; tone?: "accent" | "orange" | "red" }) {
   return (
     <section aria-label="Introduction" className="hero-glow relative overflow-hidden">
-      <Container className="grid items-center gap-12 py-20 sm:py-28 lg:grid-cols-[1.2fr_1fr]">
+      <HeroOrbs />
+      <Container className="relative grid items-center gap-12 py-20 sm:py-28 lg:grid-cols-[1.2fr_1fr]">
         <div className="space-y-7">
           <Heading as="h1" eyebrow={eyebrow} title={title} lead={lead} tone={tone} />
           {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
         </div>
-        {art ? <div className="flex justify-center lg:justify-end">{art}</div> : null}
+        {art ? <div data-reveal className="flex justify-center lg:justify-end">{art}</div> : null}
       </Container>
     </section>
   );
@@ -233,7 +238,7 @@ export function Split({ children, visual, reverse }: { children: ReactNode; visu
   return (
     <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
       <div className={clsx("space-y-6", reverse && "lg:order-2")}>{children}</div>
-      <div className={clsx("flex justify-center", reverse && "lg:order-1")}>{visual}</div>
+      <div data-reveal className={clsx("flex justify-center", reverse && "lg:order-1")}>{visual}</div>
     </div>
   );
 }
@@ -242,11 +247,24 @@ export function Split({ children, visual, reverse }: { children: ReactNode; visu
 export function Dial({ children, label }: { children: ReactNode; label?: string }) {
   return (
     <div className="relative aspect-square w-full max-w-[360px]" aria-hidden>
-      <div className="absolute inset-0 rounded-full [background:repeating-conic-gradient(rgba(255,255,255,0.18)_0deg_1deg,transparent_1deg_7.5deg)] [mask:radial-gradient(farthest-side,transparent_calc(100%-14px),black_calc(100%-13px))]" />
+      <div className="absolute inset-0 overflow-hidden rounded-full">
+      <div className="spin-slow absolute inset-0 rounded-full [background:repeating-conic-gradient(rgba(255,255,255,0.18)_0deg_1deg,transparent_1deg_7.5deg)] [mask:radial-gradient(farthest-side,transparent_calc(100%-14px),black_calc(100%-13px))]" />
       <div className="absolute inset-[10%] rounded-full ring-1 ring-white/10" />
+      <div className="spin-slow-reverse absolute inset-[10%] rounded-full [background:conic-gradient(from_0deg,rgba(255,146,17,0.55),rgba(255,146,17,0)_22%,transparent)] [mask:radial-gradient(farthest-side,transparent_calc(100%-2px),black_calc(100%-1px))]" />
+      </div>
       <div className="absolute inset-[24%] flex items-center justify-center rounded-full bg-surface ring-1 ring-white/15">{children}</div>
       <div className="absolute left-1/2 top-0 h-3 w-16 -translate-x-1/2 rounded-full bg-gradient-to-r from-ember to-accent blur-[1px]" />
       {label ? <span className="absolute -right-2 top-1/2 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text ring-1 ring-white/15 sm:-right-10">{label}</span> : null}
+    </div>
+  );
+}
+
+/** Two soft orbs (orange + light blue) floating behind a hero. */
+export function HeroOrbs() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="orb -right-[10%] bottom-[-20%] h-[28rem] w-[28rem] bg-flame/35" />
+      <div className="orb -left-[8%] -top-[15%] h-[22rem] w-[22rem] bg-sky/20 [animation-delay:-7s]" />
     </div>
   );
 }

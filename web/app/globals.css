@@ -325,6 +325,95 @@ details > summary::-webkit-details-marker {
   display: none;
 }
 
+/* ---- motion (Core-style). The `motion` class is only set when the visitor hasn't asked for less motion. ---- */
+.motion [data-reveal]:not(.is-in):not(.motion-failsafe *) {
+  opacity: 0;
+  transform: translateY(28px);
+}
+.motion [data-reveal] {
+  transition:
+    opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.motion-failsafe [data-reveal] {
+  opacity: 1;
+  transform: none;
+}
+/* Hero copy rises in on load. */
+.motion .rise {
+  animation: rise 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+/* Glow panels and hero glows drift slowly, like light moving across the page. */
+.glow-accent,
+.glow-sky,
+.glow-orange,
+.glow-edge,
+.hero-glow {
+  background-size: 125% 125%;
+  background-position: 0% 0%;
+  animation: glow-drift 16s ease-in-out infinite alternate;
+}
+@keyframes glow-drift {
+  to {
+    background-position: 100% 100%;
+  }
+}
+/* Soft blurred orbs that float behind heroes. */
+.orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  pointer-events: none;
+  animation: orb-float 14s ease-in-out infinite alternate;
+}
+@keyframes orb-float {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(6%, -8%, 0) scale(1.08); }
+  100% { transform: translate3d(-5%, 6%, 0) scale(0.96); }
+}
+/* Slow spins for the orbit and dial illustrations; labels counter-rotate so they stay upright. */
+.spin-slow {
+  animation: spin 60s linear infinite;
+}
+.spin-slow-reverse {
+  animation: spin 60s linear infinite reverse;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+/* Dashed "not built yet" lines march; the unit marker pings. */
+.march {
+  animation: march 1.6s linear infinite;
+}
+@keyframes march {
+  to { stroke-dashoffset: -20; }
+}
+.ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes ping {
+  0% { transform: scale(1); opacity: 0.8; }
+  80%, 100% { transform: scale(3.2); opacity: 0; }
+}
+/* NFT drawing: parts fill in smoothly as the stage changes. */
+.nft-anim svg * {
+  transition: fill 700ms ease, stroke 700ms ease;
+}
+.chip-progress {
+  animation: chip-progress linear forwards;
+  transform-origin: left;
+}
+@keyframes chip-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -337,7 +426,17 @@ details > summary::-webkit-details-marker {
   .step-check {
     stroke-dashoffset: 0;
   }
-  .marquee {
+  .marquee,
+  .glow-accent,
+  .glow-sky,
+  .glow-orange,
+  .glow-edge,
+  .hero-glow,
+  .orb,
+  .spin-slow,
+  .spin-slow-reverse,
+  .march,
+  .ping {
     animation: none;
   }
 }
