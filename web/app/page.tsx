@@ -4,7 +4,7 @@ import {
   ChainChips, EstateCards, FinalCta, HeroBlock, HeroCheck, LANDING_ESTATE_SLUG, LiveEscrowCard, LiveStrip, NftShowcase, PhoneMockup, SourceLinks,
 } from "@/components/landing";
 import {
-  Container, Dial, Eyebrow, Faq, FeatureCard, GlowPanel, Heading, Hl, Marquee, Orbit, PillLink, Rule, Section, Split, StepCard, TextLink,
+  Container, Dial, Eyebrow, Faq, FeatureCard, GlowPanel, Heading, Hl, Marquee, Orbit, PillLink, Section, Split, StepCard, TextLink,
 } from "@/components/site";
 import { STEP_ART } from "@/components/step-art";
 import { FAQ } from "@/components/faq-data";
@@ -41,7 +41,7 @@ export default function Landing() {
           <div className="max-w-4xl space-y-7">
             <Eyebrow>Off-plan escrow · Built on NEAR</Eyebrow>
             <h1 className="text-[46px] leading-[1.04] sm:text-[72px] lg:text-[88px] lg:leading-[88px]">
-              Pay for the house <Rule /> you can <Hl>see</Hl>.
+              Pay for the house you can <Hl>see</Hl>.
             </h1>
             <p className="max-w-2xl text-base text-muted sm:text-lg">
               Plote gives every off-plan unit its own account. Your money waits there and moves to the developer only when a photo of the next stage passes an
