@@ -13,7 +13,7 @@
 // The script refuses an empty commit unless you pass --allow-unpinned (or PLOTE_ALLOW_UNPINNED=1), e.g. for a
 // throwaway estate wired to outlayer-mock.
 import {
-  NEAR, ROOT_ACCOUNT, TGAS, account, call, deployments, ensureSubAccount, estateId, loadConfig, log, near, record,
+  NEAR, NETWORK, ROOT_ACCOUNT, TGAS, account, call, deployments, ensureSubAccount, estateId, loadConfig, log, near, record,
   resolveAccount, toNs, usage, view, wasm,
 } from "./lib.js";
 
@@ -22,6 +22,7 @@ const path = argv.find((a) => !a.startsWith("--")) ?? usage("usage: deploy-estat
 const allowUnpinned = argv.includes("--allow-unpinned") || process.env.PLOTE_ALLOW_UNPINNED === "1";
 const cfg = loadConfig(path);
 assertPinned(cfg.verifier, allowUnpinned);
+if (NETWORK === "mainnet") assertMainnetSafe();
 const dep = deployments();
 const usdc = dep.usdc ?? usage("deploy mock USDC first (deployments.usdc missing)");
 const hash = dep.unit_code_hash ?? usage("publish the global unit code first (deployments.unit_code_hash missing)");
@@ -78,6 +79,20 @@ log(`✓ verification budget +${fund} NEAR`);
 record(`estate:${cfg.account}`, id);
 log(`next: pnpm tsx scripts/add-units.ts ${path}`);
 void NEAR;
+
+/** Real money: refuse every configuration that only makes sense for a demo (docs/LAUNCH.md §3). */
+function assertMainnetSafe() {
+  const CIRCLE_USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
+  const problems: string[] = [];
+  if (allowUnpinned) problems.push("--allow-unpinned is not allowed on mainnet");
+  if ((deployments().usdc ?? "") !== CIRCLE_USDC) problems.push(`deployments.mainnet.json "usdc" must be Circle USDC (${CIRCLE_USDC})`);
+  if ((cfg.verify_mode ?? "outlayer") !== "outlayer") problems.push(`verify_mode must be "outlayer" on mainnet`);
+  const p = cfg.params as Record<string, unknown>;
+  if (p.demo_mode) problems.push("params.demo_mode must be false (demo timers are minutes, not weeks)");
+  if (p.playground) problems.push("params.playground must be false (anyone could act as surveyor)");
+  if (Number(p.veto_window_ns ?? 0) < 24 * 3600 * 1e9) problems.push("params.veto_window_ns should be at least 24 h on mainnet");
+  if (problems.length) usage(`✗ ${path} is not safe for mainnet:\n  - ${problems.join("\n  - ")}`);
+}
 
 function assertPinned(v: { repo: string; commit: string }, allow: boolean) {
   const commit = (v.commit ?? "").trim();

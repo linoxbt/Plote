@@ -1,0 +1,75 @@
+{
+  "_comment": "Mainnet template (docs/LAUNCH.md). deploy-estate.ts refuses demo/playground params, unpinned verifiers and non-Circle USDC on mainnet. Fill every placeholder; set lat_e6/lon_e6 to the site.",
+  "account": "your-estate",
+  "name": "Your Estate Name",
+  "location": "Street, City, State",
+  "developer": "developer.near",
+  "payout": "developer-payout.near",
+  "surveyor": "surveyor.near",
+  "recovery": "plote.near",
+  "verdict_relayer": null,
+  "verify_mode": "outlayer",
+  "outlayer": "outlayer.near",
+  "verifier": {
+    "repo": "project:plote.near/plote-verifier",
+    "commit": "<OutLayer mainnet version key of the audited verifier build>",
+    "build_target": "wasm32-wasip2"
+  },
+  "geofence": {
+    "lat_e6": 0,
+    "lon_e6": 0,
+    "radius_m": 150
+  },
+  "milestones": [
+    {
+      "key": "foundation",
+      "title": "Foundation",
+      "bps": 2000,
+      "deadline": "2027-06-30T12:00:00Z"
+    },
+    {
+      "key": "roofing",
+      "title": "Roofing",
+      "bps": 3000,
+      "deadline": "2027-12-31T12:00:00Z"
+    },
+    {
+      "key": "finishing",
+      "title": "Finishing",
+      "bps": 3000,
+      "deadline": "2028-06-30T12:00:00Z"
+    },
+    {
+      "key": "handover",
+      "title": "Handover",
+      "bps": 2000,
+      "deadline": "2028-12-31T12:00:00Z"
+    }
+  ],
+  "params": {
+    "reserve_ttl_ns": "7200000000000",
+    "min_initial_bps": 1000,
+    "mobilisation_bps": 0,
+    "grace_ns": "2592000000000000",
+    "veto_window_ns": "259200000000000",
+    "default_grace_ns": "2592000000000000",
+    "penalty_bps": 500,
+    "dust_threshold": "1000000",
+    "late_claim_ns": "604800000000000",
+    "capture_ttl_ns": "1800000000000",
+    "proposal_period_ns": "604800000000000",
+    "max_phash_distance": 8,
+    "max_exif_age_h": 72,
+    "min_ai_confidence": 70,
+    "demo_mode": false,
+    "playground": false
+  },
+  "units": [
+    {
+      "id": "a-1a",
+      "label": "Block A \u00b7 1A \u00b7 3-bed",
+      "price": "85000000000"
+    }
+  ],
+  "fund_verification_near": "5"
+}
