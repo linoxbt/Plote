@@ -23,7 +23,7 @@ export default function PaymentsPage() {
             </PillLink>
           </>
         }
-        art={<Orbit center={<span className="mono text-xs text-gold">USDC</span>} items={["Base", "Solana", "Ethereum", "Arbitrum", "BNB", "Polygon", "NEAR"]} />}
+        art={<Orbit center={<span className="mono text-xs text-accent">USDC</span>} items={["Base", "Solana", "Ethereum", "Arbitrum", "BNB", "Polygon", "NEAR"]} />}
       />
 
       <Section label="Three ways to pay">
@@ -47,7 +47,7 @@ export default function PaymentsPage() {
       </Section>
 
       <Section label="The balance is the truth" className="!pt-0">
-        <GlowPanel tone="slate" className="p-6 sm:p-12">
+        <GlowPanel tone="sky" className="p-6 sm:p-12">
           <Split
             visual={
               <div className="w-full max-w-sm space-y-3" aria-hidden>
@@ -58,7 +58,7 @@ export default function PaymentsPage() {
                 ].map(([k, v]) => (
                   <div key={k} className="flex items-center justify-between rounded-2xl bg-black/30 px-5 py-4 ring-1 ring-white/10">
                     <span className="text-sm text-text/80">{k}</span>
-                    <span className="mono text-sm text-teal">{v}</span>
+                    <span className="mono text-sm text-orange">{v}</span>
                   </div>
                 ))}
                 <div className="flex items-center justify-between rounded-2xl bg-white/[0.06] px-5 py-4 ring-1 ring-white/20">

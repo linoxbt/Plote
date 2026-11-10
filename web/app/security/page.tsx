@@ -27,7 +27,7 @@ export default function SecurityPage() {
             <div className="absolute inset-0 rounded-full ring-1 ring-white/10" />
             <div className="absolute inset-[14%] rounded-full ring-1 ring-white/10" />
             <div className="flex h-28 w-28 items-center justify-center rounded-full bg-surface ring-1 ring-white/15">
-              <Lock className="h-10 w-10 text-gold" strokeWidth={1.1} />
+              <Lock className="h-10 w-10 text-accent" strokeWidth={1.1} />
             </div>
           </div>
         }
@@ -58,7 +58,7 @@ export default function SecurityPage() {
       </Section>
 
       <Section label="Tested" className="!pt-0">
-        <GlowPanel tone="slate" className="px-6 py-12 sm:px-12 sm:py-16">
+        <GlowPanel tone="sky" className="px-6 py-12 sm:px-12 sm:py-16">
           <Heading title={<>Tested like it holds <Hl>someone&apos;s home</Hl>.</>} lead="The contract's invariants — no double sale, money conserved, releases capped by proven stages, exits only to allowed accounts — are checked by tests, including a randomised 200-step walk." />
           <div className="mt-8">
             <StatGrid

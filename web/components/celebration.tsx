@@ -8,7 +8,7 @@ import { X } from "lucide-react";
 import type { HouseSvgInput } from "@/lib/svg-house";
 import { HouseNFT } from "./house-nft";
 
-const COLORS = ["#2DD4BF", "#E8B04B", "#E9ECEF", "#134E48"];
+const COLORS = ["#FF9211", "#FD8D37", "#E9ECEF", "#4A2A0C"];
 
 function Confetti() {
   const reduce = useReducedMotion();
@@ -40,7 +40,7 @@ export function NftReveal(props: HouseSvgInput) {
       initial={reduce ? false : { opacity: 0, scale: 0.9, rotateY: 40 }}
       animate={{ opacity: 1, scale: 1, rotateY: 0 }}
       transition={{ duration: 0.8, ease: "easeOut" }}
-      className="corners corners-gold mx-auto max-w-xs p-2"
+      className="corners corners-accent mx-auto max-w-xs p-2"
     >
       <HouseNFT {...props} />
     </motion.div>
@@ -69,7 +69,7 @@ export function Celebration({ open, onClose, title, sub, house, share }: {
           </button>
           <div className="relative max-w-md space-y-6 text-center">
             <NftReveal {...house} />
-            <h2 className="font-display text-4xl font-semibold text-gold">{title}</h2>
+            <h2 className="font-display text-4xl font-normal text-accent">{title}</h2>
             <p className="text-lg text-muted">{sub}</p>
             <div className="flex flex-wrap justify-center gap-2">{share}</div>
           </div>

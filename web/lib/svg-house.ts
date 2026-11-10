@@ -19,10 +19,10 @@ export type HouseSvgInput = {
 
 const BADGE: Record<string, [string, string]> = {
   Available: ["AVAILABLE", "#8B939D"],
-  Reserved: ["RESERVED", "#F2A93B"],
-  Allocated: ["TAKEN", "#2DD4BF"],
+  Reserved: ["RESERVED", "#8DD8FE"],
+  Allocated: ["TAKEN", "#FF9211"],
   InDefault: ["IN DEFAULT", "#F06A6A"],
-  HandedOver: ["HANDED OVER", "#E8B04B"],
+  HandedOver: ["HANDED OVER", "#FFD27A"],
 };
 
 function esc(s: string): string {
@@ -52,9 +52,9 @@ export function houseSvg(i: HouseSvgInput): string {
   const label = esc(i.unitLabel || i.unitId.toUpperCase());
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 330">` +
-    `<style>.o{fill:none;stroke:#3A414B;stroke-width:1.5}.f{fill:#134E48;stroke:#2DD4BF;stroke-width:1.5}.g{fill:#E8B04B}.sf{fill:#2DD4BF}.se{fill:#252A31}text{font-family:monospace;fill:#E9ECEF}</style>` +
-    `<rect width="300" height="330" fill="#0A0B0D"/>` +
-    `<path d="M10 26V10h16M274 10h16v16M290 304v16h-16M26 320H10v-16" stroke="#2DD4BF" stroke-width="2" fill="none"/>` +
+    `<style>.o{fill:none;stroke:#3A414B;stroke-width:1.5}.f{fill:#4A2A0C;stroke:#FF9211;stroke-width:1.5}.g{fill:#FFD27A}.sf{fill:#FF9211}.se{fill:#252A31}text{font-family:monospace;fill:#E9ECEF}</style>` +
+    `<rect width="300" height="330" fill="#090909"/>` +
+    `<path d="M10 26V10h16M274 10h16v16M290 304v16h-16M26 320H10v-16" stroke="#FF9211" stroke-width="2" fill="none"/>` +
     `<text x="24" y="36" font-size="13">${esc(i.estateName)}</text>` +
     `<rect x="${276 - badge.length * 7.4}" y="22" width="${badge.length * 7.4 + 8}" height="20" fill="none" stroke="${bc}"/>` +
     `<text x="${280 - badge.length * 7.4}" y="36" font-size="11" style="fill:${bc}">${badge}</text>` +

@@ -100,7 +100,7 @@ export function NewEstateWizard() {
     <form onSubmit={handleSubmit((v) => { setConfig(v); setStep(4); })} className="space-y-6" noValidate>
       <ol className="flex gap-1 overflow-x-auto" aria-label="Steps">
         {STEPS.map((t, i) => (
-          <li key={t}><button type="button" onClick={() => setStep(i === 4 && !config ? step : i)} className={clsx("mono min-h-11 border-b-2 px-3 text-sm", i === step ? "border-teal text-teal" : "border-line text-muted")} aria-current={i === step ? "step" : undefined}>{i + 1}. {t}</button></li>
+          <li key={t}><button type="button" onClick={() => setStep(i === 4 && !config ? step : i)} className={clsx("mono min-h-11 border-b-2 px-3 text-sm", i === step ? "border-orange text-orange" : "border-line text-muted")} aria-current={i === step ? "step" : undefined}>{i + 1}. {t}</button></li>
         ))}
       </ol>
       <BracketCard className="space-y-4">
@@ -130,7 +130,7 @@ export function NewEstateWizard() {
             </div>
           ))}
           <Field label="Mobilisation tranche (%)" htmlFor="mob" hint="0–10%, released when a unit is allocated." error={errors.mobilisation?.message}><input id="mob" className="input" inputMode="decimal" {...register("mobilisation")} /></Field>
-          <p className={clsx("mono text-sm", Math.abs(sum - 100) < 1e-9 ? "text-teal" : "text-red")}>Total {sum}% {Math.abs(sum - 100) < 1e-9 ? "✓" : "— must be 100%"}</p>
+          <p className={clsx("mono text-sm", Math.abs(sum - 100) < 1e-9 ? "text-orange" : "text-red")}>Total {sum}% {Math.abs(sum - 100) < 1e-9 ? "✓" : "— must be 100%"}</p>
           {errors.milestones?.message ? <p className="text-sm text-red">{errors.milestones.message}</p> : null}
         </div>
         <div className={step === 2 ? "space-y-4" : "hidden"}>
@@ -139,7 +139,7 @@ export function NewEstateWizard() {
           <Field label="Surveyor account (holders can vote to replace)" htmlFor="surveyor" error={errors.surveyor?.message}><input id="surveyor" className="input" {...register("surveyor")} placeholder="qs-adaeze.testnet" /></Field>
         </div>
         <div className={step === 3 ? "space-y-4" : "hidden"}>
-          <label className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5 accent-[#2DD4BF]" {...register("demo")} /> Demo mode (2-minute veto and grace windows, 10-minute votes)</label>
+          <label className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5 accent-[#FF9211]" {...register("demo")} /> Demo mode (2-minute veto and grace windows, 10-minute votes)</label>
           <Field label="Units to add" htmlFor="units" error={errors.units?.message}><input id="units" className="input" inputMode="numeric" {...register("units")} /></Field>
           <p className="text-sm text-muted">Estimated NEAR needed: <span className="mono text-text">≈ {nearNeeded} NEAR</span> (estate storage ≈ 5 NEAR, {units} units × 0.03 NEAR, 5 NEAR verification budget).</p>
         </div>

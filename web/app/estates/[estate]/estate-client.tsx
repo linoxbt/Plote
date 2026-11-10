@@ -20,16 +20,16 @@ export function EstateClient({ slug }: { slug: string }) {
       <EstateHeader e={e} slug={estateSlug(account)} />
       <div className="space-y-6">
         <BracketCard>
-          <h2 className="mb-4 text-xl font-semibold">Milestones</h2>
+          <h2 className="mb-4 text-xl font-normal">Milestones</h2>
           {ms.data ? <MilestoneTrack milestones={ms.data} detailed mobilisationBps={e.params.mobilisation_bps} /> : ms.error ? <ErrorState error={ms.error} /> : <LoadingCard lines={2} />}
         </BracketCard>
         <EscrowSummary e={e} units={units.data} />
         <BracketCard>
-          <h2 className="mb-4 text-xl font-semibold">Units</h2>
+          <h2 className="mb-4 text-xl font-normal">Units</h2>
           {units.data ? <UnitGrid estate={account} units={units.data} /> : units.error ? <ErrorState error={units.error} onRetry={() => units.refetch()} /> : <LoadingCard lines={3} />}
         </BracketCard>
         <BracketCard>
-          <h2 className="mb-4 text-xl font-semibold">Recent activity</h2>
+          <h2 className="mb-4 text-xl font-normal">Recent activity</h2>
           <Activity estate={account} />
         </BracketCard>
       </div>

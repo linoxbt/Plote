@@ -19,8 +19,8 @@ export function EstateHeader({ e, slug, right }: { e: EstateView; slug: string; 
     <header className="mb-6 space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="mono mb-2 text-xs tracking-[0.12em] text-teal">ESTATE · {e.account}</p>
-          <h1 className="text-3xl font-semibold sm:text-[40px]">
+          <p className="mono mb-2 text-xs tracking-[0.12em] text-orange">ESTATE · {e.account}</p>
+          <h1 className="text-3xl font-normal sm:text-[40px]">
             {e.name} <ChainLink account={e.account} label="Estate contract on NearBlocks" />
           </h1>
           <p className="mt-1 flex items-center gap-1 text-muted">
@@ -28,7 +28,7 @@ export function EstateHeader({ e, slug, right }: { e: EstateView; slug: string; 
             {e.location}
             {e.geofence.radius_m > 0 ? (
               <a
-                className="mono ml-2 text-xs underline hover:text-teal"
+                className="mono ml-2 text-xs underline hover:text-orange"
                 href={`https://www.openstreetmap.org/?mlat=${e.geofence.lat_e6 / 1e6}&mlon=${e.geofence.lon_e6 / 1e6}#map=16/${e.geofence.lat_e6 / 1e6}/${e.geofence.lon_e6 / 1e6}`}
                 target="_blank"
                 rel="noreferrer"
@@ -51,7 +51,7 @@ export function EstateHeader({ e, slug, right }: { e: EstateView; slug: string; 
       <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <span className="flex items-center gap-2">
           <span className="text-muted">Developer</span>
-          <Link href={`/developers/${e.developer_id}`} className="mono underline hover:text-teal">
+          <Link href={`/developers/${e.developer_id}`} className="mono underline hover:text-orange">
             {e.developer_id}
           </Link>
           <ChainLink account={e.developer_id} />
@@ -75,7 +75,7 @@ export function EscrowSummary({ e, units }: { e: EstateView; units?: UnitView[] 
   const refundable = units ? units.reduce((n, u) => n + toBig(u.refundable_now), 0n) : null;
   return (
     <BracketCard>
-      <h2 className="mb-4 text-xl font-semibold">Escrow</h2>
+      <h2 className="mb-4 text-xl font-normal">Escrow</h2>
       <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
           <dt className="label">Total paid</dt>
@@ -112,9 +112,9 @@ export function EscrowSummary({ e, units }: { e: EstateView; units?: UnitView[] 
 const CELL = {
   Available: "bg-surface-2 text-text",
   Reserved: "bg-amber/15 text-amber",
-  Allocated: "bg-teal-dim text-teal",
+  Allocated: "bg-orange-dim text-orange",
   InDefault: "bg-red/15 text-red",
-  HandedOver: "bg-gold/15 text-gold",
+  HandedOver: "bg-accent/15 text-accent",
 } as const;
 
 const CELL_WORD = { Available: "free", Reserved: "held", Allocated: "taken", InDefault: "default", HandedOver: "home" } as const;
@@ -140,7 +140,7 @@ export function UnitGrid({ estate, units }: { estate: string; units: UnitView[] 
           <li key={u.id}>
             <Link href={`/estates/${slug}/units/${u.id}`} className="flex min-h-14 items-center justify-between gap-3 py-2">
               <span className="min-w-0">
-                <span className="mono font-semibold">{unitDisplay(u.id)}</span> <span className="truncate text-sm text-muted">{u.label}</span>
+                <span className="mono font-normal">{unitDisplay(u.id)}</span> <span className="truncate text-sm text-muted">{u.label}</span>
               </span>
               <StatusBadge status={u.status} />
             </Link>
@@ -159,7 +159,7 @@ export function UnitGrid({ estate, units }: { estate: string; units: UnitView[] 
                   className={clsx("corners corners-hover flex min-h-16 flex-col justify-between p-2", CELL[u.status])}
                   title={`${u.label} — ${u.status}`}
                 >
-                  <span className="mono text-sm font-semibold">{unitDisplay(u.id)}</span>
+                  <span className="mono text-sm font-normal">{unitDisplay(u.id)}</span>
                   <span className="mono text-[10px] uppercase">
                     {CELL_WORD[u.status]} {u.status === "Allocated" ? `· ${pct(u.paid, u.price)}%` : ""}
                   </span>
@@ -191,7 +191,7 @@ export function Activity({ estate, unit, limit = 15 }: { estate: string; unit?: 
       {q.data.map((r) => (
         <li key={r.id} className="flex items-start justify-between gap-3 py-2 text-sm">
           <span className="min-w-0">{describeEvent(r)}</span>
-          <a className="mono shrink-0 text-xs text-muted hover:text-teal" href={explorerTxUrl(r.tx_hash)} target="_blank" rel="noreferrer">
+          <a className="mono shrink-0 text-xs text-muted hover:text-orange" href={explorerTxUrl(r.tx_hash)} target="_blank" rel="noreferrer">
             {timeAgo(String(new Date(r.block_time).getTime() * 1e6))} ↗
           </a>
         </li>
@@ -203,7 +203,7 @@ export function Activity({ estate, unit, limit = 15 }: { estate: string; unit?: 
 export function DevScoreChip({ e }: { e: EstateView }) {
   const s = devScore(e.stats);
   return (
-    <Link href={`/developers/${e.developer_id}`} className="mono inline-flex min-h-8 items-center gap-1 bg-surface-2 px-2 text-xs hover:text-teal">
+    <Link href={`/developers/${e.developer_id}`} className="mono inline-flex min-h-8 items-center gap-1 bg-surface-2 px-2 text-xs hover:text-orange">
       {s.isNew ? "New on Plote" : `Score ${s.score}/100`}
     </Link>
   );

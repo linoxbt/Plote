@@ -15,7 +15,7 @@ type Row = { name: string; level: Level; detail: string };
 
 const ICON = { green: CheckCircle2, amber: AlertTriangle, red: XCircle, loading: Loader2 };
 const WORD = { green: "Operational", amber: "Degraded", red: "Down", loading: "Checking" };
-const COLOR = { green: "text-teal", amber: "text-amber", red: "text-red", loading: "text-muted" };
+const COLOR = { green: "text-orange", amber: "text-amber", red: "text-red", loading: "text-muted" };
 
 function RowView({ r }: { r: Row }) {
   const I = ICON[r.level];
@@ -25,7 +25,7 @@ function RowView({ r }: { r: Row }) {
         <p className="font-medium">{r.name}</p>
         <p className="mono break-all text-xs text-muted">{r.detail}</p>
       </div>
-      <span className={clsx("mono flex shrink-0 items-center gap-1.5 text-xs font-semibold uppercase", COLOR[r.level])}>
+      <span className={clsx("mono flex shrink-0 items-center gap-1.5 text-xs font-normal uppercase", COLOR[r.level])}>
         <I className={clsx("h-4 w-4", r.level === "loading" && "animate-spin")} aria-hidden /> {WORD[r.level]}
       </span>
     </li>

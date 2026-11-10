@@ -19,10 +19,10 @@ import { bytesToBase64, getWallet, sendTx, sendTxs, type TxSpec } from "@/lib/ne
 import { notifyMessage, timestampedNonce } from "@/lib/nep413";
 import { isRegistered, usdc } from "@/lib/usdc";
 
-function Section({ id, title, children, tone }: { id: string; title: string; children: ReactNode; tone?: "red" | "gold" | "amber" }) {
+function Section({ id, title, children, tone }: { id: string; title: string; children: ReactNode; tone?: "red" | "accent" | "amber" }) {
   return (
     <BracketCard as="section" id={id} tone={tone} className="scroll-mt-20 space-y-3" aria-labelledby={`${id}-h`}>
-      <h2 id={`${id}-h`} className="text-xl font-semibold">{title}</h2>
+      <h2 id={`${id}-h`} className="text-xl font-normal">{title}</h2>
       {children}
     </BracketCard>
   );
@@ -112,10 +112,10 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
         <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
           <div className="space-y-3 lg:sticky lg:top-20 lg:self-start">
             <BracketCard className="p-2"><UnitImage e={e} u={u} ms={ms.data} token={token.data} /></BracketCard>
-            <div className="flex flex-wrap items-center gap-2"><span className="mono text-2xl font-semibold">{unitDisplay(u.id)}</span><StatusBadge status={u.status} /></div>
+            <div className="flex flex-wrap items-center gap-2"><span className="mono text-2xl font-normal">{unitDisplay(u.id)}</span><StatusBadge status={u.status} /></div>
             <p className="text-sm text-muted">{u.label}</p>
             <nav className="mono flex flex-wrap gap-x-3 gap-y-1 text-xs" aria-label="Sections">
-              {["overview", "pay", "refund", "sell", "beneficiary", "lien", "notifications", "danger"].map((x) => <a key={x} href={`#${x}`} className="inline-flex min-h-8 items-center text-muted hover:text-teal">{x}</a>)}
+              {["overview", "pay", "refund", "sell", "beneficiary", "lien", "notifications", "danger"].map((x) => <a key={x} href={`#${x}`} className="inline-flex min-h-8 items-center text-muted hover:text-orange">{x}</a>)}
             </nav>
           </div>
           <div className="space-y-6">
@@ -123,8 +123,8 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
               <PositionCard e={e} u={u} />
               {toBig(u.excess_now) > 0n && isHolder ? <Button onClick={() => exec("Withdraw excess", E.withdrawExcess(account, u.id))}>Withdraw excess <MonoAmount value={u.excess_now} naira={false} /></Button> : null}
               {owed.data && toBig(owed.data) > 0n ? <Button onClick={() => exec("Withdraw owed", E.withdrawOwed(account))}>Withdraw owed <MonoAmount value={owed.data} naira={false} /></Button> : null}
-              {canHandover && isHolder ? <Button variant="gold" onClick={() => exec("Take handover", E.handover(account, u.id), "Handed over. Your token is now your gate pass.")}><DoorOpen className="h-4 w-4" aria-hidden /> Take handover</Button> : null}
-              {u.status === "HandedOver" ? <LinkButton href={`/me/units/${s}/${u.id}/pass`} variant="gold"><DoorOpen className="h-4 w-4" aria-hidden /> Gate pass</LinkButton> : null}
+              {canHandover && isHolder ? <Button variant="accent" onClick={() => exec("Take handover", E.handover(account, u.id), "Handed over. Your token is now your gate pass.")}><DoorOpen className="h-4 w-4" aria-hidden /> Take handover</Button> : null}
+              {u.status === "HandedOver" ? <LinkButton href={`/me/units/${s}/${u.id}/pass`} variant="accent"><DoorOpen className="h-4 w-4" aria-hidden /> Gate pass</LinkButton> : null}
             </Section>
 
             <Section id="pay" title="Pay instalment">
@@ -156,7 +156,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
               ) : (
                 <>
                   <p className="text-sm text-muted">Refunds open automatically when a milestone&apos;s deadline plus its grace period passes without approval. No vote needed.</p>
-                  {nextRefundOpen ? <CountdownChip until={nextRefundOpen} label="refunds would open in" tone="teal" endedLabel="awaiting the next view" /> : <p className="text-sm text-muted">Every milestone is approved.</p>}
+                  {nextRefundOpen ? <CountdownChip until={nextRefundOpen} label="refunds would open in" tone="orange" endedLabel="awaiting the next view" /> : <p className="text-sm text-muted">Every milestone is approved.</p>}
                 </>
               )}
             </Section>

@@ -34,7 +34,7 @@ export default function NftPage() {
             </PillLink>
           </>
         }
-        art={<div className="w-full max-w-sm overflow-hidden rounded-3xl ring-1 ring-white/15"><HouseNFT estateName="Harmattan Court" unitLabel="A-4B" unitId="a-4b" approvedCount={2} total={4} status="Allocated" paid="0" price="0" /></div>}
+        art={<div className="w-full max-w-sm overflow-hidden rounded-2xl ring-1 ring-white/15"><HouseNFT estateName="Harmattan Court" unitLabel="A-4B" unitId="a-4b" approvedCount={2} total={4} status="Allocated" paid="0" price="0" /></div>}
       />
 
       <Section label="What the token does">
@@ -43,14 +43,14 @@ export default function NftPage() {
           {ABILITIES.map(([icon, t, b, call]) => (
             <FeatureCard key={t} icon={icon} title={t}>
               <p>{b}</p>
-              <code className="mono mt-4 inline-block rounded-full bg-white/[0.05] px-3 py-1 text-xs text-teal ring-1 ring-white/10">{call}</code>
+              <code className="mono mt-4 inline-block rounded-full bg-white/[0.05] px-3 py-1 text-xs text-orange ring-1 ring-white/10">{call}</code>
             </FeatureCard>
           ))}
         </div>
       </Section>
 
       <Section label="The image" className="!pt-0">
-        <GlowPanel tone="slate" className="p-6 sm:p-12">
+        <GlowPanel tone="sky" className="p-6 sm:p-12">
           <Split visual={<div className="w-full max-w-sm"><NftShowcase /></div>}>
             <Heading eyebrow="Dynamic NFT" title={<>The picture is <Hl>drawn by the contract</Hl>.</>} lead="The token's image isn't a file someone uploaded. The estate contract draws it from the unit's live state every time a wallet asks: each proven stage fills in, and the windows turn gold at handover. Any wallet that shows NFTs shows the build's real progress." />
           </Split>
@@ -59,7 +59,7 @@ export default function NftPage() {
 
       <Section label="Standards" className="!pt-0">
         <Heading eyebrow="Standards" title={<>Built on NEAR&apos;s <Hl>NFT standards</Hl>.</>} />
-        <div className="mt-10 rounded-3xl bg-surface px-2 ring-1 ring-white/[0.08] sm:px-4">
+        <div className="mt-10 rounded-2xl bg-surface px-2 ring-1 ring-white/[0.08] sm:px-4">
           <StatGrid
             items={[
               { value: "NEP-171", label: "Core: ownership and transfers" },

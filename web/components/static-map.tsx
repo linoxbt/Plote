@@ -21,12 +21,12 @@ export function StaticMap({ center, radiusM, pin, pinLabel }: { center: [number,
         {tiles.map((t) => (
           <image key={`${t.x}-${t.y}`} href={`https://tile.openstreetmap.org/${z}/${((t.x % max) + max) % max}/${t.y}.png`} x={t.x * 256} y={t.y * 256} width={256} height={256} style={{ filter: "invert(0.92) hue-rotate(180deg) saturate(0.4) brightness(0.9)" }} />
         ))}
-        {radiusM > 0 ? <circle cx={cx} cy={cy} r={r} fill="rgba(45,212,191,0.12)" stroke="#2DD4BF" strokeWidth={2} strokeDasharray="6 4" /> : null}
-        <circle cx={cx} cy={cy} r={3} fill="#2DD4BF" />
+        {radiusM > 0 ? <circle cx={cx} cy={cy} r={r} fill="rgba(255,146,17,0.12)" stroke="#FF9211" strokeWidth={2} strokeDasharray="6 4" /> : null}
+        <circle cx={cx} cy={cy} r={3} fill="#FF9211" />
         {p ? (
           <g>
-            <circle cx={p[0]} cy={p[1]} r={8} fill="#E8B04B" stroke="#0A0B0D" strokeWidth={2} />
-            {pinLabel ? <text x={p[0] + 12} y={p[1] + 4} fill="#E8B04B" fontSize={14} fontFamily="monospace">{pinLabel}</text> : null}
+            <circle cx={p[0]} cy={p[1]} r={8} fill="#FD8D37" stroke="#090909" strokeWidth={2} />
+            {pinLabel ? <text x={p[0] + 12} y={p[1] + 4} fill="#FD8D37" fontSize={14} fontFamily="monospace">{pinLabel}</text> : null}
           </g>
         ) : null}
       </svg>

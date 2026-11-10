@@ -40,7 +40,7 @@ export default function Landing() {
         <Container className="relative pb-16 pt-16 sm:pb-24 sm:pt-24">
           <div className="max-w-4xl space-y-7">
             <Eyebrow>Off-plan escrow · Built on NEAR</Eyebrow>
-            <h1 className="text-[44px] leading-[1.04] sm:text-[76px]">
+            <h1 className="text-[46px] leading-[1.04] sm:text-[72px] lg:text-[88px] lg:leading-[88px]">
               Pay for the house <Rule /> you can <Hl>see</Hl>.
             </h1>
             <p className="max-w-2xl text-base text-muted sm:text-lg">
@@ -49,8 +49,8 @@ export default function Landing() {
             </p>
           </div>
           <div className="mt-12 grid gap-4 lg:grid-cols-3">
-            <div className="glass flex flex-col justify-between gap-6 rounded-3xl p-6">
-              <p className="text-[15px] text-text/85">Escrow per unit · One owner per unit · Refunds you trigger yourself.</p>
+            <div className="glass flex flex-col justify-between gap-6 rounded-2xl p-6">
+              <p className="text-base text-text/85">Escrow per unit · One owner per unit · Refunds you trigger yourself.</p>
               <div className="flex flex-wrap gap-2">
                 <PillLink href="/check">Check a unit →</PillLink>
                 <PillLink href={`/estates/${LANDING_ESTATE_SLUG}`} variant="ghost">
@@ -59,7 +59,7 @@ export default function Landing() {
               </div>
             </div>
             <LiveEscrowCard />
-            <div className="glass rounded-3xl p-6">
+            <div className="glass rounded-2xl p-6">
               <p className="mb-3 text-sm text-muted">Is this unit taken? Try it now.</p>
               <HeroCheck />
             </div>
@@ -75,7 +75,7 @@ export default function Landing() {
           visual={
             <Dial label="a-4b.harmattan-court">
               <div className="flex flex-col items-center gap-2 text-center">
-                <KeyRound className="h-8 w-8 text-gold" strokeWidth={1.25} aria-hidden />
+                <KeyRound className="h-8 w-8 text-accent" strokeWidth={1.25} aria-hidden />
                 <span className="mono text-xs text-muted">unit account</span>
               </div>
             </Dial>
@@ -88,7 +88,7 @@ export default function Landing() {
 
       {/* ── The problem ── */}
       <Section label="The problem" className="!pt-0">
-        <GlowPanel tone="slate" className="px-6 py-14 sm:px-14 sm:py-20">
+        <GlowPanel tone="sky" className="px-6 py-14 sm:px-14 sm:py-20">
           <Heading align="center" title={<>Off-plan is a promise. Plote makes it a <Hl>receipt</Hl>.</>} />
           <div className="mt-12 grid gap-5 md:grid-cols-3">
             {[
@@ -96,10 +96,10 @@ export default function Landing() {
               [<Building2 key="b" className="h-5 w-5" strokeWidth={1.5} />, "Paid upfront, built never.", "Instalments go straight to the developer. When a project stalls, the money's already spent."],
               [<Camera key="c" className="h-5 w-5" strokeWidth={1.5} />, "Photos from far away.", "If you live abroad, you judge progress from WhatsApp pictures that could be from anywhere, or from last year."],
             ].map(([icon, t, b]) => (
-              <div key={t as string} className="rounded-3xl bg-black/25 p-6 ring-1 ring-white/10 backdrop-blur">
+              <div key={t as string} className="rounded-2xl bg-black/25 p-6 ring-1 ring-white/10 backdrop-blur">
                 <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-red/10 text-red ring-1 ring-red/25">{icon}</div>
                 <h3 className="text-lg">{t as string}</h3>
-                <p className="mt-2 text-[15px] text-text/75">{b as string}</p>
+                <p className="mt-2 text-base text-text/75">{b as string}</p>
               </div>
             ))}
           </div>
@@ -129,22 +129,22 @@ export default function Landing() {
 
       {/* ── Proof before payment ── */}
       <Section label="Proof before payment" className="!pt-0">
-        <GlowPanel tone="gold" className="grid gap-10 p-6 sm:p-12 lg:grid-cols-2 lg:items-center">
+        <GlowPanel tone="accent" className="grid gap-10 p-6 sm:p-12 lg:grid-cols-2 lg:items-center">
           <div className="flex justify-center">
             <svg viewBox="0 0 240 240" className="w-full max-w-[300px]" aria-hidden>
               <path d="M40 76V40h36M164 40h36v36M200 164v36h-36M76 200H40v-36" stroke="#F4F4F5" strokeWidth="3" fill="none" />
               <path d="M70 160l34-42 26 26 18-18 22 34z" stroke="#F4F4F5" strokeOpacity=".55" strokeWidth="2" fill="none" />
               <circle cx="150" cy="92" r="9" stroke="#F4F4F5" strokeOpacity=".55" strokeWidth="2" fill="none" />
-              <rect x="86" y="176" width="68" height="18" rx="4" fill="#0A0A0B" stroke="#E8B04B" />
-              <text x="120" y="189" textAnchor="middle" fill="#E8B04B" fontSize="11" fontFamily="var(--font-jet), monospace">K7RQ4M</text>
+              <rect x="86" y="176" width="68" height="18" rx="4" fill="#090909" stroke="#FD8D37" />
+              <text x="120" y="189" textAnchor="middle" fill="#FD8D37" fontSize="11" fontFamily="var(--font-jet), monospace">K7RQ4M</text>
             </svg>
           </div>
           <div className="space-y-6">
             <Heading eyebrow="Proof before payment" title={<>See exactly <Hl>why</Hl> money moved.</>} lead="Every release needs a site photo with a one-time code written on paper in the frame. It's checked inside an Intel TDX enclave on OutLayer, with stage recognition by NEAR AI Cloud — then a surveyor signs." />
-            <ul className="grid gap-2 text-[15px] text-text/85 sm:grid-cols-2">
+            <ul className="grid gap-2 text-base text-text/85 sm:grid-cols-2">
               {["Taken on site, this week", "Never used before", "Shows the right stage", "Code written in the frame"].map((c) => (
                 <li key={c} className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-teal" strokeWidth={1.5} aria-hidden /> {c}
+                  <ShieldCheck className="h-4 w-4 text-orange" strokeWidth={1.5} aria-hidden /> {c}
                 </li>
               ))}
             </ul>
@@ -165,10 +165,10 @@ export default function Landing() {
             <Heading eyebrow="NFTs that do something" title={<>Your token isn&apos;t a picture. It&apos;s <Hl>the unit</Hl>.</>} lead="Hold it and you hold the money, the vote and the keys." />
             <div className="grid gap-4 sm:grid-cols-2">
               {ABILITIES.map(([icon, t, b]) => (
-                <div key={t} className="flex gap-4 rounded-3xl bg-surface p-5 ring-1 ring-white/[0.08]">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.05] text-gold ring-1 ring-white/10">{icon}</div>
+                <div key={t} className="flex gap-4 rounded-2xl bg-surface p-5 ring-1 ring-white/[0.08]">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.05] text-accent ring-1 ring-white/10">{icon}</div>
                   <div>
-                    <p className="text-[15px] text-text">{t}</p>
+                    <p className="text-base text-text">{t}</p>
                     <p className="mt-1 text-sm text-muted">{b}</p>
                   </div>
                 </div>
@@ -182,7 +182,7 @@ export default function Landing() {
 
       {/* ── Plote in numbers ── */}
       <Section label="Live numbers" className="!pt-0">
-        <GlowPanel tone="slate" className="px-6 py-12 sm:px-12 sm:py-16">
+        <GlowPanel tone="sky" className="px-6 py-12 sm:px-12 sm:py-16">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <h2 className="text-[32px] sm:text-[48px]">
               Plote in <Hl>numbers</Hl>
@@ -199,7 +199,7 @@ export default function Landing() {
       <Section label="Payments">
         <Split
           reverse
-          visual={<Orbit center={<span className="mono text-xs text-gold">USDC</span>} items={["Base", "Solana", "Ethereum", "Arbitrum", "BNB", "Polygon", "NEAR"]} />}
+          visual={<Orbit center={<span className="mono text-xs text-accent">USDC</span>} items={["Base", "Solana", "Ethereum", "Arbitrum", "BNB", "Polygon", "NEAR"]} />}
         >
           <Heading eyebrow="Pay from anywhere" title={<>In London, Houston or Toronto? Pay the way you <Hl>already do</Hl>.</>} lead="Send USDC or USDT from the chain you use. Plote swaps it and delivers USDC straight into your unit's account. No exchange account in Nigeria, no wire to a stranger." />
           <ChainChips />
@@ -218,12 +218,12 @@ export default function Landing() {
           <FeatureCard icon={<Eye className="h-5 w-5" strokeWidth={1.5} />} title="Your sign-off, on the record." href="/surveyors" cta="For surveyors">
             Snap the site photo on your phone. Plote checks it and you sign. Your key can only sign milestones — it can&apos;t move money.
           </FeatureCard>
-          <div className="flex flex-col gap-5 rounded-3xl bg-surface p-6 ring-1 ring-white/[0.08] sm:p-7">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.05] text-gold ring-1 ring-white/10">
+          <div className="flex flex-col gap-5 rounded-2xl bg-surface p-6 ring-1 ring-white/[0.08] sm:p-7">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.05] text-accent ring-1 ring-white/10">
               <Users className="h-5 w-5" strokeWidth={1.5} aria-hidden />
             </div>
             <h3 className="text-xl">Share the build with the whole family.</h3>
-            <p className="text-[15px] text-muted">Every unit has a public page with each stage&apos;s photo and proof. Send it to your mum on WhatsApp.</p>
+            <p className="text-base text-muted">Every unit has a public page with each stage&apos;s photo and proof. Send it to your mum on WhatsApp.</p>
             <div className="-mb-2 scale-[0.82] self-center">
               <PhoneMockup />
             </div>
@@ -244,14 +244,14 @@ export default function Landing() {
 
       {/* ── Check first + limits ── */}
       <Section label="Check a unit" className="!pt-0">
-        <GlowPanel tone="gold" className="grid gap-10 p-6 sm:p-12 lg:grid-cols-2">
+        <GlowPanel tone="accent" className="grid gap-10 p-6 sm:p-12 lg:grid-cols-2">
           <div className="space-y-6">
             <h2 className="text-[32px] sm:text-[44px]">Check a unit before you pay for it.</h2>
             <FinalCta />
           </div>
-          <div className="rounded-3xl bg-black/30 p-6 ring-1 ring-white/10 backdrop-blur sm:p-8">
+          <div className="rounded-2xl bg-black/30 p-6 ring-1 ring-white/10 backdrop-blur sm:p-8">
             <p className="mb-4 text-lg">What Plote doesn&apos;t do</p>
-            <ul className="space-y-3 text-[15px] text-text/80">
+            <ul className="space-y-3 text-base text-text/80">
               <li>Plote is not your land title. Always check the C of O or governor&apos;s consent with a lawyer.</li>
               <li>Plote can&apos;t stop a developer who refuses to use it. Ask your developer why they don&apos;t.</li>
               <li>The surveyor is a real person. Plote checks their photos and lets holders replace them, but it doesn&apos;t remove the need for one.</li>

@@ -2013,3 +2013,28 @@ fn outlayer_source_project_or_github() {
     e.c.verifier.commit = "v3".into();
     assert_eq!(e.c.outlayer_source()["Project"]["version_key"], "v3");
 }
+
+#[test]
+fn nft_media_uses_brand_palette() {
+    use near_sdk::base64::{engine::general_purpose::STANDARD, Engine};
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    e.approve_milestone(0);
+    let media =
+        e.c.nft_token("a-4b".into())
+            .unwrap()
+            .metadata
+            .unwrap()
+            .media
+            .unwrap();
+    let svg = String::from_utf8(
+        STANDARD
+            .decode(media.trim_start_matches("data:image/svg+xml;base64,"))
+            .unwrap(),
+    )
+    .unwrap();
+    // Plote brand: orange proven parts on the near-black canvas; the old teal palette is gone.
+    assert!(svg.contains("#FF9211"));
+    assert!(svg.contains("fill='#090909'"));
+    assert!(!svg.contains("#2DD4BF"));
+}

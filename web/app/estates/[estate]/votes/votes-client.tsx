@@ -46,7 +46,7 @@ export function VotesClient({ slug }: { slug: string }) {
         right={isHolder || isDev ? <LinkButton href={`/estates/${estateSlug(account)}/votes/new`} variant="primary" size="sm">New proposal</LinkButton> : null}
       />
       <div className="mb-6 space-y-2">
-        <h2 className="text-2xl font-semibold">Holder votes</h2>
+        <h2 className="text-2xl font-normal">Holder votes</h2>
         <p className="max-w-2xl text-sm text-muted">
           One vote per allocation token, cast by whoever holds it. A proposal passes the moment more than half of the electorate votes yes. Tokens allocated after a proposal opened can&apos;t vote on it.
         </p>
@@ -96,11 +96,11 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
   };
   return (
     <li>
-      <BracketCard tone={p.status === "Executed" ? "teal" : p.status === "Rejected" ? "red" : p.status === "Open" ? "amber" : "default"} className="space-y-3">
+      <BracketCard tone={p.status === "Executed" ? "orange" : p.status === "Rejected" ? "red" : p.status === "Open" ? "amber" : "default"} className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="mono text-xs text-muted">#{p.id} · opened {formatDateTime(p.created_at)}</p>
-            <p className="font-display text-lg font-semibold">{describeProposal(p.kind, ms)}</p>
+            <p className="font-display text-lg font-normal">{describeProposal(p.kind, ms)}</p>
             <p className="flex flex-wrap items-center gap-1 text-sm text-muted">by <AccountChip account={p.proposer} /></p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

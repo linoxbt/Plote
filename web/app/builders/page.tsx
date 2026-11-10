@@ -23,7 +23,7 @@ export default function BuildersPage() {
           </>
         }
         art={
-          <div className="glass w-full max-w-sm space-y-4 rounded-3xl p-6" aria-hidden>
+          <div className="glass w-full max-w-sm space-y-4 rounded-2xl p-6" aria-hidden>
             <p className="text-sm text-muted">Release schedule</p>
             {[
               ["Foundation", "20%", true],
@@ -37,7 +37,7 @@ export default function BuildersPage() {
                   <span className="mono text-muted">{v as string}</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-white/10">
-                  <div className={`h-1.5 rounded-full ${done ? "bg-teal" : "bg-white/0"}`} style={{ width: done ? "100%" : "0%" }} />
+                  <div className={`h-1.5 rounded-full ${done ? "bg-orange" : "bg-white/0"}`} style={{ width: done ? "100%" : "0%" }} />
                 </div>
               </div>
             ))}
@@ -82,7 +82,7 @@ export default function BuildersPage() {
       </Section>
 
       <Section label="Cash flow" className="!pt-0">
-        <GlowPanel tone="gold" className="px-6 py-12 sm:px-12 sm:py-16">
+        <GlowPanel tone="accent" className="px-6 py-12 sm:px-12 sm:py-16">
           <Heading title={<>Built for real <Hl>cash flow</Hl>.</>} lead="Developers need money to start building. An estate can release a fixed mobilisation share when a unit is allocated; everything else waits for a proven stage." />
           <div className="mt-8">
             <StatGrid

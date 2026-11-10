@@ -71,7 +71,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
         {!isDev ? <BracketCard tone="amber" className="mb-6">You&apos;re signed in as <span className="mono">{accountId}</span>; only <span className="mono">{e.developer_id}</span> can add units.</BracketCard> : null}
         <div className="space-y-6">
           <BracketCard>
-            <h2 className="mb-3 text-xl font-semibold">Units</h2>
+            <h2 className="mb-3 text-xl font-normal">Units</h2>
             {units.data ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[680px] text-sm">
@@ -83,7 +83,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
                       const overdue = opens !== null && nowNs > opens - BigInt(e.params.default_grace_ns);
                       return (
                         <tr key={u.id} className="border-t border-line">
-                          <td className="py-2"><span className="mono font-semibold">{unitDisplay(u.id)}</span> <span className="text-muted">{u.label}</span></td>
+                          <td className="py-2"><span className="mono font-normal">{unitDisplay(u.id)}</span> <span className="text-muted">{u.label}</span></td>
                           <td><StatusBadge status={u.status} /></td>
                           <td className="text-right"><MonoAmount value={u.price} naira={false} /></td>
                           <td className="text-right"><MonoAmount value={u.paid} naira={false} account={u.account} /></td>
@@ -103,7 +103,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
           </BracketCard>
 
           <BracketCard className="space-y-4">
-            <h2 className="text-xl font-semibold">Add units</h2>
+            <h2 className="text-xl font-normal">Add units</h2>
             <p className="text-sm text-muted">Each unit becomes its own account under the estate, registered on USDC. Sent in batches of {MAX_UNITS_PER_ADD}; attach 0.03 NEAR per unit.</p>
             {rows.map((r, i) => (
               <div key={i} className="space-y-2 border-t border-line pt-3">
@@ -134,7 +134,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
 
           {isDev ? (
             <BracketCard className="space-y-3">
-              <h2 className="text-xl font-semibold">Day-to-day key</h2>
+              <h2 className="text-xl font-normal">Day-to-day key</h2>
               <p className="text-sm text-muted">
                 Adds a function-call key to <span className="mono">{e.developer_id}</span> that can only call <span className="mono">{DEV_KEY_METHODS.join(", ")}</span> on{" "}
                 <span className="mono">{account}</span> (0.25 NEAR gas allowance, can&apos;t move money). Claims and deadline-extension proposals then go through without a wallet popup. The key stays in this browser.
@@ -144,7 +144,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
           ) : null}
 
           <BracketCard className="space-y-3">
-            <h2 className="text-xl font-semibold">Verification budget</h2>
+            <h2 className="text-xl font-normal">Verification budget</h2>
             <p>Balance: <span className="mono">{formatNear(e.verification_budget)} NEAR</span> — each photo check costs about 0.05 NEAR; submit_evidence fails with E_BUDGET below that.</p>
             <div className="flex flex-wrap items-end gap-2">
               <Field label="Top up (NEAR)" htmlFor="topup"><input id="topup" className="input w-32" inputMode="decimal" value={topup} onChange={(x) => setTopup(x.target.value)} /></Field>
@@ -154,7 +154,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
           </BracketCard>
 
           <BracketCard>
-            <h2 className="mb-3 text-xl font-semibold">Activity</h2>
+            <h2 className="mb-3 text-xl font-normal">Activity</h2>
             <Activity estate={account} />
           </BracketCard>
         </div>

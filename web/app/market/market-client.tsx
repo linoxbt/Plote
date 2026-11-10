@@ -32,10 +32,10 @@ export function MarketClient() {
                 <BracketCard tone={isDefault ? "red" : "default"} className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <Link href={`/estates/${estateSlug(estate)}/units/${u.id}`} className="mono text-xl font-semibold hover:text-teal">{unitDisplay(u.id)}</Link>
+                      <Link href={`/estates/${estateSlug(estate)}/units/${u.id}`} className="mono text-xl font-normal hover:text-orange">{unitDisplay(u.id)}</Link>
                       <p className="text-sm text-muted">{u.label} · {estateSlug(estate)}</p>
                     </div>
-                    <span className={`mono inline-flex items-center gap-1 px-2 py-1 text-xs ${isDefault ? "bg-red/10 text-red" : "bg-gold/10 text-gold"}`} title={isDefault ? "The holder missed an instalment. They get the ask back minus a fixed penalty; the penalty goes to the developer." : "Listed by the holder."}>
+                    <span className={`mono inline-flex items-center gap-1 px-2 py-1 text-xs ${isDefault ? "bg-red/10 text-red" : "bg-accent/10 text-accent"}`} title={isDefault ? "The holder missed an instalment. They get the ask back minus a fixed penalty; the penalty goes to the developer." : "Listed by the holder."}>
                       <Info className="h-3.5 w-3.5" aria-hidden />{isDefault ? "DEFAULT" : "VOLUNTARY"}
                     </span>
                   </div>

@@ -69,8 +69,8 @@ export function AccountChip({ account, max = 22, className, label }: { account: 
     <span className={clsx("mono inline-flex max-w-full items-center gap-1 bg-surface-2 py-0.5 pl-2 text-sm", className)} title={account}>
       {label ? <span className="text-muted">{label}</span> : null}
       <span className="truncate">{truncateAccount(account, max)}</span>
-      <button type="button" onClick={copy} className="relative inline-flex h-7 w-7 items-center justify-center text-muted before:absolute before:-inset-2 before:content-[''] hover:text-teal" aria-label={`Copy ${account}`}>
-        {copied ? <BadgeCheck className="h-3.5 w-3.5 text-teal" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
+      <button type="button" onClick={copy} className="relative inline-flex h-7 w-7 items-center justify-center text-muted before:absolute before:-inset-2 before:content-[''] hover:text-orange" aria-label={`Copy ${account}`}>
+        {copied ? <BadgeCheck className="h-3.5 w-3.5 text-orange" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
       </button>
       <ChainLink account={account} />
       <span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span>
@@ -80,44 +80,44 @@ export function AccountChip({ account, max = 22, className, label }: { account: 
 
 // ---------------- StatusBadge (text + icon, never colour alone) ----------------
 
-type BadgeDef = { label: string; tone: "teal" | "amber" | "red" | "gold" | "muted"; Icon: LucideIcon };
+type BadgeDef = { label: string; tone: "orange" | "amber" | "red" | "accent" | "muted"; Icon: LucideIcon };
 
 const UNIT_BADGE: Record<UnitStatus, BadgeDef> = {
   Available: { label: "Available", tone: "muted", Icon: CircleDashed },
   Reserved: { label: "Reserved", tone: "amber", Icon: Clock },
-  Allocated: { label: "Taken", tone: "teal", Icon: Lock },
+  Allocated: { label: "Taken", tone: "orange", Icon: Lock },
   InDefault: { label: "In default", tone: "red", Icon: AlertOctagon },
-  HandedOver: { label: "Handed over", tone: "gold", Icon: Home },
+  HandedOver: { label: "Handed over", tone: "accent", Icon: Home },
 };
 
 const MILESTONE_BADGE: Record<MilestoneStatus, BadgeDef> = {
   Open: { label: "Open", tone: "muted", Icon: CircleDashed },
   Checking: { label: "Checking", tone: "amber", Icon: Loader2 },
-  Verified: { label: "Verified", tone: "teal", Icon: ShieldCheck },
-  Approved: { label: "Approved", tone: "teal", Icon: BadgeCheck },
+  Verified: { label: "Verified", tone: "orange", Icon: ShieldCheck },
+  Approved: { label: "Approved", tone: "orange", Icon: BadgeCheck },
   Vetoed: { label: "Vetoed", tone: "red", Icon: ShieldX },
   Missed: { label: "Missed", tone: "red", Icon: AlertOctagon },
 };
 
 const EVIDENCE_BADGE: Record<EvidenceStatus, BadgeDef> = {
   Pending: { label: "Checking", tone: "amber", Icon: Loader2 },
-  Pass: { label: "Pass", tone: "teal", Icon: ShieldCheck },
+  Pass: { label: "Pass", tone: "orange", Icon: ShieldCheck },
   Fail: { label: "Fail", tone: "red", Icon: XCircle },
   Error: { label: "Error", tone: "red", Icon: AlertOctagon },
 };
 
 const PROPOSAL_BADGE: Record<ProposalStatus, BadgeDef> = {
   Open: { label: "Open", tone: "amber", Icon: Clock },
-  Executed: { label: "Passed", tone: "teal", Icon: BadgeCheck },
+  Executed: { label: "Passed", tone: "orange", Icon: BadgeCheck },
   Rejected: { label: "Rejected", tone: "red", Icon: XCircle },
   Expired: { label: "Expired", tone: "muted", Icon: CircleDashed },
 };
 
 const TONE = {
-  teal: "text-teal bg-teal/10 ring-1 ring-teal/25",
+  orange: "text-orange bg-orange/10 ring-1 ring-orange/25",
   amber: "text-amber bg-amber/10 ring-1 ring-amber/25",
   red: "text-red bg-red/10 ring-1 ring-red/25",
-  gold: "text-gold bg-gold/10 ring-1 ring-gold/25",
+  accent: "text-accent bg-accent/10 ring-1 ring-accent/25",
   muted: "text-muted bg-white/[0.05] ring-1 ring-white/10",
 };
 
@@ -145,7 +145,7 @@ export function NotPloteBadge() {
 }
 
 export function KeyBadge({ label }: { label: string }) {
-  return <Badge def={{ label, tone: "gold", Icon: KeyRound }} />;
+  return <Badge def={{ label, tone: "accent", Icon: KeyRound }} />;
 }
 
 // ---------------- NetworkPill ----------------
@@ -154,10 +154,10 @@ export function NetworkPill({ className }: { className?: string }) {
   const main = NETWORK === "mainnet";
   return (
     <span
-      className={clsx("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-normal", main ? "bg-gold/10 text-gold ring-1 ring-gold/30" : "bg-teal/10 text-teal ring-1 ring-teal/30", className)}
+      className={clsx("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-normal", main ? "bg-accent/10 text-accent ring-1 ring-accent/30" : "bg-orange/10 text-orange ring-1 ring-orange/30", className)}
       title={main ? "Mainnet demo build" : "NEAR testnet — no real money"}
     >
-      <span className={clsx("h-1.5 w-1.5 rounded-full", main ? "bg-gold" : "bg-teal")} aria-hidden />
+      <span className={clsx("h-1.5 w-1.5 rounded-full", main ? "bg-accent" : "bg-orange")} aria-hidden />
       {main ? "Mainnet" : "Testnet"}
     </span>
   );
@@ -166,7 +166,7 @@ export function NetworkPill({ className }: { className?: string }) {
 // ---------------- CountdownChip ----------------
 
 export function CountdownChip({ until, label, endedLabel = "ended", tone = "amber", className }: {
-  until: string | null | undefined; label?: string; endedLabel?: string; tone?: "amber" | "red" | "teal"; className?: string;
+  until: string | null | undefined; label?: string; endedLabel?: string; tone?: "amber" | "red" | "orange"; className?: string;
 }) {
   const now = useNow(1000);
   const c = countdown(until, now);
@@ -174,7 +174,7 @@ export function CountdownChip({ until, label, endedLabel = "ended", tone = "ambe
     <span
       className={clsx(
         "mono inline-flex items-center gap-1.5 px-2 py-1 text-xs tabular-nums",
-        c.ended ? "bg-surface-2 text-muted" : tone === "red" ? "bg-red/10 text-red" : tone === "teal" ? "bg-teal-dim/40 text-teal" : "bg-amber/10 text-amber",
+        c.ended ? "bg-surface-2 text-muted" : tone === "red" ? "bg-red/10 text-red" : tone === "orange" ? "bg-orange-dim/40 text-orange" : "bg-amber/10 text-amber",
         className,
       )}
       suppressHydrationWarning

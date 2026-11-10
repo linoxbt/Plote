@@ -16,10 +16,10 @@ import { createPhoneKey, deletePhoneKey, loadPhoneKey, phoneSignNep413, webCrypt
 
 function Step({ n, done, title, children, icon }: { n: number; done: boolean; title: string; children: React.ReactNode; icon: React.ReactNode }) {
   return (
-    <BracketCard tone={done ? "teal" : "default"} className="space-y-3">
+    <BracketCard tone={done ? "orange" : "default"} className="space-y-3">
       <div className="flex items-center gap-3">
-        {done ? <CheckCircle2 className="h-5 w-5 text-teal" aria-hidden /> : <Circle className="h-5 w-5 text-muted" aria-hidden />}
-        <h2 className="text-lg font-semibold">{n}. {title}</h2>
+        {done ? <CheckCircle2 className="h-5 w-5 text-orange" aria-hidden /> : <Circle className="h-5 w-5 text-muted" aria-hidden />}
+        <h2 className="text-lg font-normal">{n}. {title}</h2>
         <span className="ml-auto text-muted" aria-hidden>{icon}</span>
       </div>
       {children}
@@ -95,7 +95,7 @@ export function SetupClient({ account: qAccount, pk: qPk, estate: qEstate }: { a
           }}>Authorise key</Button>
         )}
         <Button size="sm" onClick={check}>Check on-chain</Button>
-        {onChain ? <p className="mono text-xs text-teal">On-chain: {onChain.permission === "FullAccess" ? "full access (!)" : `function call → ${onChain.permission.FunctionCall.receiver_id} [${onChain.permission.FunctionCall.method_names.join(", ")}]`}</p> : null}
+        {onChain ? <p className="mono text-xs text-orange">On-chain: {onChain.permission === "FullAccess" ? "full access (!)" : `function call → ${onChain.permission.FunctionCall.receiver_id} [${onChain.permission.FunctionCall.method_names.join(", ")}]`}</p> : null}
       </Step>
 
       <Step n={3} done={test === true} title="Test signature" icon={<CheckCircle2 className="h-5 w-5" />}>
@@ -108,7 +108,7 @@ export function SetupClient({ account: qAccount, pk: qPk, estate: qEstate }: { a
             setTest(verifyNep413(payload, s));
           } catch (e) { setErr((e as Error).message); setTest(false); }
         }}>Sign a test message</Button>
-        {test !== null ? <p className={clsx("mono text-sm", test ? "text-teal" : "text-red")}>{test ? "✓ signature verifies" : "✕ signature failed"}</p> : null}
+        {test !== null ? <p className={clsx("mono text-sm", test ? "text-orange" : "text-red")}>{test ? "✓ signature verifies" : "✕ signature failed"}</p> : null}
       </Step>
       {err ? <p className="text-sm text-red" role="alert">{err}</p> : null}
       <p className="text-xs text-muted">Lost the phone? Delete the key from any wallet. The worst an attacker could do is submit evidence that still has to pass the secure-hardware check.</p>

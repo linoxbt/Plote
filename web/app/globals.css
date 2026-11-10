@@ -1,25 +1,31 @@
 @import "tailwindcss";
 
 /*
- * Plote design system — inspired by coredao.org: a near-black canvas, large soft glows, light Lexend display type,
- * pill buttons and rounded dark cards. Plote's meanings stay: gold = value / highlight, teal = verified / action,
- * red = refund / danger, amber = pending. Dark only.
+ * Plote design system: coredao.org's brand system (Plote keeps only its own logo).
+ * Near-black canvas (#090909 / #121212 / #181717), one orange accent (#FF9211 fills, #FD8D37 highlights,
+ * #E55D08 / #E97122 gradient depth) against a light-blue counter-glow (#51D1FF / #8DD8FE), Lexend 300,
+ * 16px cards, 50px pill buttons 56px tall: white primary (#FBFCFC on #1D2023), translucent ghost.
+ * Meanings: orange = verified / action / value, sky = pending / in progress, red = refund / danger. Dark only.
  */
 :root {
-  --bg: #0a0a0b;
-  --bg-2: #0f0f12;
-  --surface: #141418;
-  --surface-2: #1c1c22;
-  --line: #26262d;
-  --text: #f4f4f5;
-  --muted: #a1a1aa;
-  --teal: #2dd4bf;
-  --teal-dim: #134e48;
-  --gold: #e8b04b;
-  --ember: #e07a2c;
-  --slate: #3d5a6c;
-  --red: #f06a6a;
-  --amber: #f2a93b;
+  --bg: #090909;
+  --bg-2: #0e0e0e;
+  --surface: #121212;
+  --surface-2: #181717;
+  --line: rgba(255, 255, 255, 0.1);
+  --text: #ffffff;
+  --text-2: #f6f6f7;
+  --muted: #a3a3a8;
+  --ink: #1d2023;
+  --orange: #ff9211;
+  --orange-dim: #4a2a0c;
+  --accent: #fd8d37;
+  --ember: #e55d08;
+  --flame: #e97122;
+  --sky: #51d1ff;
+  --sky-2: #8dd8fe;
+  --red: #f26b5b;
+  --amber: #8dd8fe;
   color-scheme: dark;
 }
 
@@ -30,12 +36,16 @@
   --color-surface-2: var(--surface-2);
   --color-line: var(--line);
   --color-text: var(--text);
+  --color-text-2: var(--text-2);
   --color-muted: var(--muted);
-  --color-teal: var(--teal);
-  --color-teal-dim: var(--teal-dim);
-  --color-gold: var(--gold);
+  --color-ink: var(--ink);
+  --color-orange: var(--orange);
+  --color-orange-dim: var(--orange-dim);
+  --color-accent: var(--accent);
   --color-ember: var(--ember);
-  --color-slate: var(--slate);
+  --color-flame: var(--flame);
+  --color-sky: var(--sky);
+  --color-sky-2: var(--sky-2);
   --color-red: var(--red);
   --color-amber: var(--amber);
   --font-sans: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
@@ -52,7 +62,8 @@ body {
 body {
   font-family: var(--font-sans);
   font-weight: 300;
-  line-height: 1.65;
+  font-size: 16px;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
   overflow-x: clip;
@@ -64,26 +75,28 @@ h3,
 h4 {
   font-family: var(--font-display);
   font-weight: 300;
-  line-height: 1.12;
-  letter-spacing: -0.02em;
+  line-height: 1.1;
+  letter-spacing: normal;
 }
 h3,
 h4 {
-  font-weight: 400;
-  letter-spacing: -0.01em;
+  line-height: 1.4;
 }
 strong,
 b {
   font-weight: 500;
 }
+p {
+  line-height: 1.4;
+}
 
 ::selection {
-  background: var(--teal-dim);
+  background: rgba(255, 146, 17, 0.35);
   color: var(--text);
 }
 
 :focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--orange);
   outline-offset: 2px;
 }
 
@@ -97,14 +110,14 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-/* The accent word in a headline ("Still your coins" → "Still your money"). */
+/* The highlighted word in a headline, Core-style. */
 .hl {
-  color: var(--gold);
+  color: var(--accent);
 }
 
-/* ---- cards: rounded dark panels with a hairline (class name kept from v1 so every page restyles) ---- */
+/* ---- cards: 16px rounded dark panels with a hairline (class name kept from v1 so every page restyles) ---- */
 .corners {
-  border-radius: 20px;
+  border-radius: 16px;
   background-color: var(--surface);
   box-shadow: inset 0 0 0 1px var(--line);
   transition: box-shadow 160ms ease-out, background-color 160ms ease-out;
@@ -112,71 +125,82 @@ a {
 .corners-hover:hover,
 .corners-hover:focus-within,
 .corners-active {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
 }
-.corners-teal {
-  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.45);
+.corners-orange,
+.corners-accent {
+  box-shadow: inset 0 0 0 1px rgba(255, 146, 17, 0.5);
 }
 .corners-red {
-  box-shadow: inset 0 0 0 1px rgba(240, 106, 106, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(242, 107, 91, 0.5);
 }
 .corners-amber {
-  box-shadow: inset 0 0 0 1px rgba(242, 169, 59, 0.45);
-}
-.corners-gold {
-  box-shadow: inset 0 0 0 1px rgba(232, 176, 75, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(141, 216, 254, 0.45);
 }
 
-/* ---- glow panels (the signature device) ---- */
-.glow-gold {
+/* ---- glow panels: Core's orange + light-blue gradients ---- */
+.glow-accent {
   background:
-    radial-gradient(120% 120% at 100% 100%, rgba(224, 122, 44, 0.95) 0%, rgba(224, 122, 44, 0.35) 32%, rgba(224, 122, 44, 0) 62%),
-    radial-gradient(90% 80% at 0% 0%, rgba(61, 90, 108, 0.55) 0%, rgba(61, 90, 108, 0) 60%),
+    radial-gradient(at 100% 100%, rgb(233, 113, 34) 20%, rgba(208, 104, 63, 0.4) 40%, rgba(255, 140, 0, 0) 75%),
+    radial-gradient(circle at 0% 0%, rgba(81, 209, 255, 0.5) 0px, rgba(141, 216, 254, 0.5) 0px, rgba(0, 77, 102, 0) 30%),
     var(--surface);
 }
-.glow-slate {
+.glow-sky {
   background:
-    radial-gradient(110% 110% at 0% 0%, rgba(61, 90, 108, 0.95) 0%, rgba(61, 90, 108, 0.3) 40%, rgba(61, 90, 108, 0) 70%),
-    radial-gradient(80% 80% at 100% 100%, rgba(224, 122, 44, 0.35) 0%, rgba(224, 122, 44, 0) 60%),
+    radial-gradient(at 0% 100%, rgb(233, 113, 34) 20%, rgba(208, 104, 63, 0.4) 40%, rgba(255, 140, 0, 0) 75%),
+    radial-gradient(circle at 100% 0%, rgba(81, 209, 255, 0.5) 0px, rgba(141, 216, 254, 0.5) 0px, rgba(0, 77, 102, 0) 30%),
     var(--surface);
 }
-.glow-teal {
+.glow-orange {
   background:
-    radial-gradient(110% 110% at 100% 0%, rgba(45, 212, 191, 0.35) 0%, rgba(45, 212, 191, 0) 60%),
-    radial-gradient(90% 90% at 0% 100%, rgba(61, 90, 108, 0.6) 0%, rgba(61, 90, 108, 0) 65%),
+    linear-gradient(320deg, rgb(229, 93, 8) 10%, rgba(208, 104, 63, 0.8) 20%, rgba(255, 140, 0, 0) 45%),
+    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.3) 20%, rgba(255, 255, 255, 0) 40%),
+    var(--surface);
+}
+.glow-edge {
+  background:
+    linear-gradient(to left top, rgb(233, 113, 34) 10%, rgba(208, 104, 63, 0.7) 40%, rgba(255, 140, 0, 0) 60%),
+    linear-gradient(to right bottom, rgba(81, 209, 255, 0.5), rgba(141, 216, 254, 0.5) 0px, rgba(0, 77, 102, 0) 30%),
     var(--surface);
 }
 /* Page-level ambient glow behind a hero. */
 .hero-glow {
   background:
-    radial-gradient(70% 60% at 85% 100%, rgba(224, 122, 44, 0.55) 0%, rgba(224, 122, 44, 0) 70%),
-    radial-gradient(60% 55% at 10% 0%, rgba(61, 90, 108, 0.6) 0%, rgba(61, 90, 108, 0) 70%),
+    radial-gradient(60% 70% at 100% 100%, rgba(233, 113, 34, 0.75) 0%, rgba(208, 104, 63, 0.3) 35%, rgba(255, 140, 0, 0) 70%),
+    radial-gradient(45% 50% at 0% 0%, rgba(81, 209, 255, 0.32) 0%, rgba(0, 77, 102, 0) 70%),
     var(--bg);
 }
+.text-gradient {
+  background: linear-gradient(135deg, rgb(125, 211, 254), rgb(239, 81, 0));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
 .glass {
-  background: rgba(20, 20, 24, 0.55);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(78, 78, 78, 0.2);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
-/* ---- buttons: pills ---- */
+/* ---- buttons: Core pills ---- */
 .btn {
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 400;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  min-height: 48px;
-  padding: 0 1.4rem;
-  border-radius: 9999px;
+  min-height: 56px;
+  padding: 0 1.75rem;
+  border-radius: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   white-space: nowrap;
   transition:
     background-color 150ms ease-out,
     color 150ms ease-out,
-    box-shadow 150ms ease-out,
+    border-color 150ms ease-out,
     opacity 150ms ease-out;
   cursor: pointer;
   user-select: none;
@@ -187,42 +211,47 @@ a {
   cursor: not-allowed;
 }
 .btn-primary {
-  background-color: #ffffff;
-  color: #0a0a0b;
+  background-color: #fbfcfc;
+  color: var(--ink);
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: #e4e4e7;
+  background-color: #e6e7e8;
 }
 .btn-ghost {
-  color: var(--text);
-  background-color: rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  color: var(--text-2);
+  background-color: rgba(255, 255, 255, 0.1);
 }
 .btn-ghost:hover:not(:disabled),
 .btn-ghost:focus-visible {
-  background-color: rgba(255, 255, 255, 0.11);
+  background-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 .btn-danger {
   background-color: var(--red);
-  color: #0a0a0b;
+  border-color: transparent;
+  color: var(--ink);
 }
-.btn-gold {
-  background-color: var(--gold);
-  color: #0a0a0b;
+.btn-accent {
+  background-color: var(--orange);
+  border-color: transparent;
+  color: var(--ink);
+}
+.btn-accent:hover:not(:disabled) {
+  background-color: var(--accent);
 }
 .btn-sm {
   min-height: 44px;
-  padding: 0 1.1rem;
+  padding: 0 1.25rem;
   font-size: 14px;
 }
 
 /* ---- inputs ---- */
 .input {
   width: 100%;
-  min-height: 48px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
+  min-height: 52px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
   padding: 0 1rem;
   color: var(--text);
   font-family: var(--font-mono);
@@ -233,7 +262,7 @@ a {
   color: #71717a;
 }
 .input:focus {
-  border-color: var(--teal);
+  border-color: var(--orange);
   outline: none;
   background: rgba(255, 255, 255, 0.06);
 }
@@ -251,7 +280,7 @@ textarea.input {
 
 /* ---- subtle dotted grid (kept for illustrations) ---- */
 .survey-grid {
-  background-image: radial-gradient(rgba(244, 244, 245, 0.05) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
@@ -346,7 +375,7 @@ details > summary::-webkit-details-marker {
 }
 @keyframes step-fill {
   0%, 30% { fill: #252a31; }
-  50%, 100% { fill: #2dd4bf; }
+  50%, 100% { fill: #FF9211; }
 }
 .step-arrow {
   animation: step-arrow 3.4s ease-out infinite;

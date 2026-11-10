@@ -48,7 +48,7 @@ export function ReleasesClient({ slug }: { slug: string }) {
       <RequireWallet what="claiming releases">
         <BracketCard className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-xl font-semibold">Releases</h2>
+            <h2 className="text-xl font-normal">Releases</h2>
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => setSel(new Set(claimable.map((u) => u.id)))}>Select all claimable</Button>
               <Button variant="primary" disabled={!sel.size || !!e.frozen} onClick={claim}>claim_release {sel.size ? `· ${formatUsd(total)}` : ""}</Button>
@@ -65,12 +65,12 @@ export function ReleasesClient({ slug }: { slug: string }) {
                     const can = toBig(u.releasable_now) > 0n;
                     return (
                       <tr key={u.id} className="border-t border-line">
-                        <td><input type="checkbox" className="h-5 w-5 accent-[#2DD4BF]" disabled={!can} checked={sel.has(u.id)} aria-label={`Select ${unitDisplay(u.id)}`} onChange={(x) => setSel((s) => { const n = new Set(s); if (x.target.checked) n.add(u.id); else n.delete(u.id); return n; })} /></td>
-                        <td className="py-2"><span className="mono font-semibold">{unitDisplay(u.id)}</span> <StatusBadge status={u.status} /></td>
+                        <td><input type="checkbox" className="h-5 w-5 accent-[#FF9211]" disabled={!can} checked={sel.has(u.id)} aria-label={`Select ${unitDisplay(u.id)}`} onChange={(x) => setSel((s) => { const n = new Set(s); if (x.target.checked) n.add(u.id); else n.delete(u.id); return n; })} /></td>
+                        <td className="py-2"><span className="mono font-normal">{unitDisplay(u.id)}</span> <StatusBadge status={u.status} /></td>
                         <td className="text-right"><MonoAmount value={u.paid} naira={false} account={u.account} /></td>
                         <td className="mono text-right">{u.approved_bps / 100}%</td>
                         <td className="text-right"><MonoAmount value={u.released} naira={false} /></td>
-                        <td className="text-right"><MonoAmount value={u.releasable_now} naira={false} className={can ? "text-teal" : ""} /></td>
+                        <td className="text-right"><MonoAmount value={u.releasable_now} naira={false} className={can ? "text-orange" : ""} /></td>
                       </tr>
                     );
                   })}
@@ -80,9 +80,9 @@ export function ReleasesClient({ slug }: { slug: string }) {
           )}
         </BracketCard>
         <BracketCard className="mt-6">
-          <h2 className="mb-3 text-xl font-semibold">History</h2>
+          <h2 className="mb-3 text-xl font-normal">History</h2>
           {!supabaseConfigured() ? <p className="text-sm text-muted">The event cache isn&apos;t connected; see the payout account on NearBlocks. Released to date: <MonoAmount value={e.totals.released} account={e.payout_id} /></p> : history.data?.length ? (
-            <ul className="divide-y divide-line text-sm">{history.data.map((h) => <li key={h.id} className="flex justify-between py-2"><span className="mono">{String(h.data.unit_id ?? "").toUpperCase()} · {formatUsd(String(h.data.amount ?? "0"))} → {String(h.data.to ?? "")}</span><a className="mono text-xs text-muted hover:text-teal" href={explorerTxUrl(h.tx_hash)} target="_blank" rel="noreferrer">{timeAgo(String(Date.parse(h.block_time) * 1e6))} ↗</a></li>)}</ul>
+            <ul className="divide-y divide-line text-sm">{history.data.map((h) => <li key={h.id} className="flex justify-between py-2"><span className="mono">{String(h.data.unit_id ?? "").toUpperCase()} · {formatUsd(String(h.data.amount ?? "0"))} → {String(h.data.to ?? "")}</span><a className="mono text-xs text-muted hover:text-orange" href={explorerTxUrl(h.tx_hash)} target="_blank" rel="noreferrer">{timeAgo(String(Date.parse(h.block_time) * 1e6))} ↗</a></li>)}</ul>
           ) : <p className="text-sm text-muted">No releases yet.</p>}
         </BracketCard>
       </RequireWallet>

@@ -43,7 +43,7 @@ export function DefaultCard({ estate, e, u }: { estate: string; e: EstateView; u
   const pay = defaultPayout(u.paid, e.params.penalty_bps);
   return (
     <BracketCard tone={open ? "red" : "amber"} className="space-y-3">
-      <p className="flex items-center gap-2 font-display text-lg font-semibold">
+      <p className="flex items-center gap-2 font-display text-lg font-normal">
         <AlertOctagon className="h-5 w-5" aria-hidden /> An instalment on {unitDisplay(u.id)} is overdue.
       </p>
       <p className="text-sm">

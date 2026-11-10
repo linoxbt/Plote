@@ -53,7 +53,7 @@ export function PassClient({ slug, unitId }: { slug: string; unitId: string }) {
   const u = unit.data;
   return (
     <Page narrow>
-      <h1 className="text-3xl font-semibold">Gate pass · <span className="mono">{unitDisplay(u.id)}</span></h1>
+      <h1 className="text-3xl font-normal">Gate pass · <span className="mono">{unitDisplay(u.id)}</span></h1>
       <p className="mb-6 text-muted">{est.data?.name}. Show this to the guard. It&apos;s a message signed by your wallet and expires after 60 seconds.</p>
       <RequireWallet what="your gate pass">
         {u.status !== "HandedOver" ? (
@@ -61,14 +61,14 @@ export function PassClient({ slug, unitId }: { slug: string; unitId: string }) {
         ) : u.holder !== accountId ? (
           <BracketCard tone="red">This wallet doesn&apos;t hold {unitDisplay(u.id)}.</BracketCard>
         ) : (
-          <BracketCard tone="gold" className="flex flex-col items-center gap-4 text-center">
+          <BracketCard tone="accent" className="flex flex-col items-center gap-4 text-center">
             {pass ? (
               <>
                 <QrImage text={pass.text} size={300} label={`Gate pass QR for ${unitDisplay(u.id)}`} />
-                <CountdownChip until={msToNs(pass.at + ROTATE_MS)} label="refreshes" tone="teal" />
+                <CountdownChip until={msToNs(pass.at + ROTATE_MS)} label="refreshes" tone="orange" />
               </>
             ) : <p className="text-muted">Sign once to show your pass.</p>}
-            <Button variant="gold" loading={busy} onClick={sign}><RefreshCw className="h-4 w-4" aria-hidden /> {pass ? "Refresh now" : "Show my pass"}</Button>
+            <Button variant="accent" loading={busy} onClick={sign}><RefreshCw className="h-4 w-4" aria-hidden /> {pass ? "Refresh now" : "Show my pass"}</Button>
             <p className="flex items-center gap-2 text-xs text-muted"><Sun className="h-4 w-4" aria-hidden /> Turn your screen brightness up so the guard&apos;s camera can read it.</p>
             {err ? <p className="text-sm text-red">{explainError(err).message}</p> : null}
           </BracketCard>

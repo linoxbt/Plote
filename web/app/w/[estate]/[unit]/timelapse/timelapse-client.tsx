@@ -27,10 +27,10 @@ export function TimelapseClient({ slug, unitId }: { slug: string; unitId: string
   const cur = frames[i % Math.max(1, frames.length)];
   return (
     <Page narrow>
-      <h1 className="mb-4 text-3xl font-semibold"><span className="mono">{unitDisplay(unitId)}</span> at {est.data?.name ?? slug}: the build</h1>
+      <h1 className="mb-4 text-3xl font-normal"><span className="mono">{unitDisplay(unitId)}</span> at {est.data?.name ?? slug}: the build</h1>
       {!frames.length ? <EmptyState title="No passed photos yet">The timelapse fills in as each stage&apos;s photo passes the check.</EmptyState> : (
         <div className="space-y-3">
-          <div className="corners corners-teal relative aspect-video overflow-hidden bg-surface-2">
+          <div className="corners corners-orange relative aspect-video overflow-hidden bg-surface-2">
             {frames.map((f, k) => (
               <img key={f.id} src={f.url} alt={`${ms.data?.[f.milestone]?.title ?? "Stage"} photo`} className="fade-frame absolute inset-0 h-full w-full object-cover" style={{ opacity: k === i ? 1 : 0 }} aria-hidden={k !== i} />
             ))}

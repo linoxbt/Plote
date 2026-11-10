@@ -12,7 +12,7 @@ export default function SurveyorsPage() {
     <main id="main">
       <PageHero
         eyebrow="For quantity surveyors"
-        tone="teal"
+        tone="orange"
         title={<>Your sign-off, <Hl>on the record</Hl>.</>}
         lead="You already inspect stages. Plote turns your sign-off into the thing that releases money — with a phone app, a key that can only sign milestones, and no gas to pay."
         actions={
@@ -25,7 +25,7 @@ export default function SurveyorsPage() {
         }
         art={
           <Dial label="milestone signed">
-            <Camera className="h-10 w-10 text-gold" strokeWidth={1.1} aria-hidden />
+            <Camera className="h-10 w-10 text-accent" strokeWidth={1.1} aria-hidden />
           </Dial>
         }
       />
@@ -49,14 +49,14 @@ export default function SurveyorsPage() {
       </Section>
 
       <Section label="Your key" className="!pt-0">
-        <GlowPanel tone="slate" className="p-6 sm:p-12">
+        <GlowPanel tone="sky" className="p-6 sm:p-12">
           <Split
             visual={
-              <div className="glass w-full max-w-sm space-y-3 rounded-3xl p-6 mono text-sm" aria-hidden>
+              <div className="glass w-full max-w-sm space-y-3 rounded-2xl p-6 mono text-sm" aria-hidden>
                 <p className="text-xs text-muted">Allowed by your key</p>
                 {["open_capture", "submit_evidence", "qs_sign"].map((m) => (
-                  <p key={m} className="flex items-center gap-2 text-teal">
-                    <span className="h-1.5 w-1.5 rounded-full bg-teal" /> {m}
+                  <p key={m} className="flex items-center gap-2 text-orange">
+                    <span className="h-1.5 w-1.5 rounded-full bg-orange" /> {m}
                   </p>
                 ))}
                 <p className="pt-2 text-xs text-muted">Not allowed</p>

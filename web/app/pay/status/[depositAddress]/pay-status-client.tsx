@@ -48,8 +48,8 @@ export function PayStatusClient({ depositAddress, hint }: { depositAddress: stri
         <span className="mono break-all text-xs">{depositAddress}</span>
       </PageHeader>
       {st.status === "PENDING_DEPOSIT" ? (
-        <BracketCard tone="teal" className="mb-6 space-y-4">
-          <p className="font-display text-xl font-semibold">
+        <BracketCard tone="orange" className="mb-6 space-y-4">
+          <p className="font-display text-xl font-normal">
             Send exactly {quote?.amountInFormatted ?? hint?.send ?? "the quoted amount"}{hint?.symbol ? ` ${hint.symbol}` : ""}{hint?.chain ? ` on ${chainName(hint.chain)}` : ""}
           </p>
           <div className="flex flex-col items-start gap-4 sm:flex-row">
@@ -64,13 +64,13 @@ export function PayStatusClient({ depositAddress, hint }: { depositAddress: stri
           </div>
         </BracketCard>
       ) : null}
-      <BracketCard tone={failed ? "red" : st.status === "SUCCESS" ? "teal" : "amber"} className="space-y-6">
+      <BracketCard tone={failed ? "red" : st.status === "SUCCESS" ? "orange" : "amber"} className="space-y-6">
         <ol className="grid gap-3 sm:grid-cols-4" aria-label="Progress">
           {STEPS.map((t, i) => {
             const done = !failed && (i < step || (i === step && st.status === "SUCCESS"));
             const active = !failed && i === step && st.status !== "SUCCESS";
             return (
-              <li key={t} className={clsx("flex items-center gap-2 border-l-2 pl-3 text-sm sm:border-l-0 sm:border-t-2 sm:pl-0 sm:pt-2", done ? "border-teal text-teal" : active ? "border-amber text-amber" : "border-line text-muted")} aria-current={active ? "step" : undefined}>
+              <li key={t} className={clsx("flex items-center gap-2 border-l-2 pl-3 text-sm sm:border-l-0 sm:border-t-2 sm:pl-0 sm:pt-2", done ? "border-orange text-orange" : active ? "border-amber text-amber" : "border-line text-muted")} aria-current={active ? "step" : undefined}>
                 {done ? <Check className="h-4 w-4" aria-hidden /> : active ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <span className="mono">{i + 1}</span>}
                 {t}
               </li>
@@ -106,7 +106,7 @@ export function PayStatusClient({ depositAddress, hint }: { depositAddress: stri
       </BracketCard>
       {unattributed > 0n && estate && unitId ? (
         <BracketCard tone="amber" className="mt-6 space-y-3">
-          <p className="font-display text-lg font-semibold">Your payment landed after the reservation ended</p>
+          <p className="font-display text-lg font-normal">Your payment landed after the reservation ended</p>
           <p className="text-sm text-muted">
             <MonoAmount value={unattributed.toString()} account={recipient} /> is waiting on the unit as unclaimed. If your reservation ended recently, claiming sends it back to your NEAR account ({unit.data?.last_reservation?.by ?? "the last reserver"}). After the late-claim window it goes to Plote&apos;s recovery account instead.
           </p>

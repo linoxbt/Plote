@@ -18,7 +18,7 @@ export function QrImage({ text, size = 220, label }: { text: string; size?: numb
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    QRCode.toDataURL(text, { margin: 1, width: size, color: { dark: "#0A0B0D", light: "#E9ECEF" } })
+    QRCode.toDataURL(text, { margin: 1, width: size, color: { dark: "#090909", light: "#E9ECEF" } })
       .then((u) => alive && setSrc(u))
       .catch(() => alive && setSrc(null));
     return () => {
@@ -73,8 +73,8 @@ export function OneClickPay({ estate, unit, recipient, amount }: { estate: strin
 
   if (addr && statusHref) {
     return (
-      <BracketCard tone="teal" className="space-y-4" aria-live="polite">
-        <p className="font-display text-xl font-semibold">Send exactly {wet!.quote.amountInFormatted} {chosen?.symbol} on {chainName(chosen?.blockchain ?? "")}</p>
+      <BracketCard tone="orange" className="space-y-4" aria-live="polite">
+        <p className="font-display text-xl font-normal">Send exactly {wet!.quote.amountInFormatted} {chosen?.symbol} on {chainName(chosen?.blockchain ?? "")}</p>
         <div className="flex flex-col items-start gap-4 sm:flex-row">
           <QrImage text={addr} label="QR code of the deposit address" />
           <div className="min-w-0 space-y-2">

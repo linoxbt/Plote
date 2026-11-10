@@ -81,12 +81,12 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
   return (
     <Page narrow>
       <EstateBanners estate={e} />
-      <p className="mono mb-2 text-xs tracking-[0.12em] text-teal">{e.name.toUpperCase()} · {unitDisplay(u.id)}</p>
-      <h1 className="mb-1 text-3xl font-semibold">{u.label}</h1>
+      <p className="mono mb-2 text-xs tracking-[0.12em] text-orange">{e.name.toUpperCase()} · {unitDisplay(u.id)}</p>
+      <h1 className="mb-1 text-3xl font-normal">{u.label}</h1>
       <p className="mb-6"><MonoAmount value={u.price} account={u.account} size="lg" /></p>
       <ol className="mb-6 flex gap-2" aria-label="Steps">
         {STEPS.map((t, i) => (
-          <li key={t} className={clsx("mono flex flex-1 items-center gap-2 border-b-2 pb-2 text-sm", i < step ? "border-teal text-teal" : i === step ? "border-text text-text" : "border-line text-muted")} aria-current={i === step ? "step" : undefined}>
+          <li key={t} className={clsx("mono flex flex-1 items-center gap-2 border-b-2 pb-2 text-sm", i < step ? "border-orange text-orange" : i === step ? "border-text text-text" : "border-line text-muted")} aria-current={i === step ? "step" : undefined}>
             {i < step ? <Check className="h-4 w-4" aria-hidden /> : <span>{i + 1}.</span>} {t}
           </li>
         ))}
@@ -94,13 +94,13 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
       <RequireWallet what="reserving a unit">
         {takenByOther ? (
           <BracketCard tone="amber" className="space-y-3">
-            <p className="font-display text-xl font-semibold">{u.status === "Reserved" ? "Someone else has reserved this unit." : "This unit is taken."}</p>
+            <p className="font-display text-xl font-normal">{u.status === "Reserved" ? "Someone else has reserved this unit." : "This unit is taken."}</p>
             {u.status === "Reserved" ? <CountdownChip until={u.reservation?.expires_at} label="reservation" /> : null}
             <LinkButton href={`/estates/${s}`}>See other units</LinkButton>
           </BracketCard>
         ) : step === 0 ? (
           <BracketCard className="space-y-4">
-            <h2 className="text-xl font-semibold">1. Reserve</h2>
+            <h2 className="text-xl font-normal">1. Reserve</h2>
             <p className="text-muted">Reserving locks {unitDisplay(u.id)} for you for <strong className="text-text">{formatDuration(nsToMs(e.params.reserve_ttl_ns))}</strong>. It needs a <strong className="text-text">0.05 NEAR storage deposit</strong> — storage, not price — which you get back if the reservation ends or the unit is refunded.</p>
             <p className="text-sm text-muted">Then pay at least {formatUsd(minBase)} ({e.params.min_initial_bps / 100}% of the price) into the unit&apos;s own account, <span className="mono">{u.account}</span>, to receive the allocation token.</p>
             <AmountPicker value={amountStr} onChange={setAmountStr} presets={presets} err={amountErr} min={minBase} />
@@ -115,13 +115,13 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
         ) : step === 1 ? (
           <BracketCard className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold">2. Pay</h2>
+              <h2 className="text-xl font-normal">2. Pay</h2>
               <CountdownChip until={u.reservation?.expires_at} label="reserved" />
             </div>
             {toBig(u.paid) > 0n ? <p className="text-sm">Paid so far: <MonoAmount value={u.paid} account={u.account} /> — the token mints once it reaches {formatUsd(minBase)}.</p> : null}
             <div className="flex gap-2" role="radiogroup" aria-label="Payment method">
-              <button type="button" role="radio" aria-checked={method === "wallet"} onClick={() => setMethod("wallet")} className={clsx("btn corners flex-1", method === "wallet" ? "corners-teal text-teal" : "btn-ghost")}><Wallet className="h-4 w-4" aria-hidden /> NEAR wallet</button>
-              <button type="button" role="radio" aria-checked={method === "oneclick"} onClick={() => ONECLICK_ENABLED && setMethod("oneclick")} disabled={!ONECLICK_ENABLED} className={clsx("btn corners flex-1", method === "oneclick" ? "corners-teal text-teal" : "btn-ghost")} title={ONECLICK_ENABLED ? undefined : "Other chains use NEAR Intents, which only runs on mainnet"}><Globe className="h-4 w-4" aria-hidden /> Another chain</button>
+              <button type="button" role="radio" aria-checked={method === "wallet"} onClick={() => setMethod("wallet")} className={clsx("btn corners flex-1", method === "wallet" ? "corners-orange text-orange" : "btn-ghost")}><Wallet className="h-4 w-4" aria-hidden /> NEAR wallet</button>
+              <button type="button" role="radio" aria-checked={method === "oneclick"} onClick={() => ONECLICK_ENABLED && setMethod("oneclick")} disabled={!ONECLICK_ENABLED} className={clsx("btn corners flex-1", method === "oneclick" ? "corners-orange text-orange" : "btn-ghost")} title={ONECLICK_ENABLED ? undefined : "Other chains use NEAR Intents, which only runs on mainnet"}><Globe className="h-4 w-4" aria-hidden /> Another chain</button>
             </div>
             {!ONECLICK_ENABLED ? <p className="text-xs text-muted">Paying from Base, Solana or Ethereum uses NEAR Intents, which has no testnet. The mainnet demo build shows it.</p> : null}
             <AmountPicker value={amountStr} onChange={setAmountStr} presets={presets} err={amountErr} min={minBase} />
@@ -138,8 +138,8 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
             ) : null}
           </BracketCard>
         ) : (
-          <BracketCard tone="gold" className="space-y-5 text-center">
-            <h2 className="text-2xl font-semibold">3. Done — {unitDisplay(u.id)} is yours.</h2>
+          <BracketCard tone="accent" className="space-y-5 text-center">
+            <h2 className="text-2xl font-normal">3. Done — {unitDisplay(u.id)} is yours.</h2>
             <NftReveal estateName={e.name} unitLabel={unitDisplay(u.id)} unitId={u.id} approvedCount={approvedCount(ms.data)} total={ms.data?.length || 4} status={u.status} paid={u.paid} price={u.price} />
             <p className="text-muted">You hold the only allocation token this unit will ever have. Your money sits in <span className="mono">{u.account}</span> until each stage is proven.</p>
             <div className="flex flex-wrap justify-center gap-2">

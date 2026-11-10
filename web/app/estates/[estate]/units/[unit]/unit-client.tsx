@@ -62,11 +62,11 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
             <UnitImage e={e} u={u} ms={ms.data} token={token.data} />
           </BracketCard>
           <div>
-            <h1 className="text-3xl font-semibold"><span className="mono">{unitDisplay(u.id)}</span></h1>
+            <h1 className="text-3xl font-normal"><span className="mono">{unitDisplay(u.id)}</span></h1>
             <p className="text-muted">{u.label}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusBadge status={u.status} />
-              {holderIsMe ? <span className="mono text-xs text-teal">You hold this unit</span> : null}
+              {holderIsMe ? <span className="mono text-xs text-orange">You hold this unit</span> : null}
             </div>
             <div className="mt-3"><span className="label">Price</span><MonoAmount value={u.price} account={u.account} size="lg" /></div>
           </div>
@@ -74,8 +74,8 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
 
         <div className="space-y-6">
           {u.status === "Available" ? (
-            <BracketCard tone="teal" className="space-y-3">
-              <p className="font-display text-xl font-semibold">This unit is available.</p>
+            <BracketCard tone="orange" className="space-y-3">
+              <p className="font-display text-xl font-normal">This unit is available.</p>
               <p className="text-sm text-muted">Reserve it for {Math.round(Number(e.params.reserve_ttl_ns) / 6e10)} minutes with a 0.05 NEAR storage deposit (refundable — storage, not price), then pay at least {e.params.min_initial_bps / 100}% of the price to get the allocation token.</p>
               <DefaultExplainer e={e} u={u} className="text-muted" />
               <LinkButton href={`/buy/${s}/${u.id}`} variant="primary">Reserve →</LinkButton>
@@ -83,7 +83,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
           ) : null}
           {u.status === "Reserved" ? (
             <BracketCard tone="amber" className="space-y-3">
-              <p className="font-display text-xl font-semibold">{reservedByMe ? "Reserved by you." : "Reserved."}</p>
+              <p className="font-display text-xl font-normal">{reservedByMe ? "Reserved by you." : "Reserved."}</p>
               <p className="flex flex-wrap items-center gap-2 text-sm">by <AccountChip account={u.reservation?.by} /> <CountdownChip until={u.reservation?.expires_at} label="until" /></p>
               {reservedByMe ? (
                 <div className="flex flex-wrap gap-2">
@@ -103,7 +103,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
           <ListingCard estate={account} e={e} u={u} />
           <PayFromOtherChain slug={s} u={u} />
           <BracketCard>
-            <h2 className="mb-3 text-lg font-semibold">Build progress</h2>
+            <h2 className="mb-3 text-lg font-normal">Build progress</h2>
             {ms.data ? <MilestoneTrack milestones={ms.data} detailed mobilisationBps={e.params.mobilisation_bps} /> : ms.error ? <ErrorState error={ms.error} /> : <LoadingCard lines={2} />}
           </BracketCard>
           <div>
@@ -113,7 +113,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
                 <BracketCard className="space-y-4">
                   <PlanTable u={u} />
                   <p className="text-sm text-muted">
-                    Public watch page: <Link className="underline hover:text-teal" href={`/w/${s}/${u.id}`}>/w/{s}/{u.id}</Link>
+                    Public watch page: <Link className="underline hover:text-orange" href={`/w/${s}/${u.id}`}>/w/{s}/{u.id}</Link>
                   </p>
                 </BracketCard>
               ) : null}
@@ -138,7 +138,7 @@ function RefundCard({ account, e, u, ms, isHolder, accountId }: { account: strin
   if (u.refunds_open && refundable > 0n) {
     return (
       <BracketCard tone="red" className="space-y-3">
-        <h2 className="text-lg font-semibold">Refunds are open</h2>
+        <h2 className="text-lg font-normal">Refunds are open</h2>
         <p className="text-sm">
           A deadline passed without a verified stage{e.frozen?.refunds_open ? " (or holders opened refunds with a freeze vote)" : ""}. The holder can take back everything not yet
           released: <MonoAmount value={u.refundable_now} account={u.account} size="lg" />. No vote or permission needed.
@@ -159,11 +159,11 @@ function RefundCard({ account, e, u, ms, isHolder, accountId }: { account: strin
   }
   return (
     <BracketCard className="space-y-2">
-      <h2 className="text-lg font-semibold">Refund rule</h2>
+      <h2 className="text-lg font-normal">Refund rule</h2>
       <p className="text-sm text-muted">If a stage isn&apos;t verified by its deadline plus the grace period, refunds open automatically: the holder gets back everything not yet released and the token is burned. No vote needed.</p>
       {opensAt ? (
         <p className="flex flex-wrap items-center gap-2 text-sm">
-          <CountdownChip until={opensAt} label="refunds would open in" tone="teal" endedLabel="any moment now" />
+          <CountdownChip until={opensAt} label="refunds would open in" tone="orange" endedLabel="any moment now" />
           <span className="mono text-xs text-muted">{formatDateTime(opensAt)}</span>
         </p>
       ) : <p className="text-sm text-muted">Every stage is approved, so refunds won&apos;t open.</p>}

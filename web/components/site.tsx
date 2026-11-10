@@ -1,6 +1,6 @@
 // Marketing building blocks shared by the landing page and the standalone product pages.
 // Design language inspired by coredao.org: light Lexend display type with one highlighted word, pill buttons,
-// soft gold/slate glow panels, rounded dark cards, hairline stat grids, orbit diagrams and "+" FAQ rows.
+// orange + light-blue glow panels, rounded dark cards, hairline stat grids, orbit diagrams and "+" FAQ rows.
 
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -19,11 +19,11 @@ export function Section({ children, className, id, label }: { children: ReactNod
   );
 }
 
-export function Eyebrow({ children, tone = "gold" }: { children: ReactNode; tone?: "gold" | "teal" | "red" }) {
-  const dot = tone === "teal" ? "bg-teal" : tone === "red" ? "bg-red" : "bg-gold";
+export function Eyebrow({ children, tone = "accent" }: { children: ReactNode; tone?: "accent" | "orange" | "red" }) {
+  const dot = tone === "red" ? "bg-red" : "bg-orange";
   return (
-    <p className="inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-3 py-1.5 text-xs text-muted ring-1 ring-white/10">
-      <span className={clsx("h-1.5 w-1.5 rounded-full", dot)} aria-hidden />
+    <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-text-2 ring-1 ring-white/20">
+      <span className={clsx("h-2 w-2 rounded-full", dot)} aria-hidden />
       {children}
     </p>
   );
@@ -32,19 +32,19 @@ export function Eyebrow({ children, tone = "gold" }: { children: ReactNode; tone
 /** Section heading: optional eyebrow pill, a light display title (wrap the key word in <Hl>), optional lead. */
 export function Heading({
   eyebrow, title, lead, align = "left", as = "h2", className, tone,
-}: { eyebrow?: ReactNode; title: ReactNode; lead?: ReactNode; align?: "left" | "center"; as?: "h1" | "h2"; className?: string; tone?: "gold" | "teal" | "red" }) {
+}: { eyebrow?: ReactNode; title: ReactNode; lead?: ReactNode; align?: "left" | "center"; as?: "h1" | "h2"; className?: string; tone?: "accent" | "orange" | "red" }) {
   const H = as;
   return (
     <div className={clsx("space-y-5", align === "center" && "mx-auto max-w-3xl text-center", className)}>
       {eyebrow ? <Eyebrow tone={tone}>{eyebrow}</Eyebrow> : null}
-      <H className={clsx(as === "h1" ? "text-[40px] leading-[1.05] sm:text-[64px]" : "text-[32px] sm:text-[48px]", align === "left" && "max-w-3xl")}>{title}</H>
-      {lead ? <p className={clsx("text-base text-muted sm:text-lg", align === "left" ? "max-w-2xl" : "mx-auto max-w-2xl")}>{lead}</p> : null}
+      <H className={clsx(as === "h1" ? "text-[44px] leading-[1.05] sm:text-[64px] lg:text-[88px] lg:leading-[88px]" : "text-[34px] leading-[1.1] sm:text-[48px] sm:leading-[52.8px]", align === "left" && "max-w-3xl")}>{title}</H>
+      {lead ? <p className={clsx("text-base leading-[22.4px] text-text-2/80", align === "left" ? "max-w-2xl" : "mx-auto max-w-2xl")}>{lead}</p> : null}
     </div>
   );
 }
 
-export function Hl({ children, tone = "gold" }: { children: ReactNode; tone?: "gold" | "teal" }) {
-  return <span className={tone === "teal" ? "text-teal" : "hl"}>{children}</span>;
+export function Hl({ children, tone = "accent" }: { children: ReactNode; tone?: "accent" | "orange" }) {
+  return <span className={tone === "orange" ? "text-orange" : "hl"}>{children}</span>;
 }
 
 /** Inline long rule used inside a hero headline ("Stake Bitcoin ——— Explore…"). */
@@ -52,7 +52,7 @@ export function Rule() {
   return <span aria-hidden className="mx-3 inline-block h-[2px] w-16 translate-y-[-0.3em] bg-text/80 align-middle sm:w-28" />;
 }
 
-export function PillLink({ href, children, variant = "primary", className }: { href: string; children: ReactNode; variant?: "primary" | "ghost" | "gold"; className?: string }) {
+export function PillLink({ href, children, variant = "primary", className }: { href: string; children: ReactNode; variant?: "primary" | "ghost" | "accent"; className?: string }) {
   const ext = href.startsWith("http");
   const cls = clsx("btn", `btn-${variant}`, className);
   return ext ? (
@@ -87,17 +87,17 @@ export function TextLink({ href, children, className }: { href: string; children
 }
 
 /** Big rounded gradient panel (Core's "Satoshi Plus" / community cards). */
-export function GlowPanel({ children, tone = "gold", className }: { children: ReactNode; tone?: "gold" | "slate" | "teal"; className?: string }) {
-  return <div className={clsx("relative overflow-hidden rounded-[28px] ring-1 ring-white/10", `glow-${tone}`, className)}>{children}</div>;
+export function GlowPanel({ children, tone = "accent", className }: { children: ReactNode; tone?: "accent" | "sky" | "orange"; className?: string }) {
+  return <div className={clsx("relative overflow-hidden rounded-[24px] ring-1 ring-white/10", `glow-${tone}`, className)}>{children}</div>;
 }
 
 /** Dark card with an icon tile, title, body and optional link. */
 export function FeatureCard({ icon, title, children, href, cta, className }: { icon?: ReactNode; title: ReactNode; children?: ReactNode; href?: string; cta?: string; className?: string }) {
   return (
-    <div className={clsx("flex flex-col gap-4 rounded-3xl bg-surface p-6 ring-1 ring-white/[0.08] transition-colors hover:ring-white/20 sm:p-7", className)}>
-      {icon ? <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.05] text-gold ring-1 ring-white/10">{icon}</div> : null}
-      <h3 className="text-xl">{title}</h3>
-      {children ? <div className="text-[15px] text-muted">{children}</div> : null}
+    <div className={clsx("flex flex-col gap-4 rounded-2xl bg-surface p-6 ring-1 ring-white/10 transition-colors hover:ring-white/30 sm:p-8", className)}>
+      {icon ? <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange/10 text-orange ring-1 ring-orange/30">{icon}</div> : null}
+      <h3 className="text-2xl font-light leading-[33.6px]">{title}</h3>
+      {children ? <div className="text-base leading-[22.4px] text-muted">{children}</div> : null}
       {href ? <TextLink href={href} className="mt-auto">{cta ?? "Learn more"}</TextLink> : null}
     </div>
   );
@@ -106,13 +106,13 @@ export function FeatureCard({ icon, title, children, href, cta, className }: { i
 /** Numbered step card. */
 export function StepCard({ n, title, children, art }: { n: number; title: ReactNode; children: ReactNode; art?: ReactNode }) {
   return (
-    <li className="flex flex-col gap-4 rounded-3xl bg-surface p-6 ring-1 ring-white/[0.08] sm:p-7">
+    <li className="flex flex-col gap-4 rounded-2xl bg-surface p-6 ring-1 ring-white/10 sm:p-8">
       <div className="flex items-center justify-between">
-        <span className="mono text-sm text-gold">0{n}</span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange text-sm font-normal text-ink">0{n}</span>
         {art}
       </div>
-      <h3 className="text-xl">{title}</h3>
-      <div className="text-[15px] text-muted">{children}</div>
+      <h3 className="text-2xl font-light leading-[33.6px]">{title}</h3>
+      <div className="text-base leading-[22.4px] text-muted">{children}</div>
     </li>
   );
 }
@@ -123,7 +123,7 @@ export function StatGrid({ items, className }: { items: { label: ReactNode; valu
     <dl className={clsx("grid grid-cols-2 lg:grid-cols-4", className)}>
       {items.map((it, i) => (
         <div key={i} className={clsx("border-white/10 px-1 py-6 sm:px-6", i % 2 === 1 && "border-l", i >= 2 && "border-t lg:border-t-0", i > 0 && "lg:border-l")}>
-          <dd className="mono text-[30px] font-normal tabular-nums sm:text-[40px]">{it.value}</dd>
+          <dd className="text-[34px] font-light tabular-nums sm:text-[48px] sm:leading-[52.8px]">{it.value}</dd>
           <dt className="mt-1 text-sm text-muted">{it.label}</dt>
           {it.hint ? <div className="mt-1 text-xs text-muted">{it.hint}</div> : null}
         </div>
@@ -180,11 +180,11 @@ export function Faq({ items }: { items: [string, ReactNode][] }) {
     <div className="divide-y divide-white/10 border-y border-white/10">
       {items.map(([q, a]) => (
         <details key={q} className="group">
-          <summary className="flex min-h-16 cursor-pointer items-center justify-between gap-6 py-5 text-left text-[17px] sm:text-lg">
+          <summary className="flex min-h-16 cursor-pointer items-center justify-between gap-6 py-5 text-left text-lg sm:text-2xl sm:leading-[33.6px]">
             <span>{q}</span>
-            <Plus className="h-5 w-5 shrink-0 text-gold transition-transform group-open:rotate-45" strokeWidth={1.5} aria-hidden />
+            <Plus className="h-5 w-5 shrink-0 text-orange transition-transform group-open:rotate-45" strokeWidth={1.5} aria-hidden />
           </summary>
-          <div className="pb-6 pr-10 text-[15px] text-muted">{a}</div>
+          <div className="pb-6 pr-10 text-base leading-[22.4px] text-muted">{a}</div>
         </details>
       ))}
     </div>
@@ -195,10 +195,10 @@ export function Faq({ items }: { items: [string, ReactNode][] }) {
 export function CtaBand({ title, lead, primary, secondary }: { title: ReactNode; lead?: ReactNode; primary: { href: string; label: string }; secondary?: { href: string; label: string } }) {
   return (
     <Section label="Get started" className="!pt-0">
-      <GlowPanel tone="gold" className="px-6 py-14 sm:px-14 sm:py-20">
+      <GlowPanel tone="accent" className="px-6 py-14 sm:px-14 sm:py-20">
         <div className="max-w-2xl space-y-5">
-          <h2 className="text-[30px] sm:text-[44px]">{title}</h2>
-          {lead ? <p className="text-base text-text/80 sm:text-lg">{lead}</p> : null}
+          <h2 className="text-[34px] leading-[1.1] sm:text-[48px] sm:leading-[52.8px]">{title}</h2>
+          {lead ? <p className="text-base leading-[22.4px] text-text-2/85">{lead}</p> : null}
           <div className="flex flex-wrap gap-3 pt-2">
             <PillLink href={primary.href}>{primary.label}</PillLink>
             {secondary ? (
@@ -214,7 +214,7 @@ export function CtaBand({ title, lead, primary, secondary }: { title: ReactNode;
 }
 
 /** Hero for standalone product pages. */
-export function PageHero({ eyebrow, title, lead, actions, art, tone }: { eyebrow?: ReactNode; title: ReactNode; lead?: ReactNode; actions?: ReactNode; art?: ReactNode; tone?: "gold" | "teal" | "red" }) {
+export function PageHero({ eyebrow, title, lead, actions, art, tone }: { eyebrow?: ReactNode; title: ReactNode; lead?: ReactNode; actions?: ReactNode; art?: ReactNode; tone?: "accent" | "orange" | "red" }) {
   return (
     <section aria-label="Introduction" className="hero-glow relative overflow-hidden">
       <Container className="grid items-center gap-12 py-20 sm:py-28 lg:grid-cols-[1.2fr_1fr]">
@@ -245,7 +245,7 @@ export function Dial({ children, label }: { children: ReactNode; label?: string 
       <div className="absolute inset-0 rounded-full [background:repeating-conic-gradient(rgba(255,255,255,0.18)_0deg_1deg,transparent_1deg_7.5deg)] [mask:radial-gradient(farthest-side,transparent_calc(100%-14px),black_calc(100%-13px))]" />
       <div className="absolute inset-[10%] rounded-full ring-1 ring-white/10" />
       <div className="absolute inset-[24%] flex items-center justify-center rounded-full bg-surface ring-1 ring-white/15">{children}</div>
-      <div className="absolute left-1/2 top-0 h-3 w-16 -translate-x-1/2 rounded-full bg-gradient-to-r from-ember to-gold blur-[1px]" />
+      <div className="absolute left-1/2 top-0 h-3 w-16 -translate-x-1/2 rounded-full bg-gradient-to-r from-ember to-accent blur-[1px]" />
       {label ? <span className="absolute -right-2 top-1/2 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text ring-1 ring-white/15 sm:-right-10">{label}</span> : null}
     </div>
   );

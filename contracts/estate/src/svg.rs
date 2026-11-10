@@ -52,14 +52,14 @@ pub fn dollars(base_units: u128) -> String {
     format!("${}", out)
 }
 
-const TEAL: &str = "#2DD4BF";
-const DIM: &str = "#134E48";
+const ORANGE: &str = "#FF9211";
+const DIM: &str = "#4A2A0C";
 const LINE: &str = "#3A414B";
-const GOLD: &str = "#E8B04B";
+const GOLD: &str = "#FFD27A";
 
 fn part(filled: bool) -> String {
     if filled {
-        format!("fill='{DIM}' stroke='{TEAL}'")
+        format!("fill='{DIM}' stroke='{ORANGE}'")
     } else {
         format!("fill='none' stroke='{LINE}' stroke-dasharray='4 3'")
     }
@@ -81,14 +81,14 @@ pub fn unit_svg(i: &SvgInput) -> String {
     let win = if st >= 4 {
         format!("fill='{GOLD}' stroke='{GOLD}'")
     } else if st >= 3 {
-        format!("fill='{TEAL}' stroke='{TEAL}'")
+        format!("fill='{ORANGE}' stroke='{ORANGE}'")
     } else {
         format!("fill='none' stroke='{LINE}'")
     };
     let mut bar = String::new();
     for k in 0..i.total.min(8) {
         let w = 280 / i.total.clamp(1, 8);
-        let fill = if k < i.approved { TEAL } else { LINE };
+        let fill = if k < i.approved { ORANGE } else { LINE };
         bar.push_str(&format!(
             "<rect x='{}' y='338' width='{}' height='6' fill='{}'/>",
             60 + k * w,
@@ -97,10 +97,10 @@ pub fn unit_svg(i: &SvgInput) -> String {
         ));
     }
     format!(
-        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><rect width='400' height='400' fill='#0A0B0D'/>\
-<path d='M12 28V12h16M372 12h16v16M388 372v16h-16M28 388H12v-16' fill='none' stroke='{TEAL}' stroke-width='1.5'/>\
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><rect width='400' height='400' fill='#090909'/>\
+<path d='M12 28V12h16M372 12h16v16M388 372v16h-16M28 388H12v-16' fill='none' stroke='{ORANGE}' stroke-width='1.5'/>\
 <text x='28' y='44' fill='#E9ECEF' font-family='sans-serif' font-size='16'>{estate}</text>\
-<text x='372' y='44' fill='{TEAL}' font-family='monospace' font-size='11' text-anchor='end'>{status}</text>\
+<text x='372' y='44' fill='{ORANGE}' font-family='monospace' font-size='11' text-anchor='end'>{status}</text>\
 <g stroke-width='1.5'><path d='M80 250l120 60 120-60-120-60z' {slab}/>\
 <path d='M110 245l90 45v-90l-90-45z' {body}/><path d='M200 290l90-45v-90l-90 45z' {body}/>\
 <path d='M105 158l95 47v-95z' {roof}/><path d='M200 205l95-47-95-48z' {roof}/>\
@@ -150,7 +150,7 @@ mod tests {
             let s = unit_svg(&input(a));
             assert!(s.len() < 2600, "svg is {} bytes", s.len());
             assert_eq!(
-                s.matches(&format!("y='338' width='66' height='6' fill='{TEAL}'"))
+                s.matches(&format!("y='338' width='66' height='6' fill='{ORANGE}'"))
                     .count(),
                 a as usize
             );

@@ -9,7 +9,7 @@ export function PlaygroundBanner() {
     <div className="corners corners-amber flex items-start gap-3 bg-amber/5 p-3 text-sm" role="note">
       <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-amber" strokeWidth={1.5} aria-hidden />
       <p>
-        <span className="mono font-semibold text-amber">PLAYGROUND</span> — a judge sandbox. Any wallet can act as surveyor, there&apos;s no
+        <span className="mono font-normal text-amber">PLAYGROUND</span> — a judge sandbox. Any wallet can act as surveyor, there&apos;s no
         geofence, and an AI stage mismatch is a warning, not a fail. Hash, reuse, screen-photo and challenge checks still fail hard.
       </p>
     </div>
@@ -22,7 +22,7 @@ export function DemoBanner({ estate }: { estate: EstateView }) {
     <div className="corners corners-amber flex items-start gap-3 bg-amber/5 p-3 text-sm" role="note">
       <Timer className="mt-0.5 h-4 w-4 shrink-0 text-amber" strokeWidth={1.5} aria-hidden />
       <p>
-        <span className="mono font-semibold text-amber">DEMO MODE</span> — short timers for the demo: veto window {formatDuration(nsToMs(p.veto_window_ns))}, grace{" "}
+        <span className="mono font-normal text-amber">DEMO MODE</span> — short timers for the demo: veto window {formatDuration(nsToMs(p.veto_window_ns))}, grace{" "}
         {formatDuration(nsToMs(p.grace_ns))}, votes {formatDuration(nsToMs(p.proposal_period_ns))}. A NEAR AI outage is only a warning, but the challenge code must still be read from the photo, so it can fail the check.
       </p>
     </div>
@@ -35,7 +35,7 @@ export function FrozenBanner({ estate }: { estate: EstateView }) {
     <div className="corners corners-red flex items-start gap-3 bg-red/10 p-3 text-sm" role="alert">
       <Snowflake className="mt-0.5 h-4 w-4 shrink-0 text-red" strokeWidth={1.5} aria-hidden />
       <p>
-        <span className="mono font-semibold text-red">FREEZE ACTIVE</span> — holders voted to stop releases: “{estate.frozen.reason}”.
+        <span className="mono font-normal text-red">FREEZE ACTIVE</span> — holders voted to stop releases: “{estate.frozen.reason}”.
         {estate.frozen.refunds_open ? " Refunds are open." : " Refunds open only after a missed deadline."}
       </p>
     </div>

@@ -54,8 +54,8 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
       <div className="grid gap-6 sm:grid-cols-[220px_1fr] sm:items-center">
         <BracketCard className="p-2"><UnitImage e={e} u={u} ms={ms.data} /></BracketCard>
         <div className="space-y-3">
-          <h1 className="text-[32px] font-semibold leading-tight sm:text-[44px]">
-            <span className="mono">{unitDisplay(u.id)}</span> at {e.name} is <span className="text-teal">{built}% built</span>
+          <h1 className="text-[32px] font-normal leading-tight sm:text-[44px]">
+            <span className="mono">{unitDisplay(u.id)}</span> at {e.name} is <span className="text-orange">{built}% built</span>
           </h1>
           <StatusBadge status={u.status} />
           <div className="flex flex-wrap gap-2">
@@ -75,14 +75,14 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
         </div>
         <div className="space-y-1">
           <div className="flex justify-between text-sm"><span className="text-muted">Released to the developer on proof</span><MonoAmount value={u.released} account={e.payout_id} /></div>
-          <Bar value={pct(u.released, u.price)} tone="gold" label="Released of price" />
+          <Bar value={pct(u.released, u.price)} tone="accent" label="Released of price" />
         </div>
         <p className="mono text-xs text-muted">Price {formatUsd(u.price)} · the rest stays in the unit&apos;s own account until the next stage is proven.</p>
       </BracketCard>
 
       <section className="mt-8">
         <div className="mb-4 flex items-center justify-between gap-2">
-          <h2 className="text-2xl font-semibold">The build, stage by stage</h2>
+          <h2 className="text-2xl font-normal">The build, stage by stage</h2>
           <Link href={`/w/${s}/${u.id}/timelapse`} className="btn btn-ghost corners btn-sm"><Film className="h-4 w-4" aria-hidden /> Timelapse</Link>
         </div>
         {!ms.data ? (ms.error ? <ErrorState error={ms.error} /> : <LoadingCard />) : (
@@ -93,9 +93,9 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
               const done = m.status === "Approved" && m.veto_passed;
               return (
                 <li key={m.index}>
-                  <BracketCard tone={done ? "teal" : "default"} className="space-y-3">
+                  <BracketCard tone={done ? "orange" : "default"} className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-xl font-semibold">{m.title}</h3>
+                      <h3 className="text-xl font-normal">{m.title}</h3>
                       <StatusBadge kind="milestone" status={m.status} />
                     </div>
                     {best ? (
@@ -125,8 +125,8 @@ function FamilyWall({ estate, unitAccount, unitId, open, paid }: { estate: strin
   return (
     <section className="mt-10 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-2xl font-semibold">Family wall</h2>
-        <Button variant="gold" onClick={() => setShow((x) => !x)}><Heart className="h-4 w-4" aria-hidden /> Chip in</Button>
+        <h2 className="text-2xl font-normal">Family wall</h2>
+        <Button variant="accent" onClick={() => setShow((x) => !x)}><Heart className="h-4 w-4" aria-hidden /> Chip in</Button>
       </div>
       {show ? <ChipInForm estate={estate} unitAccount={unitAccount} unitId={unitId} /> : null}
       {!supabaseConfigured() ? (
@@ -172,14 +172,14 @@ function ChipInForm({ estate, unitAccount, unitId }: { estate: string; unitAccou
     }
   };
   return (
-    <BracketCard tone="gold" className="space-y-3">
+    <BracketCard tone="accent" className="space-y-3">
       <p className="text-sm text-muted">Your USDC goes straight into <span className="mono text-text">{unitAccount}</span> and counts toward the holder&apos;s payments. It can&apos;t be sent anywhere else except by the estate&apos;s rules.</p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Your name" htmlFor="chip-name"><input id="chip-name" className="input" maxLength={40} value={name} onChange={(e) => setName(e.target.value)} placeholder="Aunty Bisi" /></Field>
         <Field label="Amount (USDC)" htmlFor="chip-amt" error={err ?? undefined}><input id="chip-amt" className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         <Field label="Note" htmlFor="chip-note"><input id="chip-note" className="input" maxLength={140} value={note} onChange={(e) => setNote(e.target.value)} placeholder="For the roof!" /></Field>
       </div>
-      <Button variant="gold" onClick={submit}>Send from NEAR wallet</Button>
+      <Button variant="accent" onClick={submit}>Send from NEAR wallet</Button>
     </BracketCard>
   );
 }

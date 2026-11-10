@@ -39,7 +39,7 @@ export function SignClient({ slug }: { slug: string }) {
   return (
     <Page narrow>
       <EstateBanners estate={e} />
-      <h1 className="mb-2 text-3xl font-semibold">Review and sign · {e.name}</h1>
+      <h1 className="mb-2 text-3xl font-normal">Review and sign · {e.name}</h1>
       <div className="mb-4"><SignerBadge s={signer} /></div>
       {!signer.mode ? <BracketCard tone="amber" className="mb-4">Connect the surveyor wallet or <Link className="underline" href="/qs/setup">install a phone key</Link> first.</BracketCard> : !allowed ? <BracketCard tone="red" className="mb-4">Only {e.surveyor_id} can sign here.</BracketCard> : null}
       {!ms.data ? <LoadingCard /> : !verified.length ? (
@@ -52,8 +52,8 @@ export function SignClient({ slug }: { slug: string }) {
             const ev = (evs.data ?? []).find((x) => x.milestone === m.index && x.status === "Pass");
             return (
               <li key={m.index}>
-                <BracketCard tone="teal" className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">{m.index + 1}. {m.title}</h2><StatusBadge kind="milestone" status={m.status} /></div>
+                <BracketCard tone="orange" className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-normal">{m.index + 1}. {m.title}</h2><StatusBadge kind="milestone" status={m.status} /></div>
                   {ev ? (
                     <>
                       <Link href={`/proof/${s}/${ev.id}`}><img src={ev.url} alt={`${m.title} photo`} className="aspect-video w-full object-cover" /></Link>
@@ -62,7 +62,7 @@ export function SignClient({ slug }: { slug: string }) {
                     </>
                   ) : <p className="text-sm text-muted">Verified {formatDateTime(m.verified_at)}.</p>}
                   <label className="flex min-h-11 flex-wrap items-center gap-3 text-sm">
-                    <input type="checkbox" className="h-5 w-5 accent-[#2DD4BF]" checked={!!checked[m.index]} onChange={(x) => setChecked((c) => ({ ...c, [m.index]: x.target.checked }))} />
+                    <input type="checkbox" className="h-5 w-5 accent-[#FF9211]" checked={!!checked[m.index]} onChange={(x) => setChecked((c) => ({ ...c, [m.index]: x.target.checked }))} />
                     I inspected this site in person on
                     <input type="date" className="input w-44" value={dates[m.index] ?? today} onChange={(x) => setDates((d) => ({ ...d, [m.index]: x.target.value }))} aria-label="Inspection date" />
                   </label>

@@ -10,9 +10,9 @@ import { StatusBadge, CountdownChip } from "./chain";
 // ---------------- MilestoneTrack (4 segments) ----------------
 
 function segTone(m: MilestoneView): string {
-  if (m.status === "Approved" && m.veto_passed) return "bg-teal";
-  if (m.status === "Approved") return "bg-teal/60";
-  if (m.status === "Verified") return "bg-teal-dim";
+  if (m.status === "Approved" && m.veto_passed) return "bg-orange";
+  if (m.status === "Approved") return "bg-orange/60";
+  if (m.status === "Verified") return "bg-orange-dim";
   if (m.status === "Checking") return "bg-amber/60";
   if (m.status === "Missed" || m.status === "Vetoed") return "bg-red/70";
   return "bg-surface-2";
@@ -24,7 +24,7 @@ export function MilestoneTrack({ milestones, detailed = false, mobilisationBps =
     <div>
       <div className="flex gap-1" role="list" aria-label="Milestones">
         {mobilisationBps > 0 ? (
-          <div role="listitem" className="h-2 bg-gold" style={{ flexGrow: mobilisationBps }} title={`Mobilisation ${bpsToPct(mobilisationBps)}`} aria-label={`Mobilisation ${bpsToPct(mobilisationBps)}, released at allocation`} />
+          <div role="listitem" className="h-2 bg-accent" style={{ flexGrow: mobilisationBps }} title={`Mobilisation ${bpsToPct(mobilisationBps)}`} aria-label={`Mobilisation ${bpsToPct(mobilisationBps)}, released at allocation`} />
         ) : null}
         {milestones.map((m) => (
           <div key={m.index} role="listitem" className={clsx("h-2", segTone(m))} style={{ flexGrow: m.bps }} aria-label={`${m.title} ${bpsToPct(m.bps)}: ${m.status}`} />
@@ -54,7 +54,7 @@ export function MilestoneTrack({ milestones, detailed = false, mobilisationBps =
 // ---------------- ProofChecklist ----------------
 
 const ICON = { pass: CheckCircle2, fail: XCircle, warn: AlertTriangle, pending: CircleDashed, skipped: MinusCircle };
-const COLOR = { pass: "text-teal", fail: "text-red", warn: "text-amber", pending: "text-muted", skipped: "text-muted" };
+const COLOR = { pass: "text-orange", fail: "text-red", warn: "text-amber", pending: "text-muted", skipped: "text-muted" };
 const WORD = { pass: "Passed", fail: "Failed", warn: "Warning", pending: "Pending", skipped: "Skipped" };
 
 export function ProofChecklist({ evidence, geofenceRadius, compact = false }: { evidence: EvidenceView; geofenceRadius?: number; compact?: boolean }) {

@@ -12,7 +12,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 }
 
-const MARK = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none"><path d="M6 18V6h12M46 6h12v12M58 46v12H46M18 58H6V46" stroke="#2DD4BF" stroke-width="4"/><rect x="20" y="18" width="6" height="28" fill="#E9ECEF"/><rect x="26" y="18" width="18" height="16" fill="#E9ECEF"/><rect x="32" y="24" width="6" height="4" fill="#0A0B0D"/><rect x="40" y="40" width="6" height="6" fill="#E8B04B"/></svg>')}`;
+const MARK = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#FF9211"/><circle cx="35" cy="27" r="11" fill="none" stroke="#121212" stroke-width="7"/><path d="M20.5 16h7v26l-3.5 8-3.5-8z" fill="#121212"/><rect x="32" y="24" width="6" height="6" fill="#FFFFFF"/></svg>')}`;
 
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
@@ -32,20 +32,20 @@ export async function GET(req: Request) {
   const sub = unitId ? (ms ? `${done} of ${total} stages proven · every payment checked on-chain` : "Every stage of this home, with the proof behind each payment.") : "Every off-plan home gets its own on-chain account.";
   return new ImageResponse(
     (
-      <div style={{ width: 1200, height: 630, display: "flex", background: "#0A0B0D", color: "#E9ECEF", padding: 56, fontFamily: "sans-serif" }}>
+      <div style={{ width: 1200, height: 630, display: "flex", backgroundColor: "#090909", backgroundImage: "radial-gradient(circle at 100% 100%, rgba(233,113,34,0.85) 0%, rgba(208,104,63,0.35) 30%, rgba(9,9,9,0) 60%), radial-gradient(circle at 0% 0%, rgba(81,209,255,0.35) 0%, rgba(9,9,9,0) 35%)", color: "#FFFFFF", padding: 56, fontFamily: "sans-serif" }}>
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", width: 640 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <img src={MARK} width={56} height={56} alt="" />
-            <span style={{ fontSize: 40, letterSpacing: -1 }}>plote</span>
+            <span style={{ fontSize: 42, fontWeight: 500 }}>plote</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <span style={{ fontSize: 22, color: "#2DD4BF", letterSpacing: 3 }}>{unitId ? "WATCH MY HOUSE" : "OFF-PLAN ESCROW · BUILT ON NEAR"}</span>
-            <span style={{ fontSize: 60, lineHeight: 1.1, fontWeight: 700 }}>{headline}</span>
-            <span style={{ fontSize: 26, color: "#8B939D" }}>{sub}</span>
+            <span style={{ fontSize: 22, color: "#FD8D37", letterSpacing: 2 }}>{unitId ? "WATCH MY HOUSE" : "OFF-PLAN ESCROW · BUILT ON NEAR"}</span>
+            <span style={{ fontSize: 62, lineHeight: 1.08, fontWeight: 300 }}>{headline}</span>
+            <span style={{ fontSize: 26, color: "#C9C9CE" }}>{sub}</span>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {Array.from({ length: total }).map((_, i) => (
-              <div key={i} style={{ width: 120, height: 10, background: i < (unitId ? done : 3) ? "#2DD4BF" : "#252A31" }} />
+              <div key={i} style={{ width: 120, height: 10, borderRadius: 50, background: i < (unitId ? done : 3) ? "#FF9211" : "rgba(255,255,255,0.15)" }} />
             ))}
           </div>
         </div>

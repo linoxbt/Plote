@@ -107,8 +107,8 @@ export function CheckInput({
 export function CheckChip({ o }: { o: CheckOutcome }) {
   const name = o.ref ? `${unitDisplay(o.ref.unit)} · ${estateSlug(o.ref.estate)}` : "—";
   const map = {
-    taken: { t: "TAKEN", c: "text-teal bg-teal-dim/40", I: Lock },
-    handed_over: { t: "HANDED OVER", c: "text-gold bg-gold/10", I: Home },
+    taken: { t: "TAKEN", c: "text-orange bg-orange-dim/40", I: Lock },
+    handed_over: { t: "HANDED OVER", c: "text-accent bg-accent/10", I: Home },
     reserved: { t: "RESERVED", c: "text-amber bg-amber/10", I: Clock },
     available: { t: "AVAILABLE", c: "text-text bg-surface-2", I: Unlock },
     not_plote: { t: "NOT A PLOTE UNIT", c: "text-red bg-red/10", I: AlertOctagon },
@@ -118,7 +118,7 @@ export function CheckChip({ o }: { o: CheckOutcome }) {
   return (
     <Link href={href} className={clsx("mono inline-flex min-h-11 items-center gap-2 px-3 text-sm", map.c)}>
       <map.I className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-      <span className="font-semibold">{map.t}</span>
+      <span className="font-normal">{map.t}</span>
       <span className="text-muted">{name}</span>
       {o.kind === "taken" ? <span className="text-muted">· {pct(o.view.paid, o.view.price)}% paid</span> : null}
       <span aria-hidden>→</span>
@@ -133,7 +133,7 @@ export function CheckResult({ o, onShare }: { o: CheckOutcome; onShare?: () => v
       <BracketCard tone="red" className="space-y-4">
         <div className="flex items-center gap-3">
           <AlertOctagon className="h-7 w-7 text-red" strokeWidth={1.5} aria-hidden />
-          <p className="font-display text-2xl font-semibold text-red">NOT A PLOTE UNIT</p>
+          <p className="font-display text-2xl font-normal text-red">NOT A PLOTE UNIT</p>
         </div>
         <p>{o.why}</p>
         <p className="font-medium">This estate doesn&apos;t use Plote escrow. Ask the developer why.</p>
@@ -154,8 +154,8 @@ export function CheckResult({ o, onShare }: { o: CheckOutcome; onShare?: () => v
   const slug = estateSlug(o.ref.estate);
   const unitHref = `/estates/${slug}/units/${o.ref.unit}`;
   const head = {
-    taken: { t: "TAKEN", c: "text-teal", tone: "teal" as const, I: Lock },
-    handed_over: { t: "HANDED OVER", c: "text-gold", tone: "gold" as const, I: Home },
+    taken: { t: "TAKEN", c: "text-orange", tone: "orange" as const, I: Lock },
+    handed_over: { t: "HANDED OVER", c: "text-accent", tone: "accent" as const, I: Home },
     reserved: { t: "RESERVED", c: "text-amber", tone: "amber" as const, I: Clock },
     available: { t: "AVAILABLE", c: "text-text", tone: "default" as const, I: Unlock },
   }[o.kind];
@@ -164,7 +164,7 @@ export function CheckResult({ o, onShare }: { o: CheckOutcome; onShare?: () => v
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <head.I className={clsx("h-7 w-7", head.c)} strokeWidth={1.5} aria-hidden />
-          <p className={clsx("font-display text-3xl font-semibold", head.c)}>{head.t}</p>
+          <p className={clsx("font-display text-3xl font-normal", head.c)}>{head.t}</p>
         </div>
         <p className="mono text-sm text-muted">
           {unitDisplay(o.ref.unit)} · {v.label ?? ""}

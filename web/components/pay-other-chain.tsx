@@ -72,7 +72,7 @@ export function PayFromOtherChain({ slug, u }: { slug: string; u: UnitView }) {
 
   return (
     <BracketCard className="space-y-3" aria-labelledby={`poc-${u.id}`}>
-      <h2 id={`poc-${u.id}`} className="text-lg font-semibold">Pay from another chain</h2>
+      <h2 id={`poc-${u.id}`} className="text-lg font-normal">Pay from another chain</h2>
       <ChainChipList />
       {note ? <p className="text-sm text-muted">{note}</p> : null}
       {action}

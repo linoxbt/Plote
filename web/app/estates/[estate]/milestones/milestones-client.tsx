@@ -25,7 +25,7 @@ export function MilestonesClient({ slug }: { slug: string }) {
     <Page>
       <EstateBanners estate={e} />
       <EstateHeader e={e} slug={estateSlug(account)} />
-      <h2 className="mb-4 text-2xl font-semibold">Milestone timeline</h2>
+      <h2 className="mb-4 text-2xl font-normal">Milestone timeline</h2>
       {ms.error ? <ErrorState error={ms.error} onRetry={() => ms.refetch()} /> : !ms.data ? <LoadingCard lines={5} /> : (
         <ol className="relative space-y-4 border-l border-line pl-6">
           {ms.data.map((m) => {
@@ -34,11 +34,11 @@ export function MilestonesClient({ slug }: { slug: string }) {
             return (
               <li key={m.index} className="relative">
                 <span className="absolute -left-[33px] top-5 bg-bg" aria-hidden>
-                  {done ? <CheckCircle2 className="h-4 w-4 text-teal" /> : <Circle className={clsx("h-4 w-4", m.status === "Missed" ? "text-red" : "text-muted")} />}
+                  {done ? <CheckCircle2 className="h-4 w-4 text-orange" /> : <Circle className={clsx("h-4 w-4", m.status === "Missed" ? "text-red" : "text-muted")} />}
                 </span>
-                <BracketCard tone={done ? "teal" : m.status === "Missed" || m.status === "Vetoed" ? "red" : "default"} className="space-y-3">
+                <BracketCard tone={done ? "orange" : m.status === "Missed" || m.status === "Vetoed" ? "red" : "default"} className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-xl font-semibold">{m.index + 1}. {m.title} <span className="mono text-sm text-muted">{bpsToPct(m.bps)}</span></h3>
+                    <h3 className="text-xl font-normal">{m.index + 1}. {m.title} <span className="mono text-sm text-muted">{bpsToPct(m.bps)}</span></h3>
                     <StatusBadge kind="milestone" status={m.status} />
                   </div>
                   <dl className="mono grid gap-2 text-sm sm:grid-cols-3">

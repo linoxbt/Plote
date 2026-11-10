@@ -40,7 +40,7 @@ export function DevHomeClient() {
               return (
                 <li key={acc}>
                   <BracketCard className="space-y-3">
-                    <div className="flex items-center justify-between gap-2"><Link href={`/dev/estates/${s}`} className="text-xl font-semibold hover:text-teal">{e.name}</Link><DevScoreChip e={e} /></div>
+                    <div className="flex items-center justify-between gap-2"><Link href={`/dev/estates/${s}`} className="text-xl font-normal hover:text-orange">{e.name}</Link><DevScoreChip e={e} /></div>
                     <dl className="grid grid-cols-2 gap-3 text-sm">
                       <div><dt className="label">In escrow</dt><dd><MonoAmount value={e.totals.in_escrow} account={acc} naira={false} /></dd></div>
                       <div><dt className="label">Releasable now</dt><dd><MonoAmount value={units[i]?.data ? releasable.toString() : null} account={acc} naira={false} /></dd></div>

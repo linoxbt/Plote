@@ -67,7 +67,7 @@ export function EstatesClient() {
                   </div>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h2 className="truncate text-xl font-semibold">{e.name}</h2>
+                      <h2 className="truncate text-xl font-normal">{e.name}</h2>
                       <p className="flex items-center gap-1 text-sm text-muted"><MapPin className="h-3.5 w-3.5" aria-hidden />{e.location}</p>
                     </div>
                     <DevScoreChip e={e} />
@@ -75,7 +75,7 @@ export function EstatesClient() {
                   <dl className="grid grid-cols-2 gap-2 text-sm">
                     <div><dt className="label">Units sold</dt><dd className="mono">{e.allocated_count}/{e.unit_count}</dd></div>
                     <div><dt className="label">In escrow</dt><dd><MonoAmount value={e.totals.in_escrow} naira={false} /></dd></div>
-                    <div className="col-span-2"><dt className="label">Current milestone</dt><dd className="flex items-center gap-2">{cur ? <><span>{cur.title}</span><StatusBadge kind="milestone" status={cur.status} /></> : m ? <span className="text-gold">All stages approved</span> : <span>—</span>}</dd></div>
+                    <div className="col-span-2"><dt className="label">Current milestone</dt><dd className="flex items-center gap-2">{cur ? <><span>{cur.title}</span><StatusBadge kind="milestone" status={cur.status} /></> : m ? <span className="text-accent">All stages approved</span> : <span>—</span>}</dd></div>
                   </dl>
                   {e.params.playground ? <p className="mono text-xs text-amber">PLAYGROUND · open to every wallet</p> : null}
                 </BracketCard>

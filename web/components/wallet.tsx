@@ -105,7 +105,7 @@ export function ConnectButton({ compact = false }: { compact?: boolean }) {
     return (
       <div className="flex items-center gap-1">
         <a href="/me" className="btn btn-ghost btn-sm mono max-w-[11rem]" title={accountId}>
-          <span className="h-1.5 w-1.5 rounded-full bg-teal" aria-hidden />
+          <span className="h-1.5 w-1.5 rounded-full bg-orange" aria-hidden />
           <span className="truncate">{truncateAccount(accountId, compact ? 14 : 20)}</span>
         </a>
         <button type="button" className="btn btn-ghost btn-sm min-w-11 px-2" onClick={disconnect} aria-label="Disconnect wallet" title="Disconnect">

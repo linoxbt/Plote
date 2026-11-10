@@ -32,8 +32,8 @@ export function HeroBlock() {
   const reduce = useReducedMotion();
   const floors = [0, 1, 2, 3];
   return (
-    <svg viewBox="0 0 400 420" className="h-auto w-full max-w-md" role="img" aria-label="Isometric drawing of a four-storey apartment block: three floors built, the top floor dashed as not yet built, with unit 4B marked in gold.">
-      <path d="M20 44V20h24M356 20h24v24M380 376v24h-24M44 400H20v-24" stroke="#2DD4BF" strokeWidth="1.5" fill="none" />
+    <svg viewBox="0 0 400 420" className="h-auto w-full max-w-md" role="img" aria-label="Isometric drawing of a four-storey apartment block: three floors built, the top floor dashed as not yet built, with unit 4B marked in orange.">
+      <path d="M20 44V20h24M356 20h24v24M380 376v24h-24M44 400H20v-24" stroke="#FF9211" strokeWidth="1.5" fill="none" />
       {floors.map((i) => {
         const P: [number, number] = [200, 360 - i * H];
         const up = (q: [number, number]): [number, number] => [q[0], q[1] - H];
@@ -42,7 +42,7 @@ export function HeroBlock() {
         const right = pts(P, add(P, R), up(add(P, R)), up(P));
         const top = pts(up(P), up(add(P, R)), up(add(add(P, R), L)), up(add(P, L)));
         const dashed = i === 3;
-        const stroke = { stroke: "#2DD4BF", strokeWidth: 1.5, strokeDasharray: dashed ? "5 5" : undefined, fill: dashed ? "none" : "#0A0B0D" };
+        const stroke = { stroke: "#FF9211", strokeWidth: 1.5, strokeDasharray: dashed ? "5 5" : undefined, fill: dashed ? "none" : "#090909" };
         return (
           <motion.g
             key={i}
@@ -55,18 +55,18 @@ export function HeroBlock() {
             {i === 3 ? <polygon points={top} {...stroke} /> : null}
             {[0.25, 0.55].map((t) => {
               const a: [number, number] = [P[0] + R[0] * t + 8, P[1] + R[1] * t - 12];
-              return <path key={t} d={`M${a[0]} ${a[1]}l18 -10.5v-14l-18 10.5z`} stroke="#2DD4BF" strokeWidth="1" fill="none" opacity={dashed ? 0.5 : 0.7} strokeDasharray={dashed ? "3 3" : undefined} />;
+              return <path key={t} d={`M${a[0]} ${a[1]}l18 -10.5v-14l-18 10.5z`} stroke="#FF9211" strokeWidth="1" fill="none" opacity={dashed ? 0.5 : 0.7} strokeDasharray={dashed ? "3 3" : undefined} />;
             })}
             {[0.3, 0.65].map((t) => {
               const a: [number, number] = [P[0] + L[0] * t - 8, P[1] + L[1] * t - 12];
-              return <path key={t} d={`M${a[0]} ${a[1]}l-18 -10.5v-14l18 10.5z`} stroke="#2DD4BF" strokeWidth="1" fill="none" opacity={dashed ? 0.5 : 0.7} strokeDasharray={dashed ? "3 3" : undefined} />;
+              return <path key={t} d={`M${a[0]} ${a[1]}l-18 -10.5v-14l18 10.5z`} stroke="#FF9211" strokeWidth="1" fill="none" opacity={dashed ? 0.5 : 0.7} strokeDasharray={dashed ? "3 3" : undefined} />;
             })}
             {i === 3 ? (
               <motion.circle
                 cx={P[0] + R[0] * 0.55 + 17}
                 cy={P[1] + R[1] * 0.55 - 31}
                 r="5"
-                fill="#E8B04B"
+                fill="#FD8D37"
                 initial={reduce ? false : { scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ delay: reduce ? 0 : 1.8, duration: 0.3 }}
@@ -75,7 +75,7 @@ export function HeroBlock() {
           </motion.g>
         );
       })}
-      <text x="292" y="148" fill="#E8B04B" fontFamily="var(--font-jet), monospace" fontSize="12">
+      <text x="292" y="148" fill="#FD8D37" fontFamily="var(--font-jet), monospace" fontSize="12">
         4B
       </text>
     </svg>
@@ -148,13 +148,13 @@ export function LiveStrip() {
 export function LiveEscrowCard() {
   const t = useLiveTotals();
   return (
-    <div className="glass flex h-full flex-col justify-between gap-4 rounded-3xl p-6">
+    <div className="glass flex h-full flex-col justify-between gap-4 rounded-2xl p-6">
       <p className="text-sm text-muted">USDC held in unit escrow · live</p>
       <p className="mono text-[40px] leading-none tabular-nums sm:text-[48px]">
         <LiveValue v={t.escrow === null ? null : formatUsd(t.escrow)} loading={t.loading} />
       </p>
       <p className="flex items-center gap-2 text-xs text-muted">
-        <span className="h-1.5 w-1.5 rounded-full bg-teal" aria-hidden /> across {t.units === null ? "—" : t.units} units on NEAR {IS_MAINNET ? "mainnet" : "testnet"}
+        <span className="h-1.5 w-1.5 rounded-full bg-orange" aria-hidden /> across {t.units === null ? "—" : t.units} units on NEAR {IS_MAINNET ? "mainnet" : "testnet"}
         <ChainLink account={t.link} />
       </p>
     </div>
@@ -171,12 +171,12 @@ export function EstateCards() {
         const slug = estateSlug(account);
         const name = e?.name ?? slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
         return (
-          <Link key={account} href={`/estates/${slug}`} className="group flex flex-col overflow-hidden rounded-3xl bg-surface ring-1 ring-white/[0.08] transition-colors hover:ring-white/20">
-            <div className="glow-slate relative h-40">
+          <Link key={account} href={`/estates/${slug}`} className="group flex flex-col overflow-hidden rounded-2xl bg-surface ring-1 ring-white/[0.08] transition-colors hover:ring-white/20">
+            <div className="glow-sky relative h-40">
               <span className="absolute left-5 top-5 rounded-full bg-black/30 px-3 py-1 text-xs text-text/90 ring-1 ring-white/15">{slug === "playground" ? "Judge sandbox" : "Demo estate"}</span>
               <svg viewBox="0 0 120 80" className="absolute bottom-0 right-4 h-32 w-auto opacity-70" aria-hidden>
                 {[0, 1, 2, 3].map((f) => (
-                  <path key={f} d={`M30 ${70 - f * 14}l30 -12l30 12l-30 12z M30 ${70 - f * 14}v-12 M90 ${70 - f * 14}v-12`} fill="none" stroke={f === 3 ? "#E8B04B" : "#2DD4BF"} strokeWidth="1" opacity={f === 3 ? 0.9 : 0.6} />
+                  <path key={f} d={`M30 ${70 - f * 14}l30 -12l30 12l-30 12z M30 ${70 - f * 14}v-12 M90 ${70 - f * 14}v-12`} fill="none" stroke={f === 3 ? "#FD8D37" : "#FF9211"} strokeWidth="1" opacity={f === 3 ? 0.9 : 0.6} />
                 ))}
               </svg>
             </div>
@@ -227,7 +227,7 @@ export function NftShowcase() {
               type="button"
               aria-pressed={stage === i}
               onClick={() => setStage(stage === i ? null : i)}
-              className={clsx("btn btn-sm corners", stage === i ? "corners-teal text-teal" : "btn-ghost")}
+              className={clsx("btn btn-sm corners", stage === i ? "corners-orange text-orange" : "btn-ghost")}
             >
               {s}
             </button>
@@ -267,7 +267,7 @@ export function LiveProofCard() {
     : [];
   return (
     <BracketCard className="grid gap-5 md:grid-cols-[1fr_1.2fr]">
-      <div className="corners corners-teal relative aspect-[4/3] overflow-hidden bg-surface-2">
+      <div className="corners corners-orange relative aspect-[4/3] overflow-hidden bg-surface-2">
         {ev ? <img src={ev.url} alt="Milestone photo from the demo estate" className="h-full w-full object-cover" loading="lazy" /> : (
           <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted">
             {q.isLoading ? "Loading the latest proof…" : "No passed proof on-chain yet. The first one appears here once the demo estate is seeded."}
@@ -279,7 +279,7 @@ export function LiveProofCard() {
           <ul className="space-y-2">
             {rows.map(([t]) => (
               <li key={t} className="mono flex items-start gap-2 text-sm">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal" aria-hidden /> <span className="sr-only">Passed:</span> {t}
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-orange" aria-hidden /> <span className="sr-only">Passed:</span> {t}
               </li>
             ))}
           </ul>
@@ -324,13 +324,13 @@ export function ChainChips() {
 
 export function PhoneMockup() {
   return (
-    <div className="mx-auto w-[260px] rounded-[28px] border border-line bg-surface p-3 shadow-2xl" aria-hidden>
+    <div className="mx-auto w-[260px] rounded-[24px] border border-line bg-surface p-3 shadow-2xl" aria-hidden>
       <div className="rounded-[20px] bg-[#0b141a] p-3">
         <div className="ml-auto max-w-[85%] rounded-lg bg-[#005c4b] p-2 text-[11px] text-white/90">
           <div className="overflow-hidden rounded bg-bg">
             <HouseNFT estateName="Harmattan Court" unitLabel="A-4B" unitId="a-4b" approvedCount={2} total={4} status="Allocated" paid="0" price="0" className="aspect-[300/200] w-full object-cover object-top" />
             <div className="p-2">
-              <p className="font-semibold text-white">A-4B at Harmattan Court is 50% built</p>
+              <p className="font-normal text-white">A-4B at Harmattan Court is 50% built</p>
               <p className="text-white/60">plote.app</p>
             </div>
           </div>
@@ -339,7 +339,7 @@ export function PhoneMockup() {
         <div className="mt-3 space-y-2 rounded bg-bg p-2">
           {["Foundation", "Roofing", "Finishing", "Handover"].map((s, i) => (
             <div key={s} className="flex items-center gap-2 text-[11px]">
-              <span className={clsx("h-2 w-2 rounded-full", i < 2 ? "bg-teal" : "bg-line")} />
+              <span className={clsx("h-2 w-2 rounded-full", i < 2 ? "bg-orange" : "bg-line")} />
               <span className={i < 2 ? "text-text" : "text-muted"}>{s}</span>
             </div>
           ))}
@@ -388,7 +388,7 @@ export function FinalCta() {
       <CheckInput navigate id="final-check" />
       <p className="text-sm text-muted">
         Developer?{" "}
-        <Link href="/dev/estates/new" className="font-semibold text-text underline hover:text-teal">
+        <Link href="/dev/estates/new" className="font-normal text-text underline hover:text-orange">
           Put your estate on Plote →
         </Link>
       </p>

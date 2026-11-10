@@ -54,7 +54,7 @@ export function PositionCard({ e, u }: { e: EstateView; u: UnitView }) {
       </div>
       <div className="space-y-1">
         <div className="flex justify-between text-sm"><span className="text-muted">Released to developer</span><MonoAmount value={u.released} account={e.payout_id} /></div>
-        <Bar value={pct(u.released, releasedCap || 1n)} tone="gold" label="Share of paid released" />
+        <Bar value={pct(u.released, releasedCap || 1n)} tone="accent" label="Share of paid released" />
         <p className="mono text-xs text-muted">{u.progress_bps / 100}% of the build is approved</p>
       </div>
       <dl className="grid gap-3 sm:grid-cols-2">
@@ -97,7 +97,7 @@ export function DueChip({ dueAt }: { dueAt: string }) {
   const now = useNow(30_000);
   const ms = Number(toBig(dueAt) / 1_000_000n) - now;
   if (ms < 0) return <StatusBadge kind="unit" status="InDefault" suffix="overdue" />;
-  return <CountdownChip until={dueAt} tone={ms < 7 * 86400_000 ? "amber" : "teal"} label="due" />;
+  return <CountdownChip until={dueAt} tone={ms < 7 * 86400_000 ? "amber" : "orange"} label="due" />;
 }
 
 export function PlanTable({ u }: { u: UnitView }) {
@@ -118,7 +118,7 @@ export function PlanTable({ u }: { u: UnitView }) {
             <tr key={p.due_at} className="border-t border-line">
               <td className="mono py-2">{formatDate(p.due_at)}</td>
               <td className="py-2 text-right"><MonoAmount value={p.cumulative} naira={false} /></td>
-              <td className="mono py-2 text-right text-xs">{met ? <span className="text-teal">✓ met</span> : <span className="text-muted">open</span>}</td>
+              <td className="mono py-2 text-right text-xs">{met ? <span className="text-orange">✓ met</span> : <span className="text-muted">open</span>}</td>
             </tr>
           );
         })}
@@ -157,10 +157,10 @@ export function ListingCard({ estate, e, u }: { estate: string; e: EstateView; u
   const remaining = toBig(u.price) - toBig(u.paid);
   const isDefault = u.listing.kind === "Default";
   return (
-    <BracketCard tone={isDefault ? "red" : "gold"} className="space-y-3">
+    <BracketCard tone={isDefault ? "red" : "accent"} className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-display text-lg font-semibold">{isDefault ? "Default listing" : "For sale"}</p>
-        <span className={`mono px-2 py-1 text-xs ${isDefault ? "bg-red/10 text-red" : "bg-gold/10 text-gold"}`}>{u.listing.kind.toUpperCase()}</span>
+        <p className="font-display text-lg font-normal">{isDefault ? "Default listing" : "For sale"}</p>
+        <span className={`mono px-2 py-1 text-xs ${isDefault ? "bg-red/10 text-red" : "bg-accent/10 text-accent"}`}>{u.listing.kind.toUpperCase()}</span>
       </div>
       {isDefault ? (
         <p className="text-sm text-muted">

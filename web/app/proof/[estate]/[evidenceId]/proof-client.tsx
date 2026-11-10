@@ -66,9 +66,9 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
         <Link href={`/estates/${estateSlug(account)}`} className="hover:text-text">{e.name}</Link> / <Link href={`/estates/${estateSlug(account)}/milestones`} className="hover:text-text">milestones</Link> / proof #{ev.id}
       </nav>
       <header className="mb-6 space-y-3">
-        <p className="mono text-xs tracking-[0.12em] text-teal">PROOF #{ev.id} · {m ? m.title.toUpperCase() : `MILESTONE ${ev.milestone + 1}`}</p>
+        <p className="mono text-xs tracking-[0.12em] text-orange">PROOF #{ev.id} · {m ? m.title.toUpperCase() : `MILESTONE ${ev.milestone + 1}`}</p>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className={clsx("text-3xl font-semibold sm:text-[40px]", pass ? "text-teal" : ev.status === "Pending" ? "text-amber" : "text-red")}>
+          <h1 className={clsx("text-3xl font-normal sm:text-[40px]", pass ? "text-orange" : ev.status === "Pending" ? "text-amber" : "text-red")}>
             {pass ? "Passed" : ev.status === "Pending" ? "Checking…" : ev.status === "Fail" ? "Failed" : "Check error"}
           </h1>
           <StatusBadge kind="evidence" status={ev.status} />
@@ -79,10 +79,10 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-6">
-          <figure className={clsx("corners p-2", pass ? "corners-teal" : ev.status === "Pending" ? "corners-amber" : "corners-red")}>
+          <figure className={clsx("corners p-2", pass ? "corners-orange" : ev.status === "Pending" ? "corners-amber" : "corners-red")}>
             <img src={ev.url} alt={`Site photo for ${m?.title ?? "the milestone"}`} className="w-full bg-surface-2 object-contain" />
             <figcaption className="mono mt-2 break-all text-xs text-muted">
-              SHA-256 {ev.sha256} {v && !v.reasons.includes("hash_mismatch") ? <span className="text-teal">· hash matches on-chain commitment ✓</span> : null}
+              SHA-256 {ev.sha256} {v && !v.reasons.includes("hash_mismatch") ? <span className="text-orange">· hash matches on-chain commitment ✓</span> : null}
             </figcaption>
           </figure>
 
@@ -106,7 +106,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
           ) : null}
 
           <BracketCard>
-            <h2 className="mb-3 text-lg font-semibold">Nearest previous photo</h2>
+            <h2 className="mb-3 text-lg font-normal">Nearest previous photo</h2>
             {nearest ? (
               <div className="space-y-3">
                 <p className="mono text-sm">Hamming distance {nearest.d}/64 <span className="text-muted">(reuse if ≤ {e.params.max_phash_distance})</span>{v ? <span className="text-muted"> · on-chain nearest {v.nearest_distance}/64</span> : null}</p>
@@ -123,21 +123,21 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
 
         <div className="space-y-6">
           <BracketCard>
-            <h2 className="mb-3 text-lg font-semibold">Checks</h2>
+            <h2 className="mb-3 text-lg font-normal">Checks</h2>
             <ProofChecklist evidence={ev} geofenceRadius={e.geofence.radius_m} />
           </BracketCard>
 
           <BracketCard className="space-y-3">
-            <h2 className="text-lg font-semibold">Challenge code</h2>
+            <h2 className="text-lg font-normal">Challenge code</h2>
             <div className="grid grid-cols-2 gap-3">
               <div><p className="label">Issued on-chain</p><p className="mono text-2xl tracking-[0.2em]">{ev.challenge}</p></div>
-              <div><p className="label">Read by the model</p><p className={clsx("mono text-2xl tracking-[0.2em]", v?.challenge_read ? (v.reasons.some((r) => r.startsWith("challenge")) ? "text-red" : "text-teal") : "text-muted")}>{v?.challenge_read ?? "—"}</p></div>
+              <div><p className="label">Read by the model</p><p className={clsx("mono text-2xl tracking-[0.2em]", v?.challenge_read ? (v.reasons.some((r) => r.startsWith("challenge")) ? "text-red" : "text-orange") : "text-muted")}>{v?.challenge_read ?? "—"}</p></div>
             </div>
             <p className="mono text-xs text-muted">Capture opened {formatDateTime(ev.challenge_opened_at)}</p>
           </BracketCard>
 
           <BracketCard className="space-y-3">
-            <h2 className="text-lg font-semibold">Location</h2>
+            <h2 className="text-lg font-normal">Location</h2>
             {e.geofence.radius_m > 0 || gps ? (
               <StaticMap center={gps && e.geofence.radius_m === 0 ? gps : center} radiusM={e.geofence.radius_m} pin={gps} pinLabel={v?.distance_m != null ? `${v.distance_m} m` : undefined} />
             ) : null}
@@ -149,7 +149,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
           </BracketCard>
 
           <BracketCard>
-            <h2 className="mb-2 text-lg font-semibold">Time</h2>
+            <h2 className="mb-2 text-lg font-normal">Time</h2>
             <dl>
               <KV k="EXIF capture time">{v?.exif_time ? formatDateTime(v.exif_time) : "—"}</KV>
               <KV k="Submitted">{formatDateTime(ev.submitted_at)}</KV>
@@ -159,7 +159,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
           </BracketCard>
 
           <BracketCard className="space-y-2">
-            <h2 className="text-lg font-semibold">AI stage check</h2>
+            <h2 className="text-lg font-normal">AI stage check</h2>
             <dl>
               <KV k="Stage">{v?.ai_stage ?? "—"}</KV>
               <KV k="Confidence">{v?.ai_confidence != null ? `${v.ai_confidence}% (min ${e.params.min_ai_confidence}%)` : "—"}</KV>
@@ -173,8 +173,8 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
             ) : v ? <p className="text-xs text-muted">The model recorded no observations for this photo.</p> : null}
             {v?.ai_chat_id ? (
               <p className="text-sm">
-                <a className="underline hover:text-teal" href={`${NEAR_AI_URL}/signature/${encodeURIComponent(v.ai_chat_id)}?model=${encodeURIComponent(aiModel)}&signing_algo=ecdsa`} target="_blank" rel="noreferrer">NEAR AI signature ↗</a>{" · "}
-                <a className="underline hover:text-teal" href={`${NEAR_AI_URL}/attestation/report?model=${encodeURIComponent(aiModel)}`} target="_blank" rel="noreferrer">model attestation ↗</a>
+                <a className="underline hover:text-orange" href={`${NEAR_AI_URL}/signature/${encodeURIComponent(v.ai_chat_id)}?model=${encodeURIComponent(aiModel)}&signing_algo=ecdsa`} target="_blank" rel="noreferrer">NEAR AI signature ↗</a>{" · "}
+                <a className="underline hover:text-orange" href={`${NEAR_AI_URL}/attestation/report?model=${encodeURIComponent(aiModel)}`} target="_blank" rel="noreferrer">model attestation ↗</a>
               </p>
             ) : <p className="text-xs text-muted">The NEAR AI signature link appears when the worker records a NEAR AI chat id.</p>}
           </BracketCard>
@@ -186,7 +186,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
           <dl>
             <KV k="Worker repo">{e.verifier.repo ? (e.verifier.repo.startsWith("project:") ? <span className="mono">OutLayer project {e.verifier.repo.slice(8)}</span> : <a className="underline" href={e.verifier.repo} target="_blank" rel="noreferrer">{e.verifier.repo} ↗</a>) : "—"}</KV>
             <KV k="Worker commit (estate)">{e.verifier.repo ? <a className="underline" href={`${e.verifier.repo.replace(/\/$/, "")}/tree/${e.verifier.commit}`} target="_blank" rel="noreferrer">{shortHash(e.verifier.commit, 8)} ↗</a> : shortHash(e.verifier.commit, 8)}</KV>
-            <KV k="Worker commit (verdict)">{v ? shortHash(v.worker_commit, 8) : "—"} {v && v.worker_commit !== e.verifier.commit ? <span className="text-amber">differs</span> : v ? <CheckCircle2 className="inline h-3.5 w-3.5 text-teal" aria-label="matches" /> : null}</KV>
+            <KV k="Worker commit (verdict)">{v ? shortHash(v.worker_commit, 8) : "—"} {v && v.worker_commit !== e.verifier.commit ? <span className="text-amber">differs</span> : v ? <CheckCircle2 className="inline h-3.5 w-3.5 text-orange" aria-label="matches" /> : null}</KV>
             <KV k="Build target">{e.verifier.build_target}</KV>
             <KV k="OutLayer execution / attestation">{v?.attestation ?? "—"}</KV>
             <KV k="Verdict source">{v?.source ?? "—"}</KV>

@@ -11,7 +11,7 @@ export { clsx as cx };
 
 // ---------------- BracketCard ----------------
 
-type Tone = "default" | "teal" | "red" | "amber" | "gold";
+type Tone = "default" | "orange" | "red" | "amber" | "accent";
 
 export function BracketCard({
   children, className, tone = "default", hover = false, as = "div", ...rest
@@ -36,10 +36,10 @@ export function BracketCard({
 
 // ---------------- buttons / links ----------------
 
-type BtnVariant = "primary" | "ghost" | "danger" | "gold";
+type BtnVariant = "primary" | "ghost" | "danger" | "accent";
 
 export function btnClass(variant: BtnVariant = "ghost", size: "md" | "sm" = "md", extra?: string) {
-  return clsx("btn", `btn-${variant}`, variant === "ghost" && "corners", size === "sm" && "btn-sm", extra);
+  return clsx("btn", `btn-${variant}`, size === "sm" && "btn-sm", extra);
 }
 
 export function Button({
@@ -82,7 +82,7 @@ export function ChainLink({ account, tx, className, label }: { account?: string 
       target="_blank"
       rel="noreferrer"
       className={clsx(
-        "mono relative inline-flex h-6 w-6 items-center justify-center text-xs text-muted before:absolute before:-inset-2.5 before:content-[''] hover:text-teal",
+        "mono relative inline-flex h-6 w-6 items-center justify-center text-xs text-muted before:absolute before:-inset-2.5 before:content-[''] hover:text-orange",
         className,
       )}
       aria-label={label ?? `View ${tx ? "transaction" : account} on NearBlocks`}
@@ -192,16 +192,17 @@ export function EmptyState({ title, children, action, icon, className }: { title
 export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="relative mb-8 flex flex-col gap-5 sm:mb-12 sm:flex-row sm:items-end sm:justify-between">
-      <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 -z-10 h-72 w-[38rem] max-w-[120vw] rounded-full bg-slate/40 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -left-24 -top-28 -z-10 h-64 w-[30rem] max-w-[110vw] rounded-full bg-sky/25 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute right-0 -top-16 -z-10 h-72 w-[34rem] max-w-full rounded-full bg-flame/30 blur-3xl" />
       <div className="min-w-0">
         {eyebrow ? (
-          <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-3 py-1.5 text-xs text-muted ring-1 ring-white/10">
-            <span className="h-1.5 w-1.5 rounded-full bg-gold" aria-hidden />
+          <p className="mb-5 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm text-text-2 ring-1 ring-white/20">
+            <span className="h-2 w-2 rounded-full bg-orange" aria-hidden />
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="text-[34px] sm:text-[52px]">{title}</h1>
-        {children ? <div className="mt-3 max-w-2xl text-[15px] text-muted sm:text-base">{children}</div> : null}
+        <h1 className="text-[40px] leading-[1.05] sm:text-[64px] sm:leading-[1.05]">{title}</h1>
+        {children ? <div className="mt-4 max-w-2xl text-base leading-[22.4px] text-muted">{children}</div> : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </header>
@@ -265,7 +266,7 @@ export function Tabs<T extends string>({ tabs, value, onChange, idBase = "tabs" 
           }}
           className={clsx(
             "mono min-h-11 shrink-0 border-b-2 px-3 text-sm",
-            value === t.id ? "border-teal text-teal" : "border-transparent text-muted hover:text-text",
+            value === t.id ? "border-orange text-orange" : "border-transparent text-muted hover:text-text",
           )}
         >
           {t.label}
@@ -280,9 +281,9 @@ export function tabPanelProps(idBase: string, id: string) {
   return { id: `${idBase}-panel-${id}`, role: "tabpanel" as const, "aria-labelledby": `${idBase}-tab-${id}`, tabIndex: 0 };
 }
 
-export function Bar({ value, tone = "teal", label }: { value: number; tone?: "teal" | "gold" | "amber" | "red" | "muted"; label: string }) {
+export function Bar({ value, tone = "orange", label }: { value: number; tone?: "orange" | "accent" | "amber" | "red" | "muted"; label: string }) {
   const v = Math.max(0, Math.min(100, value));
-  const color = { teal: "bg-teal", gold: "bg-gold", amber: "bg-amber", red: "bg-red", muted: "bg-muted" }[tone];
+  const color = { orange: "bg-orange", accent: "bg-accent", amber: "bg-amber", red: "bg-red", muted: "bg-muted" }[tone];
   return (
     <div className="h-2 w-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v)} aria-label={label}>
       <div className={clsx("h-full", color)} style={{ width: `${v}%` }} />

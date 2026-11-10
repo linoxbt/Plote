@@ -4,8 +4,8 @@
   "description": "Pay for the house you can see. Surveyor capture app included.",
   "start_url": "/qs",
   "display": "standalone",
-  "background_color": "#0A0B0D",
-  "theme_color": "#0A0B0D",
+  "background_color": "#090909",
+  "theme_color": "#090909",
   "icons": [
     {
       "src": "/icon-192.png",

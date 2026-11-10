@@ -210,7 +210,7 @@ export function CaptureClient({ slug }: { slug: string }) {
   return (
     <Page narrow>
       <EstateBanners estate={e} />
-      <h1 className="mb-2 text-3xl font-semibold">Capture · {e.name}</h1>
+      <h1 className="mb-2 text-3xl font-normal">Capture · {e.name}</h1>
       <div className="mb-4"><SignerBadge s={signer} /></div>
       {!signer.mode ? <BracketCard tone="amber" className="mb-4">Connect the surveyor wallet or <Link className="underline" href="/qs/setup">install a phone key</Link> first.</BracketCard> : !allowed ? (
         <BracketCard tone="red" className="mb-4">Only the estate&apos;s surveyor ({e.surveyor_id}) can capture here.</BracketCard>
@@ -219,7 +219,7 @@ export function CaptureClient({ slug }: { slug: string }) {
 
       {phase === "pick" ? (
         <BracketCard className="space-y-3">
-          <h2 className="text-lg font-semibold">Which milestone?</h2>
+          <h2 className="text-lg font-normal">Which milestone?</h2>
           {!ms.data ? <LoadingCard lines={2} /> : !openMs.length ? <p className="text-sm text-muted">No milestone is open for evidence right now.</p> : (
             <ul className="space-y-2">
               {openMs.map((m) => (
@@ -236,11 +236,11 @@ export function CaptureClient({ slug }: { slug: string }) {
       ) : null}
 
       {phase === "code" && milestone !== null ? (
-        <BracketCard tone="teal" className="space-y-5 text-center">
+        <BracketCard tone="orange" className="space-y-5 text-center">
           {!cap ? <LoadingCard lines={1} label="Reading the challenge code" /> : (
             <>
               <p className="label">Write this on paper</p>
-              <p className="mono select-all text-[56px] font-semibold leading-none tracking-[0.25em] text-teal sm:text-[88px]" aria-label={`Challenge code ${cap.code.split("").join(" ")}`}>{cap.code}</p>
+              <p className="mono select-all text-[56px] font-normal leading-none tracking-[0.25em] text-orange sm:text-[88px]" aria-label={`Challenge code ${cap.code.split("").join(" ")}`}>{cap.code}</p>
               <p className="text-lg">Write <strong className="mono">{cap.code}</strong> on paper and keep it in the photo.</p>
               <CountdownChip until={cap.expires_at} label="code valid" />
               <input ref={fileRef} type="file" accept="image/*" capture="environment" className="sr-only" onChange={(x) => onFile(x.target.files?.[0] ?? null)} aria-label="Take the site photo" />
@@ -257,7 +257,7 @@ export function CaptureClient({ slug }: { slug: string }) {
           <ul className="space-y-1">
             {!pre ? <li className="flex items-center gap-2 text-sm text-muted"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Reading EXIF and location…</li> : preChecks.map((c) => (
               <li key={c.text} className={clsx("flex items-start gap-2 text-sm", c.ok === false && "text-amber")}>
-                {c.ok === true ? <CheckCircle2 className="mt-0.5 h-4 w-4 text-teal" aria-hidden /> : c.ok === false ? <AlertTriangle className="mt-0.5 h-4 w-4" aria-hidden /> : <CircleDashed className="mt-0.5 h-4 w-4 text-muted" aria-hidden />}
+                {c.ok === true ? <CheckCircle2 className="mt-0.5 h-4 w-4 text-orange" aria-hidden /> : c.ok === false ? <AlertTriangle className="mt-0.5 h-4 w-4" aria-hidden /> : <CircleDashed className="mt-0.5 h-4 w-4 text-muted" aria-hidden />}
                 <span><span className="sr-only">{c.ok === true ? "OK: " : c.ok === false ? "Warning: " : ""}</span>{c.text}</span>
               </li>
             ))}
@@ -265,7 +265,7 @@ export function CaptureClient({ slug }: { slug: string }) {
           {e.geofence.radius_m > 0 && pre ? <div className="max-w-xs"><StaticMap center={center} radiusM={e.geofence.radius_m} pin={loc} pinLabel={dist !== null ? `${dist} m` : undefined} /></div> : null}
           <p className="text-xs text-muted">These are hints. The real checks run in secure hardware after upload.</p>
           {phase === "uploading" ? (
-            <div className="space-y-1"><p className="mono text-sm">Uploading original bytes… {progress}%</p><div className="h-2 bg-surface-2"><div className="h-full bg-teal" style={{ width: `${progress}%` }} /></div></div>
+            <div className="space-y-1"><p className="mono text-sm">Uploading original bytes… {progress}%</p><div className="h-2 bg-surface-2"><div className="h-full bg-orange" style={{ width: `${progress}%` }} /></div></div>
           ) : (
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" className="min-h-14 flex-1" onClick={submit} disabled={!pre || !capValid}><Upload className="h-5 w-5" aria-hidden /> Upload and submit</Button>
@@ -276,8 +276,8 @@ export function CaptureClient({ slug }: { slug: string }) {
       ) : null}
 
       {(phase === "checking" || phase === "verdict") && evidence ? (
-        <BracketCard tone={phase === "verdict" ? (evidence.status === "Pass" ? "teal" : "red") : "amber"} className="space-y-4">
-          <p className="font-display text-xl font-semibold">{phase === "checking" ? "Checking in secure hardware…" : evidence.status === "Pass" ? "Passed ✓" : evidence.status === "Fail" ? "Failed" : "The check errored"}</p>
+        <BracketCard tone={phase === "verdict" ? (evidence.status === "Pass" ? "orange" : "red") : "amber"} className="space-y-4">
+          <p className="font-display text-xl font-normal">{phase === "checking" ? "Checking in secure hardware…" : evidence.status === "Pass" ? "Passed ✓" : evidence.status === "Fail" ? "Failed" : "The check errored"}</p>
           <ol className="mono flex flex-wrap items-center gap-x-2 gap-y-1 text-sm" aria-live="polite">
             {LOG.map((l, i) => {
               const v = evidence.verdict;
@@ -285,7 +285,7 @@ export function CaptureClient({ slug }: { slug: string }) {
               const warn = v?.warnings.some((r) => l.codes.includes(reasonBase(r)));
               const label = l.key === "ai" && v?.ai_stage ? `AI: ${v.ai_stage} ${v.ai_confidence ?? "?"}%` : l.label;
               return (
-                <li key={l.key} className={clsx("flex items-center gap-1", !v ? "text-muted" : fail ? "text-red" : warn ? "text-amber" : "text-teal")}>
+                <li key={l.key} className={clsx("flex items-center gap-1", !v ? "text-muted" : fail ? "text-red" : warn ? "text-amber" : "text-orange")}>
                   {i > 0 ? <span className="text-muted" aria-hidden>→</span> : null}
                   {label} {!v ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : fail ? <XCircle className="h-3.5 w-3.5" aria-label="failed" /> : warn ? <AlertTriangle className="h-3.5 w-3.5" aria-label="warning" /> : <CheckCircle2 className="h-3.5 w-3.5" aria-label="passed" />}
                 </li>

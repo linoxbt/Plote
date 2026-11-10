@@ -104,7 +104,7 @@ export function Nav() {
 
   return (
     <header className="sticky top-0 z-50">
-      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[70] focus:rounded-full focus:bg-teal focus:px-4 focus:py-2 focus:text-bg">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[70] focus:rounded-full focus:bg-orange focus:px-4 focus:py-2 focus:text-bg">
         Skip to content
       </a>
       <div className="border-b border-white/[0.06] bg-bg/70 backdrop-blur-xl">
@@ -154,7 +154,7 @@ export function Nav() {
                 </nav>
               ))}
             </div>
-            <div className="glass mt-12 flex flex-col gap-4 rounded-3xl p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="glass mt-12 flex flex-col gap-4 rounded-2xl p-6 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-lg">Check a unit before you pay for it.</p>
                 <p className="text-sm text-muted">Anyone can look up any unit: holder, payments, releases and proof. No login.</p>
@@ -189,13 +189,13 @@ export function Footer() {
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.18em] text-muted">Network</p>
             <div className="flex gap-2 text-xs">
-              <span className={clsx("rounded-full px-3 py-2", !IS_MAINNET ? "bg-teal/10 text-teal ring-1 ring-teal/30" : "text-muted ring-1 ring-white/10")}>Testnet</span>
+              <span className={clsx("rounded-full px-3 py-2", !IS_MAINNET ? "bg-orange/10 text-orange ring-1 ring-orange/30" : "text-muted ring-1 ring-white/10")}>Testnet</span>
               {other ? (
-                <a href={other} className={clsx("rounded-full px-3 py-2 hover:text-text", IS_MAINNET ? "bg-gold/10 text-gold ring-1 ring-gold/30" : "text-muted ring-1 ring-white/10")}>
+                <a href={other} className={clsx("rounded-full px-3 py-2 hover:text-text", IS_MAINNET ? "bg-accent/10 text-accent ring-1 ring-accent/30" : "text-muted ring-1 ring-white/10")}>
                   Mainnet demo
                 </a>
               ) : (
-                <span className={clsx("rounded-full px-3 py-2", IS_MAINNET ? "bg-gold/10 text-gold ring-1 ring-gold/30" : "text-muted ring-1 ring-white/10")} title="Set NEXT_PUBLIC_MAINNET_APP_URL to link the mainnet demo build">
+                <span className={clsx("rounded-full px-3 py-2", IS_MAINNET ? "bg-accent/10 text-accent ring-1 ring-accent/30" : "text-muted ring-1 ring-white/10")} title="Set NEXT_PUBLIC_MAINNET_APP_URL to link the mainnet demo build">
                   Mainnet demo
                 </span>
               )}
