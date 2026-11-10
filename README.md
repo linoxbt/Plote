@@ -10,7 +10,7 @@
 [![Network: NEAR testnet](https://img.shields.io/badge/network-NEAR%20testnet-0A0B0D?style=flat-square)](#live-deployment)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-E8B04B?style=flat-square)](LICENSE)
 
-[**Live app**](https://plote-vert.vercel.app) · [**Build spec**](docs/SPEC.md) · [**Contract interface**](docs/INTERFACE.md) · [**Demo script**](docs/demo-script.md)
+[**Build spec**](docs/SPEC.md) · [**Contract interface**](docs/INTERFACE.md) · [**Demo script**](docs/demo-script.md)
 
 </div>
 
@@ -165,8 +165,6 @@ flowchart LR
 
 ## Live deployment
 
-**App:** https://plote-vert.vercel.app · health: [`/api/health`](https://plote-vert.vercel.app/api/health)
-
 | Piece | Account / location | Status |
 |---|---|---|
 | Judge sandbox estate | [`playground.plote.testnet`](https://testnet.nearblocks.io/address/playground.plote.testnet), 60 units at $1,000 | ✅ Live |
@@ -190,9 +188,9 @@ Every number on the live site is read from the chain. Until a figure exists it s
 
 **No install, NEAR testnet.** Use any NEAR testnet wallet (Meteor, MyNearWallet, HOT, Intear and others).
 
-1. **Check a unit.** Open [`/check`](https://plote-vert.vercel.app/check) and type `a-4b.harmattan-court` or `p-07.playground` to see the holder, payments, releases and status.
-2. **Get test money.** Connect a wallet, open [`/faucet`](https://plote-vert.vercel.app/faucet) and mint 5,000 test USDC.
-3. **Buy a unit.** In the [Plote Playground](https://plote-vert.vercel.app/estates/playground), pick any available unit (`p-01`…`p-60`), **Reserve**, then **Pay** at least 10 %. The allocation NFT mints to you; `/me` shows it, and the unit account's balance is on NearBlocks.
+1. **Check a unit.** Open `/check` and type `a-4b.harmattan-court` or `p-07.playground` to see the holder, payments, releases and status.
+2. **Get test money.** Connect a wallet, open `/faucet` and mint 5,000 test USDC.
+3. **Buy a unit.** In the Plote Playground (`/estates/playground`), pick any available unit (`p-01`…`p-60`), **Reserve**, then **Pay** at least 10 %. The allocation NFT mints to you; `/me` shows it, and the unit account's balance is on NearBlocks.
 4. **Prove a stage** (the playground lets any wallet act as surveyor):
    1. Choose **Capture** and write the 6-character code on paper.
    2. Photograph it anywhere, then watch the TEE verdict land on-chain.
