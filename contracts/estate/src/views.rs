@@ -327,26 +327,29 @@ impl Estate {
     }
 
     pub fn get_proposal(&self, id: U64) -> Option<ProposalView> {
-        self.proposals.get(&id.0).map(proposal_view)
+        let now = Self::now();
+        self.proposals.get(&id.0).map(|p| proposal_view(p, now))
     }
 
+    /// Newest first. Proposal ids are sequential from 1 and never removed, so this reads only the page asked for.
     pub fn list_proposals(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<ProposalView> {
-        let from = from_index.unwrap_or(0) as usize;
-        let limit = limit.unwrap_or(50).min(100) as usize;
-        let mut ids: Vec<u64> = self.proposals.keys().copied().collect();
-        ids.sort_unstable_by(|a, b| b.cmp(a));
-        ids.into_iter()
-            .skip(from)
-            .take(limit)
+        let now = Self::now();
+        let from = from_index.unwrap_or(0) as u64;
+        let limit = limit.unwrap_or(50).min(100) as u64;
+        let newest = self.next_proposal_id.saturating_sub(1);
+        let top = newest.saturating_sub(from);
+        (0..limit)
+            .map_while(|k| top.checked_sub(k).filter(|id| *id >= 1))
             .filter_map(|id| self.proposals.get(&id))
-            .map(proposal_view)
+            .map(|p| proposal_view(p, now))
             .collect()
     }
 
     pub fn votes_available(&self, proposal_id: U64, account_id: AccountId) -> u32 {
+        let now = Self::now();
         self.proposals
             .get(&proposal_id.0)
-            .filter(|p| p.status == ProposalStatus::Open)
+            .filter(|p| p.status == ProposalStatus::Open && now < p.expires_at)
             .map(|p| self.eligible_tokens(p, &account_id).len() as u32)
             .unwrap_or(0)
     }
@@ -408,7 +411,9 @@ fn evidence_view(e: &Evidence) -> EvidenceView {
     }
 }
 
-fn proposal_view(p: &Proposal) -> ProposalView {
+/// An Open proposal past `expires_at` is reported as Expired (storage may still say Open: `propose` only expires
+/// recent ones, `expire_proposal` any one).
+fn proposal_view(p: &Proposal, now: u64) -> ProposalView {
     ProposalView {
         id: U64(p.id),
         kind: p.kind.clone(),
@@ -419,7 +424,11 @@ fn proposal_view(p: &Proposal) -> ProposalView {
         yes: p.yes,
         no: p.no,
         voted: p.voted.clone(),
-        status: p.status,
+        status: if p.status == ProposalStatus::Open && now >= p.expires_at {
+            ProposalStatus::Expired
+        } else {
+            p.status
+        },
     }
 }
 

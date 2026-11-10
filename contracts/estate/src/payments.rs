@@ -68,6 +68,22 @@ impl Estate {
         );
         let by = env::predecessor_account_id();
         let now = Self::now();
+        // A 1Click payment for the last reservation can land after it lapsed. `sync` credits whoever holds the
+        // reservation at that moment, so until `late_claim_ns` after the last reservation ended only that reserver
+        // may reserve again; late money meanwhile becomes unattributed and `sweep_unattributed` returns it to them.
+        if let Some(last) = &unit.last_reservation {
+            let open_at = last
+                .expires_at
+                .0
+                .saturating_add(self.params.late_claim_ns.0);
+            ensure!(
+                last.by == by || now >= open_at,
+                "E_LATE_CLAIM",
+                "unit {} was reserved until recently and a late payment may still land; it opens to others at {}",
+                unit_id,
+                open_at
+            );
+        }
         if unit.unattributed > 0 {
             // Dust (≤ dust_threshold) is credited to the reserver so it can never block a unit.
             unit.paid += unit.unattributed;
@@ -153,6 +169,13 @@ impl Estate {
             return U128(0);
         };
         let balance: U128 = serde_json::from_slice(&bytes).unwrap_or(U128(0));
+        // TODO(audit finding 8): the balance was read in an earlier receipt. If an `on_out` for this unit landed
+        // between that read and this callback (receipt order across shards isn't guaranteed), `expected` already
+        // excludes the transfer but `balance` still includes it, and the difference would be credited as new money.
+        // Fix without a state change: `balance_check` passes the unit's `expected` at read time as an extra
+        // callback argument, and this callback skips (logs, credits nothing) if `expected` differs now; a later
+        // `sync` then reads a fresh balance. (Or, with a state migration, a per-unit transfer-out counter.) Today
+        // `sync` and `on_unit_deposit` refuse to start while `in_flight > 0`, which covers in-order delivery.
         if unit.in_flight > 0 {
             env::log_str("transfer out pending; sync skipped");
             return U128(0);
@@ -306,7 +329,13 @@ impl Estate {
             unit_id
         );
         let now = Self::now();
-        let to = match &unit.last_reservation {
+        // Money synced onto a unit whose current reservation lapsed but wasn't ended yet belongs to that (current)
+        // reserver, not to the one before them; its expiry is when it ended.
+        let latest = match &unit.reservation {
+            Some(r) if now >= r.expires_at.0 => Some(r),
+            _ => unit.last_reservation.as_ref(),
+        };
+        let to = match latest {
             Some(r) if now < r.expires_at.0.saturating_add(self.params.late_claim_ns.0) => {
                 r.by.clone()
             }

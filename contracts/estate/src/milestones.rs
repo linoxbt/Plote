@@ -74,6 +74,53 @@ pub(crate) fn extract_verdict(v: &Value, depth: u8) -> Option<(Verdict, Option<S
     }
 }
 
+/// `evidence_id` and `sha256` the worker echoes next to its verdict (review L3), from the same object
+/// `extract_verdict` accepts. Absent fields (older worker builds) are `None`.
+pub(crate) fn verdict_binding(v: &Value, depth: u8) -> (Option<u64>, Option<String>) {
+    if depth > 4 {
+        return (None, None);
+    }
+    match v {
+        Value::String(s) => serde_json::from_str::<Value>(s.trim())
+            .map(|inner| verdict_binding(&inner, depth + 1))
+            .unwrap_or((None, None)),
+        Value::Object(map) => {
+            if map.get("pass").map(|p| p.is_boolean()).unwrap_or(false) {
+                let id = match map.get("evidence_id") {
+                    Some(Value::Number(n)) => n.as_u64(),
+                    Some(Value::String(s)) => s.parse().ok(),
+                    _ => None,
+                };
+                let sha = map
+                    .get("sha256")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_ascii_lowercase());
+                return (id, sha);
+            }
+            for key in [
+                "output",
+                "result",
+                "data",
+                "stdout",
+                "value",
+                "Ok",
+                "ok",
+                "response",
+                "execution",
+            ] {
+                if let Some(inner) = map.get(key) {
+                    let r = verdict_binding(inner, depth + 1);
+                    if r.0.is_some() || r.1.is_some() {
+                        return r;
+                    }
+                }
+            }
+            (None, None)
+        }
+        _ => (None, None),
+    }
+}
+
 fn attestation_ref(map: &serde_json::Map<String, Value>) -> Option<String> {
     for key in [
         "attestation",
@@ -249,6 +296,29 @@ impl Estate {
             Some((mut verdict, att)) => {
                 if verdict.attestation.is_none() {
                     verdict.attestation = att;
+                }
+                // A verdict must be about this evidence and these exact bytes, when the worker says which.
+                let (bound_id, bound_sha) = parsed
+                    .as_ref()
+                    .map(|v| verdict_binding(v, 0))
+                    .unwrap_or((None, None));
+                let committed = self
+                    .evidence
+                    .get(&evidence_id)
+                    .map(|e| e.sha256.to_ascii_lowercase());
+                let mismatch = bound_id.is_some_and(|id| id != evidence_id)
+                    || matches!((&bound_sha, &committed), (Some(a), Some(b)) if a != b);
+                if mismatch {
+                    self.set_error_with(
+                        evidence_id,
+                        "the verdict is for different evidence or different photo bytes",
+                        "verdict_mismatch",
+                    );
+                    if let Some(mut ev) = self.evidence.get(&evidence_id).cloned() {
+                        ev.raw_response_hash = Some(raw_hash);
+                        self.evidence.insert(evidence_id, ev);
+                    }
+                    return false;
                 }
                 self.apply_verdict(evidence_id, verdict, "outlayer", Some(raw_hash))
             }
@@ -507,6 +577,12 @@ impl Estate {
                 }
                 return false;
             }
+        }
+        // A mocked AI answer is a test fixture, never evidence (review L3).
+        if verdict.warnings.iter().any(|w| w.starts_with("ai_mock"))
+            && !verdict.reasons.iter().any(|r| r == "ai_mock")
+        {
+            verdict.reasons.push("ai_mock".to_string());
         }
         // A pass with reasons attached is a fail; reasons win.
         let pass = verdict.pass && verdict.reasons.is_empty();

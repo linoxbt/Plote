@@ -154,6 +154,18 @@ impl Estate {
         self.move_token(&mut unit, &seller, buyer, false);
         if listing.kind == ListingKind::Default {
             unit.status = UnitStatus::Allocated;
+            // The buyer inherits the plan, including instalments the defaulter missed. Without a rebase anyone
+            // could `declare_default` on the buyer in the next block and resell the unit (another 5% penalty).
+            // Every unmet instalment already due moves to the sale time, so the buyer gets a full
+            // `default_grace_ns` to catch up. Met instalments and future ones keep their dates (the plan stays
+            // non-decreasing). Voluntary sales don't rebase, so a holder can't reset their own clock by selling
+            // to themselves; doing it through a default sale costs the 5% penalty every time.
+            let now = Self::now();
+            for inst in unit.plan.iter_mut() {
+                if inst.due_at.0 < now && unit.paid < inst.cumulative.0 {
+                    inst.due_at = U64(now);
+                }
+            }
         }
         unit.listing = None;
         emit(

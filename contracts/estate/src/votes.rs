@@ -5,10 +5,25 @@ use crate::events::emit;
 use crate::*;
 use near_sdk::json_types::U64;
 use near_sdk::serde_json::json;
-use near_sdk::{env, near, AccountId};
+use near_sdk::{env, near, AccountId, Promise};
+
+/// Votes that move money or stop the estate need a minimum electorate (`MIN_ELECTORATE` tokens and a quarter of
+/// all units). `Veto` stays fast (it must fit inside the veto window); `Unfreeze` only lifts a freeze;
+/// `ExtendDeadline` is the developer's request that holders approve.
+fn needs_quorum(kind: &ProposalKind) -> bool {
+    matches!(
+        kind,
+        ProposalKind::StepIn { .. }
+            | ProposalKind::ReplaceSurveyor { .. }
+            | ProposalKind::Freeze { .. }
+    )
+}
 
 #[near]
 impl Estate {
+    /// Attach `PROPOSAL_DEPOSIT` (0.05 NEAR, kept by the estate for the proposal's storage; anything above is
+    /// returned).
+    #[payable]
     pub fn propose(&mut self, kind: ProposalKind) -> U64 {
         let caller = env::predecessor_account_id();
         let now = Self::now();
@@ -24,15 +39,7 @@ impl Estate {
             "E_NOT_ELIGIBLE",
             "only holders can propose (the developer may propose deadline extensions)"
         );
-        self.expire_stale(now);
-        ensure!(
-            !self
-                .proposals
-                .values()
-                .any(|p| p.status == ProposalStatus::Open && p.proposer == caller),
-            "E_PROPOSAL_OPEN",
-            "you already have an open proposal"
-        );
+        self.check_recent_proposals(&caller, now);
         let mut expires_at = now + self.params.proposal_period_ns.0;
         match &kind {
             ProposalKind::Veto { milestone } => {
@@ -91,7 +98,11 @@ impl Estate {
                 "E_BAD_ARGS",
                 "the estate isn't frozen"
             ),
-            ProposalKind::StepIn { .. } => {}
+            ProposalKind::StepIn { .. } => ensure!(
+                self.step_in_allowed(now),
+                "E_STEP_IN",
+                "a step-in can only be proposed while releases are frozen or after a milestone deadline was missed"
+            ),
         }
         let electorate = self.allocated_count();
         ensure!(
@@ -99,6 +110,31 @@ impl Estate {
             "E_NOT_ELIGIBLE",
             "no allocated tokens can vote yet"
         );
+        // The judge sandbox has no real money and many units; its votes stay demo-able by a single judge.
+        if needs_quorum(&kind) && !self.params.playground {
+            let units = self.units.len();
+            ensure!(
+                electorate >= MIN_ELECTORATE
+                    && electorate.saturating_mul(MIN_ELECTORATE_SHARE) >= units,
+                "E_QUORUM",
+                "a {} vote needs at least {} allocated tokens and at least a quarter of the {} units allocated; {} are",
+                kind.name(),
+                MIN_ELECTORATE,
+                units,
+                electorate
+            );
+        }
+        let deposit = env::attached_deposit();
+        ensure!(
+            deposit >= PROPOSAL_DEPOSIT,
+            "E_DEPOSIT",
+            "attach {} to propose (the proposal's storage; kept by the estate)",
+            PROPOSAL_DEPOSIT
+        );
+        let extra = deposit.saturating_sub(PROPOSAL_DEPOSIT);
+        if !extra.is_zero() {
+            Promise::new(caller.clone()).transfer(extra).detach();
+        }
         let id = self.next_proposal_id;
         self.next_proposal_id += 1;
         emit(
@@ -161,7 +197,13 @@ impl Estate {
             "voted",
             json!({ "proposal_id": proposal_id, "voter": caller, "approve": approve, "tokens": n }),
         );
-        if p.yes * 2 > p.electorate {
+        if p.yes * 2 > p.electorate && !self.still_executable(&p.kind, now) {
+            // Passed, but its precondition lapsed meanwhile (e.g. an unfreeze before a step-in passed).
+            env::log_str("proposal passed but its precondition no longer holds; rejected");
+            p.status = ProposalStatus::Rejected;
+            self.proposals.insert(p.id, p);
+            emit("proposal_rejected", json!({ "proposal_id": proposal_id }));
+        } else if p.yes * 2 > p.electorate {
             p.status = ProposalStatus::Executed;
             let kind = p.kind.clone();
             self.proposals.insert(p.id, p);
@@ -212,18 +254,49 @@ impl Estate {
             .collect()
     }
 
-    fn expire_stale(&mut self, now: u64) {
-        let stale: Vec<u64> = self
-            .proposals
-            .values()
-            .filter(|p| p.status == ProposalStatus::Open && now >= p.expires_at)
-            .map(|p| p.id)
-            .collect();
-        for id in stale {
-            if let Some(mut p) = self.proposals.get(&id).cloned() {
+    /// Fails `E_PROPOSAL_OPEN` if `caller` has a live proposal, and marks lapsed ones Expired. Bounded: ids
+    /// are sequential and `created_at` never decreases with the id, and every proposal expires within
+    /// `proposal_period_ns` of its creation, so the scan walks back from the newest and stops at the first proposal
+    /// older than one period. Its cost is the number of proposals opened in the last period, not all proposals ever
+    /// (each of which also cost its proposer `PROPOSAL_DEPOSIT`). Older proposals still marked Open are expired in
+    /// fact; views report them as Expired and `vote` refuses them.
+    fn check_recent_proposals(&mut self, caller: &AccountId, now: u64) {
+        let period = self.params.proposal_period_ns.0;
+        let mut id = self.next_proposal_id;
+        while id > 1 {
+            id -= 1;
+            let Some(mut p) = self.proposals.get(&id).cloned() else {
+                continue;
+            };
+            if p.created_at.saturating_add(period) <= now {
+                break;
+            }
+            if p.status != ProposalStatus::Open {
+                continue;
+            }
+            if now >= p.expires_at {
                 p.status = ProposalStatus::Expired;
                 self.proposals.insert(id, p);
+            } else {
+                ensure!(
+                    &p.proposer != caller,
+                    "E_PROPOSAL_OPEN",
+                    "you already have an open proposal"
+                );
             }
+        }
+    }
+
+    /// `StepIn` redirects every future release, so it is only for a project in trouble: releases frozen by a
+    /// holder vote, or a milestone deadline (plus grace) missed without a timely sign-off.
+    pub(crate) fn step_in_allowed(&self, now: u64) -> bool {
+        self.frozen.is_some() || (0..self.milestones.len()).any(|i| self.milestone_missed(i, now))
+    }
+
+    fn still_executable(&self, kind: &ProposalKind, now: u64) -> bool {
+        match kind {
+            ProposalKind::StepIn { .. } => self.step_in_allowed(now),
+            _ => true,
         }
     }
 

@@ -170,7 +170,10 @@ impl Env {
                 .collect(),
         );
         for (id, _, _) in units {
-            e.cb(vec![PromiseResult::Successful(vec![])]);
+            e.cb(vec![
+                PromiseResult::Successful(vec![]),
+                PromiseResult::Successful(vec![]),
+            ]);
             assert!(e.c.on_unit_created(id.to_string()));
             e.bal.insert(id.to_string(), 0);
         }
@@ -238,6 +241,12 @@ impl Env {
             self.c.on_balance(id.to_string());
         }
         unused
+    }
+
+    /// `propose` with the required storage deposit.
+    fn propose(&mut self, who: &str, kind: ProposalKind) -> U64 {
+        self.as_dep(who, PROPOSAL_DEPOSIT);
+        self.c.propose(kind)
     }
 
     fn reserve(&mut self, id: &str, who: &str) {
@@ -475,7 +484,10 @@ fn add_units_creates_accounts_and_validates() {
         price: U128(1),
         plan: vec![],
     }]);
-    e.cb(vec![PromiseResult::Failed]);
+    e.cb(vec![
+        PromiseResult::Failed,
+        PromiseResult::Successful(vec![]),
+    ]);
     assert!(!e.c.on_unit_created("c-2".into()));
     assert!(e.c.get_unit("c-2".into()).is_none());
 }
@@ -570,7 +582,8 @@ fn flow_reservation_expiry_and_cancel() {
     assert_eq!(u.paid.0, 0);
     assert_eq!(u.last_reservation.unwrap().by, acc("alice.testnet"));
     e.check_conservation();
-    // cancel with nothing paid is synchronous
+    // cancel with nothing paid is synchronous (after alice's late-claim window, so others may reserve)
+    e.advance(10 * MIN);
     e.reserve("a-1a", "carol.testnet");
     e.as_("carol.testnet");
     assert!(matches!(
@@ -700,7 +713,10 @@ fn release_math_rounds_down_and_mobilisation() {
                 })
                 .collect(),
         );
-        e.cb(vec![PromiseResult::Successful(vec![])]);
+        e.cb(vec![
+            PromiseResult::Successful(vec![]),
+            PromiseResult::Successful(vec![]),
+        ]);
         e.c.on_unit_created("m-1".into());
         e.bal.insert("m-1".into(), 0);
         e
@@ -794,11 +810,13 @@ fn refund_extend_deadline_vote_closes_refunds() {
     e.buy("a-1a", "bob.testnet", 10_000 * USDC);
     e.now = T0 + 63 * MIN;
     assert!(e.unit("a-4b").refunds_open);
-    e.as_("dev.testnet");
-    let pid = e.c.propose(ProposalKind::ExtendDeadline {
-        milestone: 0,
-        new_deadline: U64(T0 + 100 * MIN),
-    });
+    let pid = e.propose(
+        "dev.testnet",
+        ProposalKind::ExtendDeadline {
+            milestone: 0,
+            new_deadline: U64(T0 + 100 * MIN),
+        },
+    );
     e.as_("alice.testnet");
     e.c.vote(pid, true);
     assert!(e.unit("a-4b").refunds_open, "1 of 2 isn't a majority");
@@ -1276,13 +1294,16 @@ fn vote_freeze_blocks_release() {
     let mut e = Env::standard();
     e.buy("a-4b", "alice.testnet", 10_000 * USDC);
     e.buy("a-1a", "bob.testnet", 10_000 * USDC);
+    e.buy("b-2a", "carol.testnet", 10_000 * USDC);
     e.approve_milestone(0);
     e.advance(3 * MIN);
-    e.as_("alice.testnet");
-    let pid = e.c.propose(ProposalKind::Freeze {
-        reason: "No work for 6 weeks".into(),
-        refunds_open: true,
-    });
+    let pid = e.propose(
+        "alice.testnet",
+        ProposalKind::Freeze {
+            reason: "No work for 6 weeks".into(),
+            refunds_open: true,
+        },
+    );
     e.as_("alice.testnet");
     e.c.vote(pid, true);
     e.as_("bob.testnet");
@@ -1308,10 +1329,12 @@ fn vote_replace_surveyor_and_one_token_one_vote() {
     e.buy("a-4b", "alice.testnet", 10_000 * USDC);
     e.buy("a-1a", "bob.testnet", 10_000 * USDC);
     e.buy("b-2a", "carol.testnet", 10_000 * USDC);
-    e.as_("alice.testnet");
-    let pid = e.c.propose(ProposalKind::ReplaceSurveyor {
-        account: acc("qs-new.testnet"),
-    });
+    let pid = e.propose(
+        "alice.testnet",
+        ProposalKind::ReplaceSurveyor {
+            account: acc("qs-new.testnet"),
+        },
+    );
     e.as_("alice.testnet");
     e.c.vote(pid, true);
     // alice sells her token to dave mid-vote: dave can't vote with it again
@@ -1341,17 +1364,18 @@ fn vote_replace_surveyor_and_one_token_one_vote() {
             e.c.propose(ProposalKind::Unfreeze);
         }),
     );
-    e.as_("carol.testnet");
-    e.c.propose(ProposalKind::StepIn {
-        new_payout_id: acc("contractor.testnet"),
-    });
-    e.as_("carol.testnet");
+    e.propose(
+        "carol.testnet",
+        ProposalKind::Freeze {
+            reason: "x".into(),
+            refunds_open: false,
+        },
+    );
+    e.as_dep("carol.testnet", PROPOSAL_DEPOSIT);
     panics(
         "E_PROPOSAL_OPEN",
         std::panic::AssertUnwindSafe(|| {
-            e.c.propose(ProposalKind::StepIn {
-                new_payout_id: acc("x.testnet"),
-            });
+            e.c.propose(ProposalKind::Unfreeze);
         }),
     );
 }
@@ -1361,8 +1385,7 @@ fn vote_veto_within_window_and_rejection() {
     let mut e = Env::standard();
     e.buy("a-4b", "alice.testnet", 10_000 * USDC);
     e.approve_milestone(0);
-    e.as_("alice.testnet");
-    let pid = e.c.propose(ProposalKind::Veto { milestone: 0 });
+    let pid = e.propose("alice.testnet", ProposalKind::Veto { milestone: 0 });
     e.as_("alice.testnet");
     e.c.vote(pid, true);
     assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Vetoed);
@@ -1376,7 +1399,7 @@ fn vote_veto_within_window_and_rejection() {
     // after the window a veto can't be proposed
     e.approve_milestone(0);
     e.advance(3 * MIN);
-    e.as_("alice.testnet");
+    e.as_dep("alice.testnet", PROPOSAL_DEPOSIT);
     panics(
         "E_VETO_WINDOW",
         std::panic::AssertUnwindSafe(|| {
@@ -1384,9 +1407,13 @@ fn vote_veto_within_window_and_rejection() {
         }),
     );
     // a no-majority rejects
-    let pid2 = e.c.propose(ProposalKind::StepIn {
-        new_payout_id: acc("x.testnet"),
-    });
+    let pid2 = e.propose(
+        "alice.testnet",
+        ProposalKind::ExtendDeadline {
+            milestone: 3,
+            new_deadline: U64(T0 + 250 * MIN),
+        },
+    );
     e.as_("alice.testnet");
     e.c.vote(pid2, false);
     assert_eq!(
@@ -1400,10 +1427,13 @@ fn vote_token_allocated_after_proposal_cant_vote() {
     let mut e = Env::standard();
     e.buy("a-4b", "alice.testnet", 10_000 * USDC);
     e.buy("a-1a", "bob.testnet", 10_000 * USDC);
-    e.as_("alice.testnet");
-    let pid = e.c.propose(ProposalKind::StepIn {
-        new_payout_id: acc("x.testnet"),
-    });
+    let pid = e.propose(
+        "alice.testnet",
+        ProposalKind::ExtendDeadline {
+            milestone: 3,
+            new_deadline: U64(T0 + 250 * MIN),
+        },
+    );
     e.advance(1);
     e.buy("b-2a", "carol.testnet", 10_000 * USDC);
     e.as_("carol.testnet");
@@ -1424,13 +1454,20 @@ fn vote_token_allocated_after_proposal_cant_vote() {
 fn vote_step_in_redirects_payout_and_emits_event() {
     let mut e = Env::standard();
     e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    e.buy("a-1a", "bob.testnet", 10_000 * USDC);
+    e.buy("b-2a", "carol.testnet", 10_000 * USDC);
     e.approve_milestone(0);
-    e.advance(3 * MIN);
+    // roofing (T0+120m) + grace passes without a sign-off: the project is in trouble, a step-in is allowed
+    e.now = T0 + 123 * MIN;
+    let pid = e.propose(
+        "alice.testnet",
+        ProposalKind::StepIn {
+            new_payout_id: acc("contractor.testnet"),
+        },
+    );
     e.as_("alice.testnet");
-    let pid = e.c.propose(ProposalKind::StepIn {
-        new_payout_id: acc("contractor.testnet"),
-    });
-    e.as_("alice.testnet");
+    e.c.vote(pid, true);
+    e.as_("bob.testnet");
     e.c.vote(pid, true);
     let logs = get_logs();
     let ev = logs
@@ -1642,6 +1679,7 @@ fn assert_exits(e: &Env, before: &UnitView, kind: &str, seen: &mut HashMap<Strin
             "reservation" => before.reservation.as_ref().map(|r| &r.by) == Some(to),
             "sweep" => {
                 before.last_reservation.as_ref().map(|r| &r.by) == Some(to)
+                    || before.reservation.as_ref().map(|r| &r.by) == Some(to)
                     || to == &acc("plote.testnet")
             }
             _ => false,
@@ -1680,7 +1718,12 @@ fn random_walk(mut seed: u64, steps: usize) -> HashMap<String, u32> {
         let who = people[rnd(3) as usize];
         let u = e.unit(id);
         match rnd(10) {
-            0 if u.status == UnitStatus::Available && u.unattributed.0 <= USDC => {
+            0 if u.status == UnitStatus::Available
+                && u.unattributed.0 <= USDC
+                && u.last_reservation
+                    .as_ref()
+                    .is_none_or(|r| r.by.as_str() == who || e.now >= r.expires_at.0 + 10 * MIN) =>
+            {
                 e.reserve(id, who)
             }
             1 => {
@@ -1740,7 +1783,11 @@ fn random_walk(mut seed: u64, steps: usize) -> HashMap<String, u32> {
                     e.as_("anyone.testnet");
                     let _ = e.c.sweep_unattributed(id.into());
                     assert_exits(&e, &u, "sweep", &mut seen);
-                    let to = match &u.last_reservation {
+                    let latest = match &u.reservation {
+                        Some(r) if e.now >= r.expires_at.0 => Some(r),
+                        _ => u.last_reservation.as_ref(),
+                    };
+                    let to = match latest {
                         Some(r) if e.now < r.expires_at.0 + 10 * MIN => r.by.to_string(),
                         _ => "plote.testnet".to_string(),
                     };
@@ -2053,4 +2100,529 @@ fn verify_callback_null_means_outlayer_did_not_run() {
     );
     // the milestone reopens so the surveyor can resubmit
     assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Open);
+}
+
+#[test]
+fn verdict_bound_to_other_evidence_or_bytes_is_an_error() {
+    let mut e = Env::standard();
+    let ev = e.submit(0, "qs.testnet");
+    let mut v = Env::verdict_json(ev, true, &[], &e.c.get_estate().verifier.commit);
+    v["evidence_id"] = json!(ev + 7);
+    assert!(!e.resume(ev, &v));
+    let got = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(got.status, EvidenceStatus::Error);
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Open);
+
+    let ev2 = e.submit(0, "qs.testnet");
+    let mut v2 = Env::verdict_json(ev2, true, &[], &e.c.get_estate().verifier.commit);
+    v2["sha256"] = json!("00".repeat(32));
+    assert!(!e.resume(ev2, &v2));
+    assert_eq!(
+        e.c.get_evidence(U64(ev2)).unwrap().status,
+        EvidenceStatus::Error
+    );
+
+    // the right id and the committed bytes still pass
+    let ev3 = e.submit(0, "qs.testnet");
+    let mut v3 = Env::verdict_json(ev3, true, &[], &e.c.get_estate().verifier.commit);
+    v3["sha256"] = json!(e.c.get_evidence(U64(ev3)).unwrap().sha256);
+    assert!(e.resume(ev3, &v3));
+}
+
+#[test]
+fn mocked_ai_verdict_never_passes() {
+    let mut e = Env::standard();
+    let ev = e.submit(0, "qs.testnet");
+    let mut v = Env::verdict_json(ev, true, &[], &e.c.get_estate().verifier.commit);
+    v["warnings"] = json!(["ai_mock"]);
+    assert!(!e.resume(ev, &v));
+    let got = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(got.status, EvidenceStatus::Fail);
+    assert!(got
+        .verdict
+        .unwrap()
+        .reasons
+        .contains(&"ai_mock".to_string()));
+}
+
+#[test]
+#[should_panic(expected = "E_BAD_ARGS")]
+fn real_estate_cannot_turn_the_geofence_off() {
+    let mut e = Env::standard();
+    let mut v = e.c.get_estate().verifier.clone();
+    v.commit = String::new();
+    e.as_("dev.testnet");
+    e.c.set_verifier(v);
+}
+
+// ---------------------------------------------------------------- pre-audit fixes
+
+/// Buy a voluntary listing atomically (as the USDC contract would deliver it).
+fn buy_listing(e: &mut Env, id: &str, buyer: &str, amount: u128) {
+    e.as_("usdc.testnet");
+    let _ =
+        e.c.ft_on_transfer(acc(buyer), U128(amount), json!({ "buy": id }).to_string());
+}
+
+/// Audit #1: the seller's guardians/beneficiary don't survive a sale; a receiver of `nft_transfer_call` can't hand
+/// the token back carrying a lien or guardians it set; an unparsable result returns the token (NEP-171, #9); and
+/// a real recovery keeps the person's guardians and beneficiary.
+#[test]
+fn audit_safety_state_follows_the_owner() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    e.as_("alice.testnet");
+    e.c.set_guardians(
+        "a-4b".into(),
+        vec![acc("alt1.testnet"), acc("alt2.testnet")],
+    );
+    e.c.set_beneficiary("a-4b".into(), Some(acc("alice-kin.testnet")));
+    e.c.list_for_sale("a-4b".into(), U128(12_000 * USDC));
+    buy_listing(&mut e, "a-4b", "bob.testnet", 12_000 * USDC);
+    let u = e.unit("a-4b");
+    assert_eq!(u.holder, Some(acc("bob.testnet")));
+    assert!(u.guardians.is_empty(), "seller's guardians are gone");
+    assert!(u.beneficiary.is_none());
+    e.as_("alt1.testnet");
+    panics(
+        "E_NOT_GUARDIAN",
+        std::panic::AssertUnwindSafe(|| e.c.guardian_recover("a-4b".into(), acc("alice.testnet"))),
+    );
+
+    // bob sets up his own safety state, then sends the token to a receiver that abuses it and returns it
+    e.as_("bob.testnet");
+    e.c.set_guardians("a-4b".into(), vec![acc("bg1.testnet"), acc("bg2.testnet")]);
+    e.c.set_beneficiary("a-4b".into(), Some(acc("bob-kin.testnet")));
+    let before = e.unit("a-4b");
+    let snapshot = crate::nft::SafetySnapshot {
+        guardians: before.guardians.clone(),
+        beneficiary: before.beneficiary.clone(),
+        lien: None,
+    };
+    for result in [b"true".to_vec(), b"\"yes\"".to_vec()] {
+        e.as_dep("bob.testnet", NearToken::from_yoctonear(1));
+        let _ = e.c.nft_transfer_call(
+            acc("market.testnet"),
+            "a-4b".into(),
+            None,
+            None,
+            String::new(),
+        );
+        e.as_("market.testnet");
+        e.c.set_lien("a-4b".into(), acc("market-friend.testnet"), U128(u128::MAX));
+        e.as_("market.testnet");
+        e.c.set_guardians("a-4b".into(), vec![acc("m1.testnet"), acc("m2.testnet")]);
+        e.cb(vec![PromiseResult::Successful(result)]);
+        let kept = e.c.nft_resolve_transfer(
+            acc("bob.testnet"),
+            acc("market.testnet"),
+            "a-4b".into(),
+            Some(HashMap::new()),
+            Some(snapshot.clone()),
+        );
+        assert!(!kept, "true and unparsable results both return the token");
+        let u = e.unit("a-4b");
+        assert_eq!(u.holder, Some(acc("bob.testnet")));
+        assert!(u.lien.is_none(), "the receiver's lien is undone");
+        assert_eq!(u.guardians, before.guardians);
+        assert_eq!(u.beneficiary, before.beneficiary);
+    }
+    // a callback from before the snapshot argument existed still drops a receiver's lien
+    e.as_dep("bob.testnet", NearToken::from_yoctonear(1));
+    let _ = e.c.nft_transfer_call(
+        acc("market.testnet"),
+        "a-4b".into(),
+        None,
+        None,
+        String::new(),
+    );
+    e.as_("market.testnet");
+    e.c.set_lien("a-4b".into(), acc("market-friend.testnet"), U128(1));
+    e.cb(vec![PromiseResult::Failed]);
+    assert!(!e.c.nft_resolve_transfer(
+        acc("bob.testnet"),
+        acc("market.testnet"),
+        "a-4b".into(),
+        None,
+        None
+    ));
+    assert!(e.unit("a-4b").lien.is_none());
+
+    // a genuine recovery (same person, new key) keeps guardians and beneficiary
+    e.as_("bob.testnet");
+    e.c.set_guardians("a-4b".into(), vec![acc("bg1.testnet"), acc("bg2.testnet")]);
+    e.c.set_beneficiary("a-4b".into(), Some(acc("bob-kin.testnet")));
+    for g in ["bg1.testnet", "bg2.testnet"] {
+        e.as_(g);
+        e.c.guardian_recover("a-4b".into(), acc("bob-new.testnet"));
+    }
+    e.advance(3 * MIN);
+    e.as_("anyone.testnet");
+    e.c.finish_recovery("a-4b".into());
+    let u = e.unit("a-4b");
+    assert_eq!(u.holder, Some(acc("bob-new.testnet")));
+    assert_eq!(u.guardians, vec![acc("bg1.testnet"), acc("bg2.testnet")]);
+    assert_eq!(u.beneficiary, Some(acc("bob-kin.testnet")));
+}
+
+fn defaulted_unit() -> Env {
+    let d = [
+        T0 + 600 * MIN,
+        T0 + 700 * MIN,
+        T0 + 800 * MIN,
+        T0 + 900 * MIN,
+    ];
+    let plan = vec![
+        Instalment {
+            due_at: U64(T0 + 10 * MIN),
+            cumulative: U128(30_000 * USDC),
+        },
+        Instalment {
+            due_at: U64(T0 + 500 * MIN),
+            cumulative: U128(60_000 * USDC),
+        },
+    ];
+    let mut e = Env::new_with(params(false), d, &[("a-4b", PRICE, plan)]);
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    e.advance(13 * MIN);
+    e.as_("anyone.testnet");
+    e.c.declare_default("a-4b".into());
+    e
+}
+
+/// Audit #2: the buyer of a default listing gets a full default grace from the sale before they can default.
+#[test]
+fn audit_default_buyer_gets_a_fresh_grace() {
+    let mut e = defaulted_unit();
+    e.advance(5 * MIN);
+    let sold_at = e.now;
+    e.as_("usdc.testnet");
+    let _ = e.c.ft_on_transfer(
+        acc("bob.testnet"),
+        U128(10_000 * USDC),
+        json!({ "buy": "a-4b" }).to_string(),
+    );
+    let u = e.unit("a-4b");
+    assert_eq!(u.holder, Some(acc("bob.testnet")));
+    assert_eq!(
+        u.plan[0].due_at.0, sold_at,
+        "missed instalment moved to the sale"
+    );
+    assert_eq!(
+        u.plan[1].due_at.0,
+        T0 + 500 * MIN,
+        "future instalment unchanged"
+    );
+    e.as_("anyone.testnet");
+    panics(
+        "E_NOT_DUE",
+        std::panic::AssertUnwindSafe(|| e.c.declare_default("a-4b".into())),
+    );
+    // bob doesn't catch up within the grace → a default is possible again
+    e.advance(3 * MIN);
+    e.as_("anyone.testnet");
+    e.c.declare_default("a-4b".into());
+    assert_eq!(e.unit("a-4b").status, UnitStatus::InDefault);
+}
+
+/// Audit #5: a lien can't be used to escape a default listing.
+#[test]
+fn audit_no_lien_on_a_defaulted_unit() {
+    let mut e = defaulted_unit();
+    e.as_("alice.testnet");
+    panics(
+        "E_LISTING",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.set_lien("a-4b".into(), acc("alice-alt.testnet"), U128(1))
+        }),
+    );
+    let u = e.unit("a-4b");
+    assert!(u.lien.is_none());
+    assert_eq!(u.listing.unwrap().kind, ListingKind::Default);
+}
+
+/// Audit #3: StepIn / ReplaceSurveyor / Freeze need a minimum electorate; StepIn only for a project in trouble,
+/// re-checked when it passes; Veto stays available to a single holder (vote_veto_within_window_and_rejection).
+#[test]
+fn audit_vote_capture_needs_quorum_and_trouble() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    let step_in = ProposalKind::StepIn {
+        new_payout_id: acc("attacker.testnet"),
+    };
+    e.as_dep("alice.testnet", PROPOSAL_DEPOSIT);
+    panics(
+        "E_STEP_IN",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.propose(step_in.clone());
+        }),
+    );
+    for kind in [
+        ProposalKind::Freeze {
+            reason: "grief".into(),
+            refunds_open: true,
+        },
+        ProposalKind::ReplaceSurveyor {
+            account: acc("qs-mine.testnet"),
+        },
+    ] {
+        e.as_dep("alice.testnet", PROPOSAL_DEPOSIT);
+        panics(
+            "E_QUORUM",
+            std::panic::AssertUnwindSafe(|| {
+                e.c.propose(kind.clone());
+            }),
+        );
+    }
+    // a single buyer can't redirect money even once a deadline is missed
+    e.now = T0 + 63 * MIN;
+    e.as_dep("alice.testnet", PROPOSAL_DEPOSIT);
+    panics(
+        "E_QUORUM",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.propose(step_in.clone());
+        }),
+    );
+
+    // three holders: freeze, then a step-in while frozen, but an unfreeze lands first → the step-in is rejected
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    e.buy("a-1a", "bob.testnet", 10_000 * USDC);
+    e.buy("b-2a", "carol.testnet", 10_000 * USDC);
+    let f = e.propose(
+        "alice.testnet",
+        ProposalKind::Freeze {
+            reason: "No work".into(),
+            refunds_open: false,
+        },
+    );
+    for who in ["alice.testnet", "bob.testnet"] {
+        e.as_(who);
+        e.c.vote(f, true);
+    }
+    assert!(e.c.get_estate().frozen.is_some());
+    let s = e.propose("alice.testnet", step_in.clone());
+    let u = e.propose("bob.testnet", ProposalKind::Unfreeze);
+    for who in ["alice.testnet", "bob.testnet"] {
+        e.as_(who);
+        e.c.vote(u, true);
+    }
+    assert!(e.c.get_estate().frozen.is_none());
+    for who in ["alice.testnet", "bob.testnet"] {
+        e.as_(who);
+        e.c.vote(s, true);
+    }
+    assert_eq!(
+        e.c.get_proposal(s).unwrap().status,
+        ProposalStatus::Rejected
+    );
+    assert!(e.c.get_estate().payout_redirect.is_none());
+
+    // the 25% share: 3 tokens out of 13 units isn't enough
+    e.as_dep("dev.testnet", NearToken::from_near(5));
+    let more: Vec<UnitInput> = (0..8)
+        .map(|i| UnitInput {
+            id: format!("x-{}", i),
+            label: "x".into(),
+            price: U128(PRICE),
+            plan: vec![],
+        })
+        .collect();
+    e.c.add_units(more);
+    e.as_dep("dev.testnet", NearToken::from_near(5));
+    e.c.add_units(
+        (8..10)
+            .map(|i| UnitInput {
+                id: format!("x-{}", i),
+                label: "x".into(),
+                price: U128(PRICE),
+                plan: vec![],
+            })
+            .collect(),
+    );
+    assert_eq!(e.c.list_units(None, None).len(), 13);
+    e.as_dep("carol.testnet", PROPOSAL_DEPOSIT);
+    panics(
+        "E_QUORUM",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.propose(ProposalKind::ReplaceSurveyor {
+                account: acc("qs-new.testnet"),
+            });
+        }),
+    );
+
+    // the playground (judge sandbox, no real money) keeps single-judge votes
+    let d = [
+        T0 + 60 * MIN,
+        T0 + 120 * MIN,
+        T0 + 180 * MIN,
+        T0 + 240 * MIN,
+    ];
+    let mut p = Env::new_with(params(true), d, &[("p-01", 1_000 * USDC, vec![])]);
+    p.buy("p-01", "judge.testnet", 1_000 * USDC);
+    let f = p.propose(
+        "judge.testnet",
+        ProposalKind::Freeze {
+            reason: "try it".into(),
+            refunds_open: false,
+        },
+    );
+    p.as_("judge.testnet");
+    p.c.vote(f, true);
+    assert!(p.c.get_estate().frozen.is_some());
+}
+
+/// Audit #4: a lapsed reservation's late payment can't be captured by the next reserver, and a sweep pays the
+/// current (expired, not yet ended) reserver rather than the one before them.
+#[test]
+fn audit_late_payment_stays_with_its_reserver() {
+    let mut e = Env::standard();
+    e.reserve("b-2a", "bob.testnet");
+    e.advance(31 * MIN);
+    e.as_("mallory.testnet");
+    let _ = e.c.expire_reservation("b-2a".into());
+    e.as_dep("mallory.testnet", RESERVE_DEPOSIT);
+    panics(
+        "E_LATE_CLAIM",
+        std::panic::AssertUnwindSafe(|| e.c.reserve("b-2a".into())),
+    );
+    // bob's 1Click payment lands late: it can only go back to bob
+    e.land("b-2a", 5 * USDC);
+    e.sync("b-2a");
+    assert_eq!(e.unit("b-2a").unattributed.0, 5 * USDC);
+    e.as_("anyone.testnet");
+    let _ = e.c.sweep_unattributed("b-2a".into());
+    assert_eq!(transfer_outs()[0].1, acc("bob.testnet"));
+    e.finish_out("b-2a", OutKind::Sweep, "bob.testnet", 5 * USDC, true);
+    // bob himself may reserve again at once; others after late_claim_ns
+    e.reserve("b-2a", "bob.testnet");
+    e.as_("bob.testnet");
+    let _ = e.c.cancel_reservation("b-2a".into());
+    e.advance(10 * MIN);
+    e.reserve("b-2a", "mallory.testnet");
+    assert_eq!(e.unit("b-2a").status, UnitStatus::Reserved);
+
+    // sweep while the current reservation lapsed but wasn't ended → that reserver
+    e.reserve("a-1a", "alice.testnet");
+    e.as_("alice.testnet");
+    let _ = e.c.cancel_reservation("a-1a".into());
+    e.advance(10 * MIN);
+    e.reserve("a-1a", "dave.testnet");
+    e.advance(31 * MIN);
+    e.land("a-1a", 5 * USDC);
+    e.sync("a-1a");
+    assert_eq!(e.unit("a-1a").status, UnitStatus::Reserved);
+    assert_eq!(e.unit("a-1a").unattributed.0, 5 * USDC);
+    e.as_("anyone.testnet");
+    let _ = e.c.sweep_unattributed("a-1a".into());
+    assert_eq!(transfer_outs()[0].1, acc("dave.testnet"));
+    e.finish_out("a-1a", OutKind::Sweep, "dave.testnet", 5 * USDC, true);
+    e.check_conservation();
+}
+
+/// Audit #6: a unit is ready only if both its account and its USDC registration succeeded; a failed registration
+/// keeps the record for `retry_unit_setup`.
+#[test]
+fn audit_unit_creation_checks_account_and_registration() {
+    let mut e = Env::standard();
+    e.as_dep("dev.testnet", NearToken::from_near(1));
+    e.c.add_units(vec![UnitInput {
+        id: "c-3".into(),
+        label: "x".into(),
+        price: U128(PRICE),
+        plan: vec![],
+    }]);
+    e.cb(vec![
+        PromiseResult::Successful(vec![]),
+        PromiseResult::Failed,
+    ]);
+    assert!(!e.c.on_unit_created("c-3".into()));
+    let u = e.c.get_unit("c-3".into()).expect("record kept");
+    assert!(!u.ready);
+    e.as_dep("alice.testnet", RESERVE_DEPOSIT);
+    panics(
+        "E_UNIT_NOT_FOUND",
+        std::panic::AssertUnwindSafe(|| e.c.reserve("c-3".into())),
+    );
+    e.as_dep("mallory.testnet", USDC_STORAGE);
+    panics(
+        "E_NOT_DEVELOPER",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.retry_unit_setup("c-3".into());
+        }),
+    );
+    e.as_("dev.testnet");
+    panics(
+        "E_DEPOSIT",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.retry_unit_setup("c-3".into());
+        }),
+    );
+    e.as_dep("dev.testnet", USDC_STORAGE);
+    let _ = e.c.retry_unit_setup("c-3".into());
+    e.cb(vec![
+        PromiseResult::Successful(vec![]),
+        PromiseResult::Successful(vec![]),
+    ]);
+    assert!(e.c.on_unit_created("c-3".into()));
+    assert!(e.c.get_unit("c-3".into()).unwrap().ready);
+    e.as_dep("dev.testnet", USDC_STORAGE);
+    panics(
+        "E_BAD_ARGS",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.retry_unit_setup("c-3".into());
+        }),
+    );
+}
+
+/// Audit #7: propose needs (and keeps) a storage deposit, and its scan only covers the last proposal period.
+#[test]
+fn audit_proposals_cost_a_deposit_and_scan_is_bounded() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    let kind = ProposalKind::ExtendDeadline {
+        milestone: 3,
+        new_deadline: U64(T0 + 250 * MIN),
+    };
+    e.as_("alice.testnet");
+    panics(
+        "E_DEPOSIT",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.propose(kind.clone());
+        }),
+    );
+    // extra is returned
+    e.as_dep("alice.testnet", NearToken::from_millinear(80));
+    let p1 = e.c.propose(kind.clone());
+    assert!(get_created_receipts().iter().any(|r| {
+        r.receiver_id == acc("alice.testnet")
+            && r.actions.iter().any(|a| {
+                matches!(a, MockAction::Transfer { deposit, .. } if *deposit == NearToken::from_millinear(30))
+            })
+    }));
+    // a token passed to a fresh account opens another proposal; each costs the deposit
+    e.as_dep("alice.testnet", NearToken::from_yoctonear(1));
+    e.c.nft_transfer(acc("sybil.testnet"), "a-4b".into(), None, None);
+    let p2 = e.propose("sybil.testnet", kind.clone());
+    assert_eq!(p2.0, p1.0 + 1);
+    // after one proposal period, the old ones are expired in fact (views say so) and don't block anyone
+    e.advance(11 * MIN);
+    assert_eq!(
+        e.c.get_proposal(p1).unwrap().status,
+        ProposalStatus::Expired
+    );
+    let p3 = e.propose("sybil.testnet", kind.clone());
+    let ids: Vec<u64> =
+        e.c.list_proposals(None, None)
+            .iter()
+            .map(|p| p.id.0)
+            .collect();
+    assert_eq!(ids, vec![p3.0, p2.0, p1.0], "newest first");
+    let page: Vec<u64> =
+        e.c.list_proposals(Some(1), Some(1))
+            .iter()
+            .map(|p| p.id.0)
+            .collect();
+    assert_eq!(page, vec![p2.0]);
+    assert_eq!(e.c.votes_available(p1, acc("sybil.testnet")), 0);
 }

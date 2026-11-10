@@ -37,6 +37,18 @@ pub trait NftApprovalReceiver {
 
 const APPROVAL_STORAGE: NearToken = NearToken::from_micronear(1_000);
 
+/// The holder-set safety state of a unit before an `nft_transfer_call`, passed to `nft_resolve_transfer` so a
+/// revert restores it exactly. Without it, a receiver could set a lien or guardians while it briefly held the token
+/// during `nft_on_transfer`, then return `true` and hand the token back carrying them. Callback argument only;
+/// never stored.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SafetySnapshot {
+    pub guardians: Vec<AccountId>,
+    pub beneficiary: Option<AccountId>,
+    pub lien: Option<Lien>,
+}
+
 #[near]
 impl Estate {
     // ---------- NEP-171 core ----------
@@ -72,6 +84,11 @@ impl Estate {
         let sender = env::predecessor_account_id();
         let owner = self.authorize_transfer(&unit, &sender, approval_id);
         let previous_approvals = unit.approvals.clone();
+        let previous_safety = SafetySnapshot {
+            guardians: unit.guardians.clone(),
+            beneficiary: unit.beneficiary.clone(),
+            lien: unit.lien.clone(),
+        };
         let _ = memo;
         self.move_token(&mut unit, &owner, &receiver_id, true);
         self.save(unit);
@@ -81,12 +98,20 @@ impl Estate {
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_NFT_RESOLVE)
-                    .nft_resolve_transfer(owner, receiver_id, token_id, Some(previous_approvals)),
+                    .nft_resolve_transfer(
+                        owner,
+                        receiver_id,
+                        token_id,
+                        Some(previous_approvals),
+                        Some(previous_safety),
+                    ),
             )
             .into()
     }
 
-    /// Returns true if the token stayed with the receiver.
+    /// Returns true if the token stayed with the receiver. Per NEP-171 the token goes back to the previous owner
+    /// when `nft_on_transfer` returned `true`, failed, or returned anything that isn't a JSON bool.
+    /// `previous_safety` is absent only in callbacks scheduled before this argument existed.
     #[private]
     pub fn nft_resolve_transfer(
         &mut self,
@@ -94,11 +119,12 @@ impl Estate {
         receiver_id: AccountId,
         token_id: String,
         approved_account_ids: Option<HashMap<AccountId, u64>>,
+        previous_safety: Option<SafetySnapshot>,
     ) -> bool {
         let keep = match result_bytes(0, 64) {
             Some(b) => near_sdk::serde_json::from_slice::<bool>(&b)
                 .map(|r| !r)
-                .unwrap_or(true),
+                .unwrap_or(false),
             None => false,
         };
         if keep {
@@ -113,6 +139,16 @@ impl Estate {
         self.move_token(&mut unit, &receiver_id, &previous_owner_id, false);
         if let Some(a) = approved_account_ids {
             unit.approvals = a;
+        }
+        // Undo whatever the receiver set while it held the token (move_token already cleared its guardians and
+        // beneficiary); a lien it added must not survive the revert. `lien` was None before (guarded transfer).
+        match previous_safety {
+            Some(s) => {
+                unit.guardians = s.guardians;
+                unit.beneficiary = s.beneficiary;
+                unit.lien = s.lien;
+            }
+            None => unit.lien = None,
         }
         self.save(unit);
         false
@@ -327,8 +363,14 @@ impl Estate {
         self.remove_token(from, &unit.id);
         self.add_token(to, &unit.id);
         unit.holder = Some(to.clone());
+        // Everything the previous holder set up for themselves goes with them: approvals, a pending recovery,
+        // guardians (who could otherwise "recover" a sold token back to the seller) and the beneficiary.
+        // finish_recovery puts guardians and beneficiary back (same person, new key); a lien stays (lender
+        // protection; guarded transfers and sales can't happen while one is set).
         unit.approvals.clear();
         unit.recovery = None;
+        unit.guardians.clear();
+        unit.beneficiary = None;
         if unit
             .listing
             .as_ref()

@@ -47,6 +47,15 @@ pub const MAX_UNITS_PER_CALL: usize = 8;
 /// Each release is a unit transfer (25 Tgas) + callback (15 Tgas): 6 fit in one 300 Tgas call.
 pub const MAX_RELEASE_PER_CALL: usize = 6;
 pub const BPS: u128 = 10_000;
+/// Storage deposit `propose` requires; the estate keeps it (a proposal's record lives forever). Covers ~5 KB, well
+/// above a proposal with a 280-char reason and a 100-token `voted` list, and makes proposal spam cost real NEAR.
+pub const PROPOSAL_DEPOSIT: NearToken = NearToken::from_millinear(50);
+/// Money-moving or estate-stopping votes (`StepIn`, `ReplaceSurveyor`, `Freeze`) need at least this many tokens in
+/// the electorate, so a single early buyer (one 10% deposit) can't pass them alone; a majority then needs ≥ 2 holders'
+/// tokens.
+pub const MIN_ELECTORATE: u32 = 3;
+/// ...and at least 1/`MIN_ELECTORATE_SHARE` of all units (25%), so a majority always represents > 12.5% of the estate.
+pub const MIN_ELECTORATE_SHARE: u32 = 4;
 
 pub const GAS_UNIT_INIT: Gas = Gas::from_tgas(5);
 pub const GAS_USDC_REGISTER: Gas = Gas::from_tgas(5);
@@ -187,6 +196,7 @@ impl Estate {
             "https mode needs a verdict_relayer"
         );
         nft_metadata.assert_valid();
+        assert_safe_checks(&params, &geofence, &verifier);
 
         Self {
             developer_id,
@@ -245,6 +255,39 @@ impl Estate {
 /// Did the promise result at `i` succeed? (Payload ignored.)
 pub(crate) fn result_ok(i: u64) -> bool {
     env::promise_results_count() > i && env::promise_result_checked(i, 64 * 1024).is_ok()
+}
+
+/// Outside the playground, the photo checks can't be configured away (pre-audit review H2/M3): a real geofence, a
+/// meaningful reuse threshold and AI confidence, a bounded photo age, and a pinned verifier build.
+pub(crate) fn assert_safe_checks(params: &Params, geofence: &Geofence, verifier: &VerifierSource) {
+    if params.playground {
+        return;
+    }
+    ensure!(
+        (50..=2_000).contains(&geofence.radius_m),
+        "E_BAD_ARGS",
+        "geofence.radius_m must be 50..=2000 outside the playground"
+    );
+    ensure!(
+        (6..=16).contains(&params.max_phash_distance),
+        "E_BAD_ARGS",
+        "max_phash_distance must be 6..=16 outside the playground"
+    );
+    ensure!(
+        params.min_ai_confidence >= 60 && params.min_ai_confidence <= 100,
+        "E_BAD_ARGS",
+        "min_ai_confidence must be 60..=100 outside the playground"
+    );
+    ensure!(
+        (1..=168).contains(&params.max_exif_age_h),
+        "E_BAD_ARGS",
+        "max_exif_age_h must be 1..=168 outside the playground"
+    );
+    ensure!(
+        !verifier.commit.trim().is_empty(),
+        "E_BAD_ARGS",
+        "the verifier must be pinned (non-empty commit / version key) outside the playground"
+    );
 }
 
 /// The payload of promise result `i`, if it succeeded.

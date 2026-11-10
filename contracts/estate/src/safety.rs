@@ -82,7 +82,16 @@ impl Estate {
         let ready = r.ready_at.map(|t| Self::now() >= t.0).unwrap_or(false);
         ensure!(ready, "E_RECOVERY", "recovery isn't ready yet");
         let from = unit.holder.clone().unwrap();
+        // Recovery moves the token to the same person's new account, so their guardians and beneficiary carry
+        // over (move_token clears them for every other change of hands).
+        let guardians = unit.guardians.clone();
+        let beneficiary = unit.beneficiary.clone();
         self.move_token(&mut unit, &from, &r.new_owner, false);
+        unit.guardians = guardians
+            .into_iter()
+            .filter(|g| g != &r.new_owner)
+            .collect();
+        unit.beneficiary = beneficiary;
         self.save(unit);
     }
 
@@ -103,7 +112,19 @@ impl Estate {
             "the holder can't be the lender"
         );
         ensure!(unit.lien.is_none(), "E_LIEN", "a lien is already set");
+        // A defaulter must not escape the default listing by pledging the unit (the old code cleared any listing).
+        ensure!(
+            matches!(unit.status, UnitStatus::Allocated | UnitStatus::HandedOver)
+                && unit
+                    .listing
+                    .as_ref()
+                    .map(|l| l.kind != ListingKind::Default)
+                    .unwrap_or(true),
+            "E_LISTING",
+            "a unit in default can't take a lien; it can only change hands by sale"
+        );
         unit.lien = Some(Lien { lender, cap });
+        // Only a voluntary listing can be open here; a lien blocks selling, so it goes.
         unit.listing = None;
         self.save(unit);
     }

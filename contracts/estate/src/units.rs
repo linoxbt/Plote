@@ -130,8 +130,11 @@ impl Estate {
                 USDC_STORAGE,
                 GAS_USDC_REGISTER,
             );
+            // Joint promise: the callback sees both results (0 = account batch, 1 = USDC registration). With
+            // `create.then(register)` it saw only the registration, which succeeds even for an account that
+            // doesn't exist, so a failed creation left a "ready" unit that could take 1Click money nobody can move.
             create
-                .then(register)
+                .and(register)
                 .then(
                     Self::ext(estate.clone())
                         .with_static_gas(GAS_ON_UNIT_CREATED)
@@ -141,21 +144,75 @@ impl Estate {
         }
     }
 
+    /// Callback of `add_units` and `retry_unit_setup`. Result 0: the unit account exists with the unit code (the
+    /// creation batch, or `get_info` on retry). Result 1: its USDC registration.
     #[private]
     pub fn on_unit_created(&mut self, unit_id: String) -> bool {
         let Some(mut unit) = self.units.get(&unit_id).cloned() else {
             return false;
         };
-        if crate::result_ok(0) {
+        if unit.ready {
+            return true;
+        }
+        let account_ok = crate::result_ok(0);
+        let registered = crate::result_ok(1);
+        if account_ok && registered {
             unit.ready = true;
             self.save(unit);
             true
+        } else if account_ok {
+            // The account exists (so `add_units` can't recreate it) but isn't registered on USDC: keep the record
+            // (not ready: nobody can reserve or pay) for `retry_unit_setup`.
+            env::log_str(&format!(
+                "unit {} USDC registration failed; call retry_unit_setup",
+                unit_id
+            ));
+            false
         } else {
-            // The account (or its USDC registration) couldn't be created. Drop the record so it can be retried.
+            // The account couldn't be created (the batch rolled back). Drop the record so add_units can retry.
             env::log_str(&format!("unit {} creation failed; removed", unit_id));
             self.units.remove(&unit_id);
             false
         }
+    }
+
+    /// Developer: finish setting up a unit whose USDC registration failed. Checks that the unit account runs the
+    /// unit code (`get_info`) and registers it again; attach at least `USDC_STORAGE` (0.00125 NEAR).
+    #[payable]
+    pub fn retry_unit_setup(&mut self, unit_id: String) -> Promise {
+        self.assert_developer();
+        let unit = self.unit(&unit_id);
+        ensure!(
+            !unit.ready,
+            "E_BAD_ARGS",
+            "unit {} is already set up",
+            unit_id
+        );
+        ensure!(
+            env::attached_deposit() >= USDC_STORAGE,
+            "E_DEPOSIT",
+            "attach {} for the USDC registration",
+            USDC_STORAGE
+        );
+        let check = Promise::new(unit.account.clone()).function_call(
+            "get_info".to_string(),
+            b"{}".to_vec(),
+            NearToken::from_yoctonear(0),
+            GAS_UNIT_INIT,
+        );
+        let register = Promise::new(self.usdc_id.clone()).function_call(
+            "storage_deposit".to_string(),
+            json!({ "account_id": unit.account, "registration_only": true })
+                .to_string()
+                .into_bytes(),
+            USDC_STORAGE,
+            GAS_USDC_REGISTER,
+        );
+        check.and(register).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_ON_UNIT_CREATED)
+                .on_unit_created(unit_id),
+        )
     }
 
     /// Tops up the NEAR budget used to pay OutLayer for photo checks.
@@ -174,6 +231,7 @@ impl Estate {
             "E_ALREADY_SOLD",
             "the verifier is fixed once a unit is sold"
         );
+        crate::assert_safe_checks(&self.params, &self.geofence, &verifier);
         self.verifier = verifier;
     }
 

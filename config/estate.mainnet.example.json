@@ -55,7 +55,7 @@
     "default_grace_ns": "2592000000000000",
     "penalty_bps": 500,
     "dust_threshold": "1000000",
-    "late_claim_ns": "604800000000000",
+    "late_claim_ns": "7200000000000",
     "capture_ttl_ns": "1800000000000",
     "proposal_period_ns": "604800000000000",
     "max_phash_distance": 8,

@@ -12,11 +12,12 @@ const DEV: &str = "dev.test.near";
 const QS: &str = "qs.test.near";
 const ALICE: &str = "alice.test.near";
 const BOB: &str = "bob.test.near";
+const CAROL: &str = "carol.test.near";
 const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 const MILLI: u128 = NEAR / 1000;
 const USD: u128 = 1_000_000;
 const T0: i64 = 1_800_000_000; // seconds
-const UNITS: [&str; 2] = ["a-4b", "b-2a"];
+const UNITS: [&str; 3] = ["a-4b", "b-2a", "c-1a"];
 
 fn wasm(name: &str) -> Vec<u8> {
     let p = format!(
@@ -103,7 +104,7 @@ fn setup() -> MockChain {
         "estate new",
     );
     // estate and developer need USDC accounts (resale escrow, payouts)
-    for who in [ESTATE, DEV, ALICE, BOB] {
+    for who in [ESTATE, DEV, ALICE, BOB, CAROL] {
         ok(
             c.call(USDC, "storage_deposit")
                 .from(DEV)
@@ -386,7 +387,9 @@ fn holder_freeze_vote_blocks_release() {
     let c = setup();
     buy(&c, "a-4b", ALICE, 8_500 * USD);
     buy(&c, "b-2a", BOB, 8_500 * USD);
-    let o = ok(c.call(ESTATE, "propose").from(ALICE).args(json!({ "kind": { "Freeze": { "reason": "No work for 6 weeks", "refunds_open": true } } }).to_string()).fire().unwrap(), "propose");
+    buy(&c, "c-1a", CAROL, 8_500 * USD);
+    // Freeze needs at least 3 eligible tokens and 25% of units allocated; opening a proposal costs 0.05 NEAR.
+    let o = ok(c.call(ESTATE, "propose").from(ALICE).args(json!({ "kind": { "Freeze": { "reason": "No work for 6 weeks", "refunds_open": true } } }).to_string()).attach(50 * MILLI).fire().unwrap(), "propose");
     let pid: String = serde_json::from_slice(&o.return_data.unwrap()).unwrap();
     ok(
         c.call(ESTATE, "vote")
@@ -398,7 +401,7 @@ fn holder_freeze_vote_blocks_release() {
     );
     assert!(
         view(&c, "get_estate", json!({}))["frozen"].is_null(),
-        "1 of 2 tokens isn't a majority"
+        "1 of 3 tokens isn't a majority"
     );
     ok(
         c.call(ESTATE, "vote")
