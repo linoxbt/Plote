@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { BracketCard, LinkButton, Page, PageHeader } from "@/components/ui";
+import { BracketCard, Page, PageHeader } from "@/components/ui";
+import { CtaBand, Hl } from "@/components/site";
 
 export const metadata: Metadata = { title: "How it works", description: "Each off-plan unit is a NEAR account. Money moves only on a TEE-checked, surveyor-signed milestone." };
 
@@ -14,6 +15,7 @@ function Box({ title, sub, tone = "default" }: { title: string; sub: string; ton
 
 export default function HowItWorks() {
   return (
+    <>
     <Page>
       <PageHeader eyebrow="LONG-FORM" title="How Plote works">
         The chain holds every rule that touches money. The web app only reads state and asks wallets to sign. Off-chain services do what a contract can&apos;t, and each one returns something the contract can check.
@@ -94,10 +96,8 @@ export default function HowItWorks() {
           <li>The secure hardware proves the checks ran on the submitted photo, not that the scene is honest. EXIF can be forged; the one-time challenge code and the surveyor&apos;s signature are there for that.</li>
         </ul>
       </section>
-      <div className="mt-8 flex flex-wrap gap-3">
-        <LinkButton href="/check" variant="primary">Check a unit →</LinkButton>
-        <LinkButton href="/estates/playground">Try the Playground</LinkButton>
-      </div>
     </Page>
+    <CtaBand title={<>See it run, <Hl>end to end</Hl>.</>} lead="Reserve a Playground unit, photograph the challenge code, watch the verdict land and the first 20% release." primary={{ href: "/estates/playground", label: "Try the Playground" }} secondary={{ href: "/check", label: "Check a unit" }} />
+    </>
   );
 }

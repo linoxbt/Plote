@@ -114,17 +114,17 @@ const PROPOSAL_BADGE: Record<ProposalStatus, BadgeDef> = {
 };
 
 const TONE = {
-  teal: "text-teal bg-teal-dim/40",
-  amber: "text-amber bg-amber/10",
-  red: "text-red bg-red/10",
-  gold: "text-gold bg-gold/10",
-  muted: "text-muted bg-surface-2",
+  teal: "text-teal bg-teal/10 ring-1 ring-teal/25",
+  amber: "text-amber bg-amber/10 ring-1 ring-amber/25",
+  red: "text-red bg-red/10 ring-1 ring-red/25",
+  gold: "text-gold bg-gold/10 ring-1 ring-gold/25",
+  muted: "text-muted bg-white/[0.05] ring-1 ring-white/10",
 };
 
 function Badge({ def, className, suffix }: { def: BadgeDef; className?: string; suffix?: string }) {
   const { Icon } = def;
   return (
-    <span className={clsx("mono inline-flex items-center gap-1.5 px-2 py-1 text-xs font-semibold uppercase tracking-wide", TONE[def.tone], className)}>
+    <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-normal", TONE[def.tone], className)}>
       <Icon className={clsx("h-3.5 w-3.5", def.Icon === Loader2 && "animate-spin")} strokeWidth={1.75} aria-hidden />
       {def.label}
       {suffix ? <span className="font-normal normal-case">{suffix}</span> : null}
@@ -154,11 +154,11 @@ export function NetworkPill({ className }: { className?: string }) {
   const main = NETWORK === "mainnet";
   return (
     <span
-      className={clsx("mono inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold tracking-[0.1em]", main ? "bg-gold/10 text-gold" : "bg-teal-dim/40 text-teal", className)}
+      className={clsx("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-normal", main ? "bg-gold/10 text-gold ring-1 ring-gold/30" : "bg-teal/10 text-teal ring-1 ring-teal/30", className)}
       title={main ? "Mainnet demo build" : "NEAR testnet — no real money"}
     >
       <span className={clsx("h-1.5 w-1.5 rounded-full", main ? "bg-gold" : "bg-teal")} aria-hidden />
-      {main ? "MAINNET" : "TESTNET"}
+      {main ? "Mainnet" : "Testnet"}
     </span>
   );
 }

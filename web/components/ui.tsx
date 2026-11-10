@@ -22,7 +22,7 @@ export function BracketCard({
   return (
     <Tag
       className={clsx(
-        "corners relative bg-surface p-4 sm:p-5",
+        "corners relative bg-surface p-5 sm:p-6",
         tone !== "default" && `corners-${tone}`,
         hover && "corners-hover",
         className,
@@ -191,11 +191,17 @@ export function EmptyState({ title, children, action, icon, className }: { title
 
 export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
+    <header className="relative mb-8 flex flex-col gap-5 sm:mb-12 sm:flex-row sm:items-end sm:justify-between">
+      <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 -z-10 h-72 w-[38rem] max-w-[120vw] rounded-full bg-slate/40 blur-3xl" />
       <div className="min-w-0">
-        {eyebrow ? <p className="mono mb-2 text-xs uppercase tracking-[0.12em] text-teal">{eyebrow}</p> : null}
-        <h1 className="text-3xl font-semibold sm:text-[40px]">{title}</h1>
-        {children ? <div className="mt-2 max-w-2xl text-muted">{children}</div> : null}
+        {eyebrow ? (
+          <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-3 py-1.5 text-xs text-muted ring-1 ring-white/10">
+            <span className="h-1.5 w-1.5 rounded-full bg-gold" aria-hidden />
+            {eyebrow}
+          </p>
+        ) : null}
+        <h1 className="text-[34px] sm:text-[52px]">{title}</h1>
+        {children ? <div className="mt-3 max-w-2xl text-[15px] text-muted sm:text-base">{children}</div> : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </header>
@@ -203,7 +209,7 @@ export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: Re
 }
 
 export function Page({ children, className, narrow }: { children: ReactNode; className?: string; narrow?: boolean }) {
-  return <main id="main" className={clsx("mx-auto w-full px-4 py-8 sm:px-6 sm:py-12", narrow ? "max-w-3xl" : "max-w-6xl", className)}>{children}</main>;
+  return <main id="main" className={clsx("relative mx-auto w-full px-4 py-10 sm:px-6 sm:py-16 lg:px-8", narrow ? "max-w-3xl" : "max-w-7xl", className)}>{children}</main>;
 }
 
 export function Stat({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {

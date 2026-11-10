@@ -1,16 +1,23 @@
 @import "tailwindcss";
 
-/* SPEC §11.2 tokens. Dark only (light mode isn't shipped for the hackathon). */
+/*
+ * Plote design system — inspired by coredao.org: a near-black canvas, large soft glows, light Lexend display type,
+ * pill buttons and rounded dark cards. Plote's meanings stay: gold = value / highlight, teal = verified / action,
+ * red = refund / danger, amber = pending. Dark only.
+ */
 :root {
-  --bg: #0a0b0d;
-  --surface: #111317;
-  --surface-2: #171a1f;
-  --line: #252a31;
-  --text: #e9ecef;
-  --muted: #8b939d;
+  --bg: #0a0a0b;
+  --bg-2: #0f0f12;
+  --surface: #141418;
+  --surface-2: #1c1c22;
+  --line: #26262d;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
   --teal: #2dd4bf;
   --teal-dim: #134e48;
   --gold: #e8b04b;
+  --ember: #e07a2c;
+  --slate: #3d5a6c;
   --red: #f06a6a;
   --amber: #f2a93b;
   color-scheme: dark;
@@ -18,6 +25,7 @@
 
 @theme inline {
   --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-line: var(--line);
@@ -26,12 +34,13 @@
   --color-teal: var(--teal);
   --color-teal-dim: var(--teal-dim);
   --color-gold: var(--gold);
+  --color-ember: var(--ember);
+  --color-slate: var(--slate);
   --color-red: var(--red);
   --color-amber: var(--amber);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-space), var(--font-inter), ui-sans-serif, sans-serif;
+  --font-sans: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jet), ui-monospace, SFMono-Regular, Menlo, monospace;
-  --radius-xs: 2px;
 }
 
 html,
@@ -42,9 +51,11 @@ body {
 
 body {
   font-family: var(--font-sans);
-  line-height: 1.6;
+  font-weight: 300;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
+  overflow-x: clip;
 }
 
 h1,
@@ -52,8 +63,18 @@ h2,
 h3,
 h4 {
   font-family: var(--font-display);
-  line-height: 1.2;
+  font-weight: 300;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+h3,
+h4 {
+  font-weight: 400;
   letter-spacing: -0.01em;
+}
+strong,
+b {
+  font-weight: 500;
 }
 
 ::selection {
@@ -76,140 +97,174 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- survey-beacon corner brackets (the signature device). No borders, four corners. ---- */
+/* The accent word in a headline ("Still your coins" → "Still your money"). */
+.hl {
+  color: var(--gold);
+}
+
+/* ---- cards: rounded dark panels with a hairline (class name kept from v1 so every page restyles) ---- */
 .corners {
-  --c: var(--line);
-  --l: 12px;
-  --w: 1.5px;
-  background-image:
-    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
-    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
-    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
-    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c));
-  background-repeat: no-repeat;
-  background-size:
-    var(--l) var(--w), var(--w) var(--l),
-    var(--l) var(--w), var(--w) var(--l),
-    var(--l) var(--w), var(--w) var(--l),
-    var(--l) var(--w), var(--w) var(--l);
-  background-position:
-    top left, top left,
-    top right, top right,
-    bottom left, bottom left,
-    bottom right, bottom right;
+  border-radius: 20px;
+  background-color: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow 160ms ease-out, background-color 160ms ease-out;
 }
 .corners-hover:hover,
 .corners-hover:focus-within,
 .corners-active {
-  --c: var(--teal);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 .corners-teal {
-  --c: var(--teal);
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.45);
 }
 .corners-red {
-  --c: var(--red);
+  box-shadow: inset 0 0 0 1px rgba(240, 106, 106, 0.45);
 }
 .corners-amber {
-  --c: var(--amber);
+  box-shadow: inset 0 0 0 1px rgba(242, 169, 59, 0.45);
 }
 .corners-gold {
-  --c: var(--gold);
+  box-shadow: inset 0 0 0 1px rgba(232, 176, 75, 0.5);
 }
 
-/* ---- buttons ---- */
+/* ---- glow panels (the signature device) ---- */
+.glow-gold {
+  background:
+    radial-gradient(120% 120% at 100% 100%, rgba(224, 122, 44, 0.95) 0%, rgba(224, 122, 44, 0.35) 32%, rgba(224, 122, 44, 0) 62%),
+    radial-gradient(90% 80% at 0% 0%, rgba(61, 90, 108, 0.55) 0%, rgba(61, 90, 108, 0) 60%),
+    var(--surface);
+}
+.glow-slate {
+  background:
+    radial-gradient(110% 110% at 0% 0%, rgba(61, 90, 108, 0.95) 0%, rgba(61, 90, 108, 0.3) 40%, rgba(61, 90, 108, 0) 70%),
+    radial-gradient(80% 80% at 100% 100%, rgba(224, 122, 44, 0.35) 0%, rgba(224, 122, 44, 0) 60%),
+    var(--surface);
+}
+.glow-teal {
+  background:
+    radial-gradient(110% 110% at 100% 0%, rgba(45, 212, 191, 0.35) 0%, rgba(45, 212, 191, 0) 60%),
+    radial-gradient(90% 90% at 0% 100%, rgba(61, 90, 108, 0.6) 0%, rgba(61, 90, 108, 0) 65%),
+    var(--surface);
+}
+/* Page-level ambient glow behind a hero. */
+.hero-glow {
+  background:
+    radial-gradient(70% 60% at 85% 100%, rgba(224, 122, 44, 0.55) 0%, rgba(224, 122, 44, 0) 70%),
+    radial-gradient(60% 55% at 10% 0%, rgba(61, 90, 108, 0.6) 0%, rgba(61, 90, 108, 0) 70%),
+    var(--bg);
+}
+.glass {
+  background: rgba(20, 20, 24, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* ---- buttons: pills ---- */
 .btn {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 600;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  min-height: 44px;
-  padding: 0 1rem;
-  border-radius: 2px;
+  min-height: 48px;
+  padding: 0 1.4rem;
+  border-radius: 9999px;
   white-space: nowrap;
   transition:
     background-color 150ms ease-out,
     color 150ms ease-out,
+    box-shadow 150ms ease-out,
     opacity 150ms ease-out;
   cursor: pointer;
   user-select: none;
 }
 .btn:disabled,
 .btn[aria-disabled="true"] {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 .btn-primary {
-  background-color: var(--teal);
-  color: var(--bg);
+  background-color: #ffffff;
+  color: #0a0a0b;
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: #5eead4;
+  background-color: #e4e4e7;
 }
 .btn-ghost {
-  --c: var(--line);
   color: var(--text);
-  background-color: transparent;
+  background-color: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 .btn-ghost:hover:not(:disabled),
 .btn-ghost:focus-visible {
-  --c: var(--teal);
-  color: var(--teal);
+  background-color: rgba(255, 255, 255, 0.11);
 }
 .btn-danger {
   background-color: var(--red);
-  color: var(--bg);
+  color: #0a0a0b;
 }
 .btn-gold {
   background-color: var(--gold);
-  color: var(--bg);
+  color: #0a0a0b;
 }
 .btn-sm {
   min-height: 44px;
-  padding: 0 0.75rem;
-  font-size: 13px;
+  padding: 0 1.1rem;
+  font-size: 14px;
 }
 
 /* ---- inputs ---- */
 .input {
   width: 100%;
-  min-height: 44px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  padding: 0 0.75rem;
+  min-height: 48px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 0 1rem;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 15px;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
 }
 .input::placeholder {
-  color: var(--muted);
-  opacity: 0.7;
+  color: #71717a;
 }
 .input:focus {
   border-color: var(--teal);
   outline: none;
+  background: rgba(255, 255, 255, 0.06);
 }
 textarea.input {
-  padding: 0.6rem 0.75rem;
-  min-height: 88px;
+  padding: 0.75rem 1rem;
+  min-height: 96px;
 }
 .label {
   display: block;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 400;
   color: var(--muted);
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.4rem;
 }
 
-/* ---- survey-paper grid (hero only) ---- */
+/* ---- subtle dotted grid (kept for illustrations) ---- */
 .survey-grid {
-  background-image: radial-gradient(rgba(233, 236, 239, 0.06) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(244, 244, 245, 0.05) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+/* ---- partner strip ---- */
+.marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 40s linear infinite;
+}
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 /* ---- skeleton ---- */
@@ -217,7 +272,7 @@ textarea.input {
   background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
-  border-radius: 2px;
+  border-radius: 8px;
 }
 @keyframes shimmer {
   0% {
@@ -233,6 +288,14 @@ textarea.input {
   transition: opacity 900ms ease-in-out;
 }
 
+/* details/summary used for FAQ */
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -244,6 +307,9 @@ textarea.input {
   }
   .step-check {
     stroke-dashoffset: 0;
+  }
+  .marquee {
+    animation: none;
   }
 }
 

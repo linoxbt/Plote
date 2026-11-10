@@ -96,37 +96,100 @@ export function HeroCheck() {
 
 // ---------------- live strip ----------------
 
-export function LiveStrip() {
+/** Live totals across the configured estates; null = not known yet (shows "—", never a made-up number). */
+export function useLiveTotals() {
   const estates = useAllEstates();
   const ms = useAllMilestones();
   const okE = estates.filter((x) => x.q.data);
   const okM = ms.filter((x) => x.q.data);
-  const loading = estates.some((x) => x.q.isLoading);
-  const units = okE.length ? okE.reduce((n, x) => n + (x.q.data?.unit_count ?? 0), 0) : null;
-  const escrow = okE.length ? okE.reduce((n, x) => n + toBig(x.q.data?.totals.in_escrow), 0n) : null;
-  const verified = okM.length ? okM.reduce((n, x) => n + (x.q.data ?? []).filter((m) => m.status === "Verified" || m.status === "Approved").length, 0) : null;
-  const refunds = okE.length ? okE.reduce((n, x) => n + (x.q.data?.stats.units_refunded ?? 0), 0) : null;
-  const link = okE[0]?.account ?? DEMO_ESTATE;
+  return {
+    loading: estates.some((x) => x.q.isLoading),
+    link: okE[0]?.account ?? DEMO_ESTATE,
+    units: okE.length ? okE.reduce((n, x) => n + (x.q.data?.unit_count ?? 0), 0) : null,
+    escrow: okE.length ? okE.reduce((n, x) => n + toBig(x.q.data?.totals.in_escrow), 0n) : null,
+    verified: okM.length ? okM.reduce((n, x) => n + (x.q.data ?? []).filter((m) => m.status === "Verified" || m.status === "Approved").length, 0) : null,
+    refunds: okE.length ? okE.reduce((n, x) => n + (x.q.data?.stats.units_refunded ?? 0), 0) : null,
+  };
+}
+
+function LiveValue({ v, loading }: { v: string | null; loading: boolean }) {
+  if (loading && v === null) return <span className="skeleton inline-block h-8 w-20 align-middle" />;
+  return v === null ? <span aria-label="not available">—</span> : <>{v}</>;
+}
+
+/** "Plote in numbers": four live counters, each linking to the chain. */
+export function LiveStrip() {
+  const t = useLiveTotals();
   const items: [string, string | null][] = [
-    ["UNITS ON PLOTE", units === null ? null : String(units)],
-    ["USDC IN ESCROW", escrow === null ? null : formatUsd(escrow)],
-    ["MILESTONES VERIFIED", verified === null ? null : String(verified)],
-    ["REFUNDS PAID", refunds === null ? null : String(refunds)],
+    ["Units on Plote", t.units === null ? null : String(t.units)],
+    ["USDC in escrow", t.escrow === null ? null : formatUsd(t.escrow)],
+    ["Milestones verified", t.verified === null ? null : String(t.verified)],
+    ["Refunds paid", t.refunds === null ? null : String(t.refunds)],
   ];
   return (
     <div>
-      <dl className="grid grid-cols-2 gap-px bg-line md:grid-cols-4">
-        {items.map(([k, v]) => (
-          <div key={k} className="bg-bg p-4 sm:p-5">
-            <dt className="mono text-[11px] tracking-[0.12em] text-muted">{k}</dt>
-            <dd className="mono mt-1 flex items-baseline gap-1 text-2xl tabular-nums sm:text-3xl" aria-busy={loading}>
-              {loading && v === null ? <span className="skeleton inline-block h-7 w-16" /> : (v ?? <span aria-label="not available">—</span>)}
-              <ChainLink account={link} />
+      <dl className="grid grid-cols-2 lg:grid-cols-4">
+        {items.map(([k, v], i) => (
+          <div key={k} className={clsx("border-white/10 px-1 py-6 sm:px-6", i % 2 === 1 && "border-l", i >= 2 && "border-t lg:border-t-0", i > 0 && "lg:border-l")}>
+            <dd className="mono flex items-baseline gap-2 text-[30px] tabular-nums sm:text-[40px]" aria-busy={t.loading}>
+              <LiveValue v={v} loading={t.loading} />
+              <ChainLink account={t.link} />
             </dd>
+            <dt className="mt-1 text-sm uppercase tracking-[0.08em] text-muted">{k}</dt>
           </div>
         ))}
       </dl>
-      <p className="mt-3 text-sm text-muted">Live from NEAR {IS_MAINNET ? "mainnet" : "testnet"}. Every number links to the chain.</p>
+      <p className="mt-4 text-sm text-muted">Live from NEAR {IS_MAINNET ? "mainnet" : "testnet"}. Every number links to the chain.</p>
+    </div>
+  );
+}
+
+/** Hero glass card: the live escrow figure. */
+export function LiveEscrowCard() {
+  const t = useLiveTotals();
+  return (
+    <div className="glass flex h-full flex-col justify-between gap-4 rounded-3xl p-6">
+      <p className="text-sm text-muted">USDC held in unit escrow · live</p>
+      <p className="mono text-[40px] leading-none tabular-nums sm:text-[48px]">
+        <LiveValue v={t.escrow === null ? null : formatUsd(t.escrow)} loading={t.loading} />
+      </p>
+      <p className="flex items-center gap-2 text-xs text-muted">
+        <span className="h-1.5 w-1.5 rounded-full bg-teal" aria-hidden /> across {t.units === null ? "—" : t.units} units on NEAR {IS_MAINNET ? "mainnet" : "testnet"}
+        <ChainLink account={t.link} />
+      </p>
+    </div>
+  );
+}
+
+/** Live estate cards (Core's news-card row). */
+export function EstateCards() {
+  const estates = useAllEstates();
+  return (
+    <div className="grid gap-5 md:grid-cols-3">
+      {estates.map(({ account, q }) => {
+        const e = q.data;
+        const slug = estateSlug(account);
+        const name = e?.name ?? slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        return (
+          <Link key={account} href={`/estates/${slug}`} className="group flex flex-col overflow-hidden rounded-3xl bg-surface ring-1 ring-white/[0.08] transition-colors hover:ring-white/20">
+            <div className="glow-slate relative h-40">
+              <span className="absolute left-5 top-5 rounded-full bg-black/30 px-3 py-1 text-xs text-text/90 ring-1 ring-white/15">{slug === "playground" ? "Judge sandbox" : "Demo estate"}</span>
+              <svg viewBox="0 0 120 80" className="absolute bottom-0 right-4 h-32 w-auto opacity-70" aria-hidden>
+                {[0, 1, 2, 3].map((f) => (
+                  <path key={f} d={`M30 ${70 - f * 14}l30 -12l30 12l-30 12z M30 ${70 - f * 14}v-12 M90 ${70 - f * 14}v-12`} fill="none" stroke={f === 3 ? "#E8B04B" : "#2DD4BF"} strokeWidth="1" opacity={f === 3 ? 0.9 : 0.6} />
+                ))}
+              </svg>
+            </div>
+            <div className="flex flex-1 flex-col gap-2 p-6">
+              <p className="text-lg">{name}</p>
+              <p className="text-sm text-muted">{e?.location || (q.isLoading ? "Loading…" : q.error ? "Awaiting deployment" : "")}</p>
+              <p className="mono mt-auto pt-3 text-sm text-muted">
+                {e ? `${e.unit_count} units · ${formatUsd(toBig(e.totals.in_escrow))} in escrow` : "—"}
+              </p>
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -249,7 +312,7 @@ export function ChainChips() {
   return (
     <ul className="flex flex-wrap gap-2" aria-label="Supported chains">
       {chains.map((c) => (
-        <li key={c} className="mono corners bg-surface px-3 py-2 text-sm">
+        <li key={c} className="rounded-full bg-white/[0.05] px-4 py-2 text-sm ring-1 ring-white/10">
           {chainName(c)}
         </li>
       ))}

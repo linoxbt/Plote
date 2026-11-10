@@ -104,7 +104,7 @@ export function ConnectButton({ compact = false }: { compact?: boolean }) {
   if (accountId) {
     return (
       <div className="flex items-center gap-1">
-        <a href="/me" className="btn btn-ghost corners btn-sm mono max-w-[11rem]" title={accountId}>
+        <a href="/me" className="btn btn-ghost btn-sm mono max-w-[11rem]" title={accountId}>
           <span className="h-1.5 w-1.5 rounded-full bg-teal" aria-hidden />
           <span className="truncate">{truncateAccount(accountId, compact ? 14 : 20)}</span>
         </a>
@@ -116,7 +116,7 @@ export function ConnectButton({ compact = false }: { compact?: boolean }) {
   }
   return (
     <Button size="sm" onClick={connect} loading={connecting}>
-      <WalletIcon className="h-4 w-4" strokeWidth={1.5} aria-hidden />[Connect wallet]
+      <WalletIcon className="h-4 w-4" strokeWidth={1.5} aria-hidden />Connect wallet
     </Button>
   );
 }
