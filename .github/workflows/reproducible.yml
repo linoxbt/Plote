@@ -1,0 +1,44 @@
+# Reproducible contract builds (docs/LAUNCH.md §3). Builds the estate and unit contracts inside the Docker image pinned
+# by digest in each Cargo.toml and prints their SHA-256 and NEAR code hashes, so anyone can compare them with what is
+# deployed (`view_account` → code_hash). Run it on the commit you are about to deploy.
+name: reproducible-build
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-near --locked --no-default-features
+      - name: reproducible builds
+        run: |
+          for c in estate unit; do
+            cargo near build reproducible-wasm --manifest-path contracts/$c/Cargo.toml
+          done
+      - name: hashes
+        run: |
+          python3 - <<'EOF'
+          import hashlib, glob
+          A = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+          def b58(b):
+              n, s = int.from_bytes(b, "big"), ""
+              while n:
+                  n, r = divmod(n, 58); s = A[r] + s
+              return s
+          with open("hashes.txt", "w") as out:
+              for f in sorted(glob.glob("target/near/plote_*/plote_*.wasm")):
+                  d = hashlib.sha256(open(f, "rb").read()).digest()
+                  line = f"{f}  sha256={d.hex()}  code_hash={b58(d)}"
+                  print(line); out.write(line + "\n")
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reproducible-wasm
+          path: |
+            target/near/plote_estate/plote_estate.wasm
+            target/near/plote_unit/plote_unit.wasm
+            hashes.txt
