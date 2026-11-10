@@ -6,6 +6,7 @@ exclude = ["verifier", "web", "tests/integration"]
 [workspace.package]
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/linoxbt/Plote"
 version = "0.1.0"
 
 [workspace.dependencies]
