@@ -1,7 +1,8 @@
 // POST /api/oneclick/submit — proxy of 1Click POST /v0/deposit/submit (optional; speeds up detection).
 
 import { z } from "zod";
-import { jsonError, ok, parseJson } from "@/lib/server/http";
+import { clientIp, jsonError, ok, parseJson } from "@/lib/server/http";
+import { rateLimitShared } from "@/lib/server/rate-limit";
 import { oneclickFetch } from "@/lib/server/oneclick-server";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 const Body = z.object({ depositAddress: z.string().min(10).max(120), txHash: z.string().min(10).max(200) });
 
 export async function POST(req: Request) {
+  const rl = await rateLimitShared(`oneclick-submit:${clientIp(req)}`, 10, 60_000);
+  if (!rl.ok) return jsonError("RATE_LIMITED", `Too many requests. Try again in ${rl.retryAfterS}s.`, 429, { "retry-after": String(rl.retryAfterS) });
   const p = await parseJson(req, Body);
   if (!p.ok) return p.res;
   try {

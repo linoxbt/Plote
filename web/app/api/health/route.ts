@@ -1,5 +1,6 @@
-import { ESTATES, NEAR_AI_URL, SUPABASE_URL, TABLES } from "@/lib/config";
-import { viewAccount, viewUncached } from "@/lib/near";
+import { NEAR_AI_URL, SUPABASE_URL, TABLES } from "@/lib/config";
+import { balances } from "@/lib/server/balances";
+import { timingSafeEqual } from "node:crypto";
 import { ok } from "@/lib/server/http";
 import { serverEnv } from "@/lib/server/env";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
@@ -18,41 +19,42 @@ async function timed(fn: () => Promise<Response>): Promise<{ ok: boolean; detail
   }
 }
 
-const YOCTO = 10n ** 24n;
-const nearStr = (y: bigint) => (Number(y / 10n ** 21n) / 1000).toFixed(2);
-// Below these the app stops working: the relayer can't pay gas, and an estate can't pay OutLayer for a photo check.
-const RELAYER_MIN = YOCTO; // 1 NEAR
-const BUDGET_MIN = (3n * YOCTO) / 10n; // 0.3 NEAR
+type Check = { ok: boolean; detail: string; configured?: boolean };
+type Health = Record<string, Check>;
 
-/** Low-balance check: an uptime monitor pointed at /api/health alerts when `balances.ok` turns false. */
-async function balances(relayerId: string | null): Promise<{ ok: boolean; detail: string; low: string[] }> {
-  const low: string[] = [];
-  const parts: string[] = [];
-  try {
-    if (relayerId) {
-      const a = await viewAccount(relayerId);
-      const bal = a ? BigInt(a.amount) : 0n;
-      parts.push(`relayer ${nearStr(bal)} NEAR`);
-      if (bal < RELAYER_MIN) low.push(`relayer ${relayerId} below 1 NEAR`);
-    }
-    const budgets = await Promise.all(
-      ESTATES.map(async (e) => {
-        const v = await viewUncached<{ verification_budget?: string }>(e, "get_estate").catch(() => null);
-        return [e, v?.verification_budget ? BigInt(v.verification_budget) : null] as const;
-      }),
-    );
-    for (const [e, b] of budgets) {
-      if (b === null) continue;
-      parts.push(`${e.split(".")[0]} ${nearStr(b)} NEAR`);
-      if (b < BUDGET_MIN) low.push(`${e} verification budget below 0.3 NEAR (fund_verification)`);
-    }
-    return { ok: low.length === 0, detail: (low.length ? `LOW: ${low.join("; ")} · ` : "") + parts.join(" · "), low };
-  } catch (e) {
-    return { ok: false, detail: `couldn't read balances: ${e instanceof Error ? e.message : String(e)}`, low };
-  }
+/** Full details (account names, allowlist, balances, error text) only with `x-cron-secret`; the public view keeps the flags. */
+function detailed(req: Request): boolean {
+  const want = Buffer.from(serverEnv.cronSecret() ?? "");
+  const got = Buffer.from(req.headers.get("x-cron-secret") ?? "");
+  return want.length > 0 && want.length === got.length && timingSafeEqual(want, got);
 }
 
-export async function GET() {
+function publicView(h: Health): Health {
+  const out: Health = {};
+  for (const [k, v] of Object.entries(h)) {
+    const detail =
+      v.configured === false ? "not configured on this deployment"
+      : k === "balances" ? (v.ok ? "relayer gas and verification budgets above their minimums" : "a gas or verification balance is below its minimum")
+      : k === "relayer" ? (v.ok ? "configured" : "not working")
+      : v.ok ? "reachable" : "unreachable or returning errors";
+    out[k] = { ok: v.ok, ...(v.configured !== undefined ? { configured: v.configured } : {}), detail };
+  }
+  return out;
+}
+
+// The public view is cached briefly so the endpoint can't be used to fan out requests to NEAR, 1Click and Supabase.
+let cache: { at: number; h: Health } | null = null;
+const CACHE_MS = 30_000;
+
+export async function GET(req: Request) {
+  const full = detailed(req);
+  if (!full && cache && Date.now() - cache.at < CACHE_MS) return ok(publicView(cache.h), { headers: { "cache-control": "no-store" } });
+  const h = await check();
+  cache = { at: Date.now(), h };
+  return ok(full ? h : publicView(h), { headers: { "cache-control": "no-store" } });
+}
+
+async function check(): Promise<Health> {
   const ctrl = () => AbortSignal.timeout(5000);
   const [nearai, oneclick] = await Promise.all([
     timed(() => fetch(`${NEAR_AI_URL}/models`, { signal: ctrl(), cache: "no-store" })),
@@ -71,5 +73,5 @@ export async function GET() {
     ? { ok: true, configured: true, detail: `${rc.accountId} · allowlist ${serverEnv.relayerAllowedMethods().join(",")}` }
     : { ok: false, configured: false, detail: "not configured (RELAYER_ACCOUNT_ID / RELAYER_PRIVATE_KEY)" };
   const funds = await balances(rc?.accountId ?? null);
-  return ok({ nearai, oneclick: { ...oneclick, configured: true }, supabase, relayer, balances: funds }, { headers: { "cache-control": "no-store" } });
+  return { nearai, oneclick: { ...oneclick, configured: true }, supabase, relayer, balances: { ok: funds.ok, detail: funds.detail } };
 }

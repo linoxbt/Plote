@@ -41,7 +41,8 @@ export function houseSvg(i: HouseSvgInput): string {
   const total = Math.max(1, Math.min(8, Math.floor(i.total) || 1));
   const done = Math.max(0, Math.min(total, Math.floor(i.approvedCount) || 0));
   const lit = litParts(done, total, i.status);
-  const [badge, bc] = BADGE[i.status] ?? [String(i.status).toUpperCase(), "#8B939D"];
+  // Status comes from the chain; an unknown value is shown, but escaped and bounded like every other string here.
+  const [badge, bc] = BADGE[i.status] ?? [String(i.status).toUpperCase().slice(0, 16), "#8B939D"];
   const p = (n: number) => (lit > n ? "f" : "o");
   const win = lit >= 4 ? "g" : "o";
   const segW = (240 - (total - 1) * 4) / total;
@@ -57,7 +58,7 @@ export function houseSvg(i: HouseSvgInput): string {
     `<path d="M10 26V10h16M274 10h16v16M290 304v16h-16M26 320H10v-16" stroke="#FF9211" stroke-width="2" fill="none"/>` +
     `<text x="24" y="36" font-size="13">${esc(i.estateName)}</text>` +
     `<rect x="${276 - badge.length * 7.4}" y="22" width="${badge.length * 7.4 + 8}" height="20" fill="none" stroke="${bc}"/>` +
-    `<text x="${280 - badge.length * 7.4}" y="36" font-size="11" style="fill:${bc}">${badge}</text>` +
+    `<text x="${280 - badge.length * 7.4}" y="36" font-size="11" style="fill:${bc}">${esc(badge)}</text>` +
     `<path class="${p(0)}" d="M70 210l80 40 80-40v8l-80 40-80-40z"/>` +
     `<path class="${p(1)}" d="M70 140l80 40v70l-80-40zM150 180l80-40v70l-80 40z"/>` +
     `<path class="${p(2)}" d="M110 110l80-40 40 70-80 40zM70 140l40-30 40 70z"/>` +

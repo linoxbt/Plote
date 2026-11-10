@@ -63,10 +63,10 @@ export default function SecurityPage() {
           <div className="mt-8">
             <StatGrid
               items={[
-                { value: "50", label: "Estate contract tests" },
+                { value: "60", label: "Estate contract tests" },
                 { value: "5/5", label: "Integration flows on real WASM" },
-                { value: "66", label: "Verifier tests" },
-                { value: "82", label: "Web unit + end-to-end tests" },
+                { value: "78", label: "Verifier tests" },
+                { value: "91", label: "Web unit + end-to-end tests" },
               ]}
             />
           </div>

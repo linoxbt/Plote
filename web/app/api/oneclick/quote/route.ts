@@ -8,7 +8,7 @@ import { usdc } from "@/lib/usdc";
 import { serverEnv } from "@/lib/server/env";
 import { clientIp, jsonError, ok, parseJson } from "@/lib/server/http";
 import { oneclickFetch } from "@/lib/server/oneclick-server";
-import { rateLimit } from "@/lib/server/rate-limit";
+import { rateLimitShared } from "@/lib/server/rate-limit";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   if (NETWORK !== "mainnet" && !serverEnv.mainnetUnitAccount()) {
     return jsonError("ONECLICK_MAINNET_ONLY", "Cross-chain payments use NEAR Intents, which only runs on mainnet. Use the mainnet demo build.", 503);
   }
-  const rl = rateLimit(`quote:${clientIp(req)}`, 20, 60_000);
+  const rl = await rateLimitShared(`quote:${clientIp(req)}`, 20, 60_000);
   if (!rl.ok) return jsonError("RATE_LIMITED", "Too many quotes. Wait a minute.", 429);
   const p = await parseJson(req, Body);
   if (!p.ok) return p.res;

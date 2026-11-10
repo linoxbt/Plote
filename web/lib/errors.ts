@@ -50,6 +50,9 @@ export const ERROR_MESSAGES = {
   E_VERIFY_MODE: "This estate gets its photo verdicts straight from OutLayer, so a relayed verdict isn't accepted.",
   E_NOT_ESTATE: "Only the estate contract can do this on a unit account.",
   E_STORAGE: "That account isn't registered on the USDC token yet. Attach 0.00125 NEAR to register it.",
+  E_QUORUM: "Too few units are allocated yet for this kind of vote (it needs at least 3 tokens and a quarter of the units).",
+  E_STEP_IN: "A step-in vote is only possible while releases are frozen or after a milestone deadline was missed.",
+  E_LATE_CLAIM: "This unit's last reservation ended moments ago and a late payment may still arrive for that buyer. Try again a little later.",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;

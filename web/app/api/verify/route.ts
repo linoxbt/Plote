@@ -11,12 +11,15 @@ import { estateAccount } from "@/lib/estates";
 import { fnCall, viewUncached } from "@/lib/near";
 import type { EstateView, EvidenceView } from "@/lib/types";
 import { clientIp, jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
-import { rateLimit } from "@/lib/server/rate-limit";
+import { claimVerify, releaseVerify } from "@/lib/server/once";
+import { rateLimitShared } from "@/lib/server/rate-limit";
 import { callAsRelayer, relayerCredentials } from "@/lib/server/relayer";
 import { extractVerdict, relayAllowed, toContractVerdict } from "@/lib/server/verify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+const MAX_ATTEMPTS = 3;
 
 const Body = z.object({ estate: z.string().min(2).max(64), evidenceId: z.union([z.string().regex(/^\d+$/), z.number().int().positive()]) });
 
@@ -32,7 +35,7 @@ export async function POST(req: Request) {
   const estate = estateAccount(p.data.estate);
   if (!ESTATES.includes(estate)) return jsonError("E_BAD_ARGS", "Unknown estate.");
   const id = String(p.data.evidenceId);
-  const rl = rateLimit(`verify:${clientIp(req)}`, 6, 60_000);
+  const rl = await rateLimitShared(`verify:${clientIp(req)}`, 6, 60_000);
   if (!rl.ok) return jsonError("RATE_LIMITED", `Try again in ${rl.retryAfterS}s.`, 429);
 
   const [e, ev, input] = await Promise.all([
@@ -53,6 +56,21 @@ export async function POST(req: Request) {
     return jsonError("E_NOT_RELAYER", `This estate's verdict relayer is ${e.verdict_relayer ?? "unset"}, not ${creds.accountId}.`, 403);
   }
 
+  // One run at a time per evidence (concurrent callers would each pay OutLayer), and a cap on re-runs of Error evidence.
+  const claim = await claimVerify(estate, id, { leaseMs: 90_000, maxAttempts: MAX_ATTEMPTS });
+  if (!claim.ok) {
+    return claim.reason === "exhausted"
+      ? jsonError("VERIFY_RETRIES_EXHAUSTED", `This photo was already checked ${MAX_ATTEMPTS} times over HTTPS. Submit a new photo.`, 409)
+      : jsonError("VERIFY_IN_PROGRESS", "A check of this photo is already running. Try again in a minute.", 409);
+  }
+  try {
+    return await runWorker(url, key, estate, id, input);
+  } finally {
+    await releaseVerify(estate, id);
+  }
+}
+
+async function runWorker(url: string, key: string, estate: string, id: string, input: string) {
   let raw: unknown;
   try {
     const r = await fetch(url, {

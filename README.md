@@ -172,7 +172,7 @@ flowchart LR
 | Judge sandbox estate | [`playground.plote.testnet`](https://testnet.nearblocks.io/address/playground.plote.testnet), 60 units at $1,000 | ✅ Live |
 | Demo estate | [`harmattan-court.plote.testnet`](https://testnet.nearblocks.io/address/harmattan-court.plote.testnet), 6 units | ✅ Live |
 | Refund-demo estate | [`baobab-heights.plote.testnet`](https://testnet.nearblocks.io/address/baobab-heights.plote.testnet), 5 units, foundation deadline missed | ✅ Live (judge holds `b-2a`, `b-2b` with refunds open) |
-| Estate code (all three estates) | sha256 `0315a5091f907ab8a099380b5df2d20acd5045b58ccedc5d24a9a2464c4e4c47` · NEAR `code_hash` `D3NDP8Um5vQjxUxk9DPEgvUDssLGJS8XgWnbrkTcKLz` | ✅ Compare with `view_account` |
+| Estate code (all three estates) | sha256 `158ce0ab0b7f4fbf4372c011d9f39433af28ff49c9f3d459d2c1baad76230c26` · NEAR `code_hash` `2T89xpkpUq3M44Jq2QKkXgAkNQw6caVUaU5V7Le9w8Qd` | ✅ Compare with `view_account` |
 | Unit code (global, by hash) | `75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9` (105,621 B) | ✅ Published |
 | Test USDC | [`musdc.plote.testnet`](https://testnet.nearblocks.io/address/musdc.plote.testnet) | ✅ Live |
 | Verifier project | `plote.testnet/plote-verifier` on `outlayer.testnet` | ✅ Published |
@@ -331,14 +331,15 @@ Every variable has a testnet default, so the app builds and renders with no env 
 
 | Layer | What's covered | Result |
 |---|---|---|
-| Estate contract | 50 unit tests, including the spec's invariants: no double mint, money conservation over a randomised 200-step walk, release cap against approved stages, exits only to allowed accounts, evidence committed before the check, verdict-mode and verifier-pin enforcement | ✅ pass |
+| Estate contract | 60 unit tests, including the spec's invariants: no double mint, money conservation over a randomised 200-step walk, release cap against approved stages, exits only to allowed accounts, evidence committed before the check, verdict-mode and verifier-pin enforcement | ✅ pass |
 | Unit and mock USDC contracts | 5 + 3 tests | ✅ pass |
 | Real WASMs together | `just test-integration` (near-mock with real receipts and metered gas): unit creation, buy → allocate, capture → evidence → verdict → sign → 20 % release, reused-photo failure, freeze vote, resale, refund + burn | ✅ 5/5 |
-| Verifier | 62 library tests + 4 that run the binary; challenge-is-hard in every mode | ✅ pass |
-| Web | typecheck, lint, 68 Vitest tests, production build | ✅ pass |
+| Verifier | 74 library tests + 4 that run the binary; challenge-is-hard in every mode; prompt-injection, orientation-reuse and timeout cases | ✅ pass |
+| Web | typecheck, lint, 77 Vitest tests (incl. relayer signature checks), production build | ✅ pass |
 | End-to-end | 14 Playwright tests on mobile and desktop against the production build | ✅ pass |
 | Live on testnet (10 Nov) | Real transactions against the deployed contracts and the live site: buy (mint → reserve → pay → NFT), photo capture through the browser phone key and relayer into the OutLayer TEE, resale in one transaction, holder vote, refund + burn, API guards. Scripts in `scripts/e2e/` | ✅ pass (a passing photo needs NEAR AI credits) |
 | Static analysis | `cargo clippy -D warnings`, `cargo fmt --check` | ✅ clean |
+| Security | Internal pre-audit review of contracts, verifier and server; findings and fixes in [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md). Launch gates in [`docs/LAUNCH.md`](docs/LAUNCH.md) | ✅ fixed / ⏳ independent audit |
 
 The repository's definition of done, which every change in the history passed:
 

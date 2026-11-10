@@ -7,13 +7,14 @@ import { estate as E } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { parseUploadMessage } from "@/lib/nep413";
 import { verifySignedRequest } from "@/lib/server/auth";
-import { jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
-import { rateLimit } from "@/lib/server/rate-limit";
+import { clientIp, jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
+import { rateLimitShared } from "@/lib/server/rate-limit";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 12 * 1024 * 1024;
+const MAX_EXIF_CHARS = 4096;
 const TYPES = { "image/jpeg": "jpg", "image/png": "png" } as const;
 
 const Body = z.object({
@@ -27,7 +28,8 @@ const Body = z.object({
   nonce: z.string().min(40),
   message: z.string().max(300),
   recipient: z.string(),
-  exif: z.record(z.string(), z.unknown()).nullable().optional(),
+  // Display-only snapshot; capped so the public table can't be used as free storage.
+  exif: z.record(z.string(), z.unknown()).nullable().optional().refine((x) => x == null || JSON.stringify(x).length <= MAX_EXIF_CHARS, `must be at most ${MAX_EXIF_CHARS} characters of JSON`),
 });
 
 export async function POST(req: Request) {
@@ -39,8 +41,10 @@ export async function POST(req: Request) {
   if (!ESTATES.includes(b.estate)) return jsonError("E_BAD_ARGS", "Unknown estate.");
   const msg = parseUploadMessage(b.message);
   if (!msg || msg.estate !== b.estate || msg.sha256 !== b.sha256 || b.recipient !== b.estate) return jsonError("BAD_SIGNATURE", "The signed message doesn't match this upload.");
-  const rl = rateLimit(`upload:${b.accountId}`, 20, 60_000);
-  if (!rl.ok) return jsonError("RATE_LIMITED", "Too many uploads. Wait a minute.", 429);
+  // Per IP before auth (bounds the NEAR reads); per account only after the signature and surveyor checks, so nobody
+  // can use up a surveyor's quota by sending requests in their name.
+  const pre = await rateLimitShared(`upload-ip:${clientIp(req)}`, 30, 60_000);
+  if (!pre.ok) return jsonError("RATE_LIMITED", "Too many uploads. Wait a minute.", 429);
 
   let auth;
   try {
@@ -56,6 +60,8 @@ export async function POST(req: Request) {
     return jsonError("RPC_UNAVAILABLE", "Couldn't read the estate contract.", 503);
   }
   if (!est.params.playground && est.surveyor_id !== b.accountId) return jsonError("E_NOT_SURVEYOR", "Only the estate's surveyor can upload evidence.", 403);
+  const rl = await rateLimitShared(`upload:${b.accountId}`, 20, 60_000);
+  if (!rl.ok) return jsonError("RATE_LIMITED", "Too many uploads. Wait a minute.", 429);
 
   const path = `${estateSlug(b.estate)}/${crypto.randomUUID()}.${TYPES[b.contentType]}`;
   const { data, error } = await sb.storage.from(SUPABASE_BUCKET).createSignedUploadUrl(path);

@@ -220,7 +220,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
             </Section>
 
             <Section id="notifications" title="Notifications">
-              <p className="text-sm text-muted">Get an email when a stage is signed or money is released. Opt-in, and you can delete it any time. Your wallet signs a message to prove it&apos;s you.</p>
+              <p className="text-sm text-muted">Get an email when a stage is signed or money is released. Opt-in: your wallet signs a message to prove it&apos;s you, then you confirm from the email we send. You can delete it any time.</p>
               <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                 <Field label="Email" htmlFor="email"><input id="email" type="email" className="input" value={email} onChange={(x) => setEmail(x.target.value)} autoComplete="email" /></Field>
                 <Button className="self-end" onClick={async () => {
@@ -233,7 +233,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
                     const res = await fetch("/api/notify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accountId, publicKey: signed.publicKey, signature: signed.signature, nonce: bytesToBase64(nonce), message, recipient: account, estate: account, unit: u.id, email }) });
                     const j = await res.json();
                     if (!res.ok) throw new Error(`${j.code}: ${j.message}`);
-                  }, { success: "Subscribed." });
+                  }, { success: "Check your inbox: click the link we sent to confirm." });
                 }}><Mail className="h-4 w-4" aria-hidden /> Subscribe</Button>
               </div>
             </Section>

@@ -48,4 +48,21 @@ deployed from now on, including mainnet.
 
 ## Web server, relayer and database (`web/`, `supabase/`)
 
-See the section appended below by the server fixes.
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| W-H1 | High | The relayer paid gas for anyone: no signature, key, nonce or expiry check before submitting; public `sync*` methods allowlisted; limits counted before auth (surveyor lock-out) | **Fixed** — signature, access key, nonce and `maxBlockHeight` verified off-chain first; only the estate's surveyor (any account on the playground); only `open_capture`/`submit_evidence`/`qs_sign`; single-use delegate hash; limits per sender, per IP and global, counted after verification, shared across instances |
+| W-M1 | Med | No CSP / frame protection while app keys live in localStorage (one-click vote clickjacking) | **Mitigated** — CSP with `frame-ancestors 'none'`, connect-src allowlist, X-Frame-Options, HSTS, Permissions-Policy, violation reports. `script-src` keeps `'unsafe-inline'`/`'unsafe-eval'` because wallet code from near-connect needs them, so the CSP stops framing, not injected script. Moving app keys to non-extractable WebCrypto (as the surveyor key already is) remains **Open** |
+| W-M2 | Med | Upload rate limit counted before auth (surveyor lock-out) | **Fixed** — per-IP before auth, per-account after signature and surveyor checks; EXIF capped at 4 KB |
+| W-M3 | Med | `/api/verify` could be replayed to burn OutLayer credit | **Fixed** — Postgres lease per evidence id, max 3 runs |
+| W-M4 | Med | Family-wall totals could be inflated with failed or repeated transactions | **Fixed** — successful transactions only, amount from the final outcome, unique per tx hash, name/note from the signed transfer |
+| W-L1–L6 | Low | 1Click status re-sync, unthrottled 1Click proxies, detailed public health, unconfirmed email sign-ups, unescaped SVG badge, replayable NEP-413 nonces | **Fixed** — claim-once sync, rate limits, details behind the cron secret, double opt-in with POST confirmation, escaped, single-use nonces |
+| W-ops | — | Per-instance rate limits | **Fixed** — shared Postgres limiter (`0002`), security tables (`0003`), both applied |
+
+Checked and safe: NEP-413 payload encoding and binding; upload paths are server-generated and can't overwrite; RLS on
+every private table; constant-time cron secret; HMAC unsubscribe tokens; no secrets in `NEXT_PUBLIC_*`; no
+user-controlled outbound URLs; NFT images can't run script.
+
+## Live verification after the fixes
+
+All three testnet estates were upgraded in place to the fixed contract (state checked identical before and after).
+Contract 60 tests, 5/5 integration flows on real WASM, verifier 78, web 77 unit + 14 end-to-end, clippy and fmt clean.

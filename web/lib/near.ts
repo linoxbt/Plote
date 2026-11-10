@@ -179,6 +179,12 @@ export async function viewAccount(accountId: string): Promise<AccountView | null
   }
 }
 
+/** Full-access keys on an account. For an estate, none means nobody (not even its deployer) can change its code. */
+export async function fullAccessKeyCount(accountId: string): Promise<number> {
+  const r = await rpc<{ keys: { access_key: { permission: unknown } }[] }>("query", { request_type: "view_access_key_list", finality: "final", account_id: accountId });
+  return r.keys.filter((k) => k.access_key.permission === "FullAccess").length;
+}
+
 export async function nodeStatus(url: string): Promise<{ ok: boolean; height?: number; ms: number; error?: string }> {
   const t0 = Date.now();
   try {

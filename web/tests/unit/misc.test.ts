@@ -84,15 +84,20 @@ describe("relayer allowlist", () => {
     signature: {},
   });
   const opts = { allowedMethods: ["open_capture", "submit_evidence", "qs_sign", "sync", "sync_deposits", "sweep_unattributed"], maxGasTgas: 300, estates: ["playground.plote.testnet"] };
-  it("accepts allowlisted zero-deposit calls to an estate or a unit's sync_deposits", () => {
+  it("accepts allowlisted zero-deposit surveyor calls to an estate", () => {
     expect(checkDelegate(sd("playground.plote.testnet", [fc("qs_sign")]), opts).ok).toBe(true);
-    expect(checkDelegate(sd("p-01.playground.plote.testnet", [fc("sync_deposits")]), opts).ok).toBe(true);
+    expect(checkDelegate(sd("playground.plote.testnet", [fc("open_capture"), fc("submit_evidence")]), opts).ok).toBe(true);
+  });
+  it("never relays public methods or unit accounts, even when the env allowlist names them", () => {
+    const code = (x: ReturnType<typeof checkDelegate>) => (x.ok ? "ok" : x.code);
+    expect(code(checkDelegate(sd("p-01.playground.plote.testnet", [fc("sync_deposits")]), opts))).toBe("RECEIVER_NOT_ALLOWED");
+    for (const m of ["sync", "sync_deposits", "sweep_unattributed"]) expect(code(checkDelegate(sd("playground.plote.testnet", [fc(m)]), opts))).toBe("METHOD_NOT_ALLOWED");
   });
   it("rejects other receivers, methods, deposits, gas and action types", () => {
     const code = (x: ReturnType<typeof checkDelegate>) => (x.ok ? "ok" : x.code);
     expect(code(checkDelegate(sd("musdc.plote.testnet", [fc("qs_sign")]), opts))).toBe("RECEIVER_NOT_ALLOWED");
     expect(code(checkDelegate(sd("playground.plote.testnet", [fc("claim_release")]), opts))).toBe("METHOD_NOT_ALLOWED");
-    expect(code(checkDelegate(sd("p-01.playground.plote.testnet", [fc("qs_sign")]), opts))).toBe("METHOD_NOT_ALLOWED");
+    expect(code(checkDelegate(sd("p-01.playground.plote.testnet", [fc("qs_sign")]), opts))).toBe("RECEIVER_NOT_ALLOWED");
     expect(code(checkDelegate(sd("playground.plote.testnet", [fc("qs_sign", 1n)]), opts))).toBe("DEPOSIT_NOT_ALLOWED");
     expect(code(checkDelegate(sd("playground.plote.testnet", [fc("qs_sign", 0n, 301_000_000_000_000n)]), opts))).toBe("GAS_TOO_HIGH");
     expect(code(checkDelegate(sd("playground.plote.testnet", [{ transfer: { deposit: 1n } }]), opts))).toBe("ACTION_NOT_ALLOWED");

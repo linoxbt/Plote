@@ -96,7 +96,7 @@ export function NewProposalClient({ slug }: { slug: string }) {
     <Page narrow>
       <EstateBanners estate={e} />
       <PageHeader eyebrow={`${e.name.toUpperCase()} · HOLDER VOTE`} title="New proposal">
-        One open proposal per account. Holders can propose any kind; the developer can only propose a deadline extension.
+        One open proposal per account. Opening one costs 0.05 NEAR, kept by the estate so proposals can&apos;t be spammed. Holders can propose any kind; the developer can only propose a deadline extension. Replacing the surveyor, freezing and stepping in need at least 3 holders and a quarter of the units sold.
       </PageHeader>
       <RequireWallet what="proposals">
         <div className="space-y-6">

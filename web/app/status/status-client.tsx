@@ -8,7 +8,7 @@ import { ESTATES, RPC_URLS } from "@/lib/config";
 import { estate as E } from "@/lib/estate";
 import { explainError } from "@/lib/errors";
 import { timeAgo } from "@/lib/format";
-import { nodeStatus } from "@/lib/near";
+import { fullAccessKeyCount, nodeStatus } from "@/lib/near";
 
 type Level = "green" | "amber" | "red" | "loading";
 type Row = { name: string; level: Level; detail: string };
@@ -49,7 +49,8 @@ export function StatusClient() {
             } catch {
               /* optional */
             }
-            return { e, ok: true as const, name: est.name, last };
+            const fullKeys = await fullAccessKeyCount(e).catch(() => null);
+            return { e, ok: true as const, name: est.name, last, fullKeys };
           } catch (err) {
             return { e, ok: false as const, error: explainError(err) };
           }
@@ -73,6 +74,14 @@ export function StatusClient() {
     estates.data.forEach((x) =>
       rows.push(x.ok ? { name: `Estate view · ${x.name}`, level: "green", detail: x.e } : { name: `Estate view · ${x.e}`, level: "red", detail: `${x.error.code}: ${x.error.message}` }),
     );
+  estates.data?.forEach((x) => {
+    if (!x.ok || x.fullKeys === null) return;
+    rows.push(
+      x.fullKeys === 0
+        ? { name: `Code locked · ${x.name}`, level: "green", detail: `${x.e} has no full-access keys: nobody, including its deployer, can change its code.` }
+        : { name: `Code locked · ${x.name}`, level: "amber", detail: `${x.e} still has ${x.fullKeys} full-access key${x.fullKeys > 1 ? "s" : ""}, so its deployer can upgrade the code. Lock it (scripts/delete-estate-keys.ts) before it holds real money.` },
+    );
+  });
   const lastVerdict = estates.data?.map((x) => (x.ok ? x.last : null)).filter(Boolean).sort().pop() ?? null;
   rows.push({ name: "OutLayer (last verdict)", level: estates.data ? (lastVerdict ? "green" : "amber") : "loading", detail: lastVerdict ? `last verdict on evidence submitted ${timeAgo(lastVerdict)}` : "no verdict seen yet" });
   const h = health.data;
@@ -83,6 +92,7 @@ export function StatusClient() {
   return (
     <BracketCard>
       <ul>{rows.map((r) => <RowView key={r.name} r={r} />)}</ul>
+      <p className="mt-3 text-xs text-muted">Service rows show up or down only; account names, balances and error text are visible to operators (/api/health with the cron secret).</p>
       <div className="mt-4"><Button size="sm" onClick={() => { rpc.refetch(); estates.refetch(); health.refetch(); }}>Re-check</Button></div>
     </BracketCard>
   );

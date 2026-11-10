@@ -11,7 +11,7 @@ export const serverEnv = {
   relayerAccountId: () => v("RELAYER_ACCOUNT_ID"),
   relayerPrivateKey: () => v("RELAYER_PRIVATE_KEY"),
   relayerAllowedMethods: () =>
-    (v("RELAYER_ALLOWED_METHODS") ?? "open_capture,submit_evidence,qs_sign,sync,sync_deposits,sweep_unattributed")
+    (v("RELAYER_ALLOWED_METHODS") ?? "open_capture,submit_evidence,qs_sign") // intersected with RELAYABLE_METHODS in relayer.ts
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
@@ -25,4 +25,6 @@ export const serverEnv = {
   resendApiKey: () => v("RESEND_API_KEY"),
   resendFrom: () => v("RESEND_FROM") ?? "Plote <notify@plote.app>",
   cronSecret: () => v("CRON_SECRET"),
+  /** Optional Slack/Discord-compatible webhook for operational alerts (low balances, poller errors). */
+  alertWebhookUrl: () => v("ALERT_WEBHOOK_URL"),
 };

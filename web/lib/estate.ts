@@ -126,7 +126,8 @@ export const estate = {
     fnCall(e, "claim_release", { unit_ids: unit_ids.slice(0, MAX_UNITS_PER_CLAIM) }, GAS.claim_release),
   withdrawOwed: (e: string): TxSpec => fnCall(e, "withdraw_owed", {}, GAS.withdraw_owed),
 
-  propose: (e: string, kind: ProposalKind): TxSpec => fnCall(e, "propose", { kind }, GAS.propose),
+  /** Opening a proposal attaches PROPOSAL_DEPOSIT, which the estate keeps (anti-spam), so it always needs the wallet. */
+  propose: (e: string, kind: ProposalKind): TxSpec => fnCall(e, "propose", { kind }, GAS.propose, PROPOSAL_DEPOSIT),
   vote: (e: string, proposal_id: U64, approve: boolean): TxSpec => fnCall(e, "vote", { proposal_id, approve }, GAS.vote),
   expireProposal: (e: string, proposal_id: U64): TxSpec => fnCall(e, "expire_proposal", { proposal_id }, GAS.expire_proposal),
 
@@ -143,15 +144,17 @@ export const estate = {
  * `sync`, `qs_sign`, `submit_evidence`, plus votes §8.4) so frequent calls don't open the wallet.
  */
 export const LOGIN_KEY_METHODS = [
-  "vote", "propose", "expire_proposal", "sync", "sweep_unattributed", "declare_default", "expire_reservation",
+  "vote", "expire_proposal", "sync", "sweep_unattributed", "declare_default", "expire_reservation",
   "open_capture", "submit_evidence", "qs_sign",
 ];
-/** The developer's day-to-day key (SPEC §4 "Keys on each account"): claims, and deadline-extension proposals. */
-export const DEV_KEY_METHODS = ["claim_release", "propose"];
+/** The developer's day-to-day key (SPEC §4 "Keys on each account"): claims. Proposals carry a deposit, so they use the wallet. */
+export const DEV_KEY_METHODS = ["claim_release"];
 /** Methods the surveyor's phone key may call (SPEC §9.3). */
 export const SURVEYOR_KEY_METHODS = ["open_capture", "submit_evidence", "qs_sign"];
 
 export { ZERO };
+/** 0.05 NEAR, kept by the estate (contract `PROPOSAL_DEPOSIT`). */
+export const PROPOSAL_DEPOSIT = "50000000000000000000000";
 
 // ---------------- derived helpers ----------------
 

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { securityHeaders } from "./lib/csp";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -9,11 +10,12 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/(.*)",
-        headers: [
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(self), geolocation=(self)" },
-        ],
+        headers: securityHeaders({
+          rpcUrls: [process.env.NEXT_PUBLIC_RPC_URL, process.env.NEXT_PUBLIC_RPC_FALLBACK],
+          supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          fxUrl: process.env.NEXT_PUBLIC_FX_URL,
+          dev: process.env.NODE_ENV !== "production",
+        }),
       },
     ];
   },

@@ -139,7 +139,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
                 Adds a function-call key to <span className="mono">{e.developer_id}</span> that can only call <span className="mono">{DEV_KEY_METHODS.join(", ")}</span> on{" "}
                 <span className="mono">{account}</span> (0.25 NEAR gas allowance, can&apos;t move money). Claims and deadline-extension proposals then go through without a wallet popup. The key stays in this browser.
               </p>
-              <AppKeyToggle contractId={account} role="dev" methods={DEV_KEY_METHODS} enableLabel="Add claim key" activeLabel="Claim key is on: claims and proposals sign without a popup." success="Key added. claim_release and propose now sign from this browser." />
+              <AppKeyToggle contractId={account} role="dev" methods={DEV_KEY_METHODS} enableLabel="Add claim key" activeLabel="Claim key is on: claims sign without a popup." success="Key added. claim_release now signs from this browser." />
             </BracketCard>
           ) : null}
 

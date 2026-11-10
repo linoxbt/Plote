@@ -3,12 +3,13 @@
 // but only when the recipient is a unit account of an estate configured on this network (NEXT_PUBLIC_ESTATES).
 // Any other recipient — e.g. the Mainnet Lite unit (scripts/mainnet-lite.ts), a bare account with no contract —
 // is skipped and the response says so: `sync: "skipped"` with `sync_note`. The USDC is on the account either way.
+// The relayer only syncs deposit addresses Plote itself quoted (a row in oneclick_quotes), claimed once in Postgres.
 
 import { ESTATES, NETWORK, TABLES } from "@/lib/config";
 import { unit as U } from "@/lib/unit";
-import { jsonError, ok } from "@/lib/server/http";
+import { clientIp, jsonError, ok } from "@/lib/server/http";
 import { oneclickFetch } from "@/lib/server/oneclick-server";
-import { markOnce } from "@/lib/server/rate-limit";
+import { markOnce, rateLimitShared } from "@/lib/server/rate-limit";
 import { callAsRelayer, isAllowedReceiver, relayerCredentials } from "@/lib/server/relayer";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import type { StatusResponse } from "@/lib/oneclick";
@@ -18,6 +19,9 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const dep = new URL(req.url).searchParams.get("depositAddress")?.trim();
   if (!dep || dep.length < 10 || dep.length > 120) return jsonError("E_BAD_ARGS", "depositAddress is required.");
+  // The pay-status page polls every 5 s; 40/min leaves room for two tabs.
+  const rl = await rateLimitShared(`oneclick-status:${clientIp(req)}`, 40, 60_000);
+  if (!rl.ok) return jsonError("RATE_LIMITED", `Too many status checks. Try again in ${rl.retryAfterS}s.`, 429, { "retry-after": String(rl.retryAfterS) });
   let r: Response;
   try {
     r = await oneclickFetch(`/status?depositAddress=${encodeURIComponent(dep)}`);
@@ -43,15 +47,25 @@ export async function GET(req: Request) {
       syncNote = `${recipient} isn't a unit of an estate configured on ${NETWORK}, so there is no estate to sync; the USDC stays on that account.`;
     } else if (!relayerCredentials()) {
       syncNote = "The relayer isn't configured here; anyone can call sync_deposits on the unit to credit the payment.";
-    } else if (markOnce(`sync:${dep}`, 10 * 60_000)) {
-      try {
-        await callAsRelayer(U.syncDeposits(recipient)); // throws on a failed transaction
-        synced = true;
-        sync = "done";
-        if (sb) await sb.from(TABLES.oneclickQuotes).update({ synced: true }).eq("deposit_address", dep);
-      } catch (e) {
-        sync = "failed";
-        syncNote = `sync_deposits on ${recipient} failed (${e instanceof Error ? e.message : "unknown error"}); a later poll retries it.`;
+    } else if (!sb || !row) {
+      syncNote = "This payment wasn't quoted through Plote, so the relayer doesn't sync it; anyone can call sync_deposits on the unit to credit it.";
+    } else if (!markOnce(`sync:${dep}`, 60_000)) {
+      syncNote = "A sync was tried less than a minute ago; the next poll retries it."; // backoff after a failed sync
+    } else {
+      // Claim: only the request that flips synced false→true sends the transaction.
+      const { data: claimed } = await sb.from(TABLES.oneclickQuotes).update({ synced: true }).eq("deposit_address", dep).eq("synced", false).select("deposit_address");
+      if (claimed?.length) {
+        try {
+          await callAsRelayer(U.syncDeposits(recipient)); // throws on a failed transaction
+          synced = true;
+          sync = "done";
+        } catch (e) {
+          await sb.from(TABLES.oneclickQuotes).update({ synced: false }).eq("deposit_address", dep);
+          sync = "failed";
+          syncNote = `sync_deposits on ${recipient} failed (${e instanceof Error ? e.message : "unknown error"}); a later poll retries it.`;
+        }
+      } else {
+        syncNote = "Another request is syncing this payment right now.";
       }
     }
   }

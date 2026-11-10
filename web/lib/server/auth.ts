@@ -2,6 +2,7 @@
 
 import { viewAccessKey } from "../near";
 import { nonceFromBase64, nonceTimestamp, verifyNep413 } from "../nep413";
+import { claimOnce } from "./once";
 
 export type SignedRequest = {
   accountId: string;
@@ -36,9 +37,13 @@ export async function verifySignedRequest(
   }
   const key = await viewAccessKey(r.accountId, r.publicKey);
   if (!key) return { ok: false, code: "KEY_NOT_ON_ACCOUNT", message: `That key isn't on ${r.accountId}.` };
-  if (key.permission === "FullAccess") return { ok: true, keyKind: "FullAccess" };
-  if (opts.allowFunctionCallFor && key.permission.FunctionCall.receiver_id === opts.allowFunctionCallFor) {
-    return { ok: true, keyKind: "FunctionCall" };
+  let keyKind: "FullAccess" | "FunctionCall";
+  if (key.permission === "FullAccess") keyKind = "FullAccess";
+  else if (opts.allowFunctionCallFor && key.permission.FunctionCall.receiver_id === opts.allowFunctionCallFor) keyKind = "FunctionCall";
+  else return { ok: false, code: "KEY_NOT_ALLOWED", message: "That key can't be used for this." };
+  // Single use: a captured request can't be replayed inside the freshness window.
+  if (!(await claimOnce("nep413", `${r.accountId}:${r.nonce}`, maxAge + 120_000))) {
+    return { ok: false, code: "NONCE_USED", message: "This signed message was already used. Sign again." };
   }
-  return { ok: false, code: "KEY_NOT_ALLOWED", message: "That key can't be used for this." };
+  return { ok: true, keyKind };
 }

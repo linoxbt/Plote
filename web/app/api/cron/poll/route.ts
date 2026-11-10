@@ -14,26 +14,29 @@ import { serverEnv } from "@/lib/server/env";
 import { jsonError, notConfigured, ok } from "@/lib/server/http";
 import { sendEmail, unsubscribeUrl } from "@/lib/server/notify";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { balances } from "@/lib/server/balances";
+import { relayerCredentials } from "@/lib/server/relayer";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-type NbTxn = { transaction_hash: string; predecessor_account_id?: string; signer_account_id?: string; block?: { block_height: number }; block_timestamp?: string };
+type NbTxn = { transaction_hash: string; predecessor_account_id?: string; signer_account_id?: string; block?: { block_height: number | string }; block_timestamp?: string };
 
 function nearblocksBase() {
-  return NETWORK === "mainnet" ? "https://api.nearblocks.io/v1" : "https://api-testnet.nearblocks.io/v1";
+  // v1 was retired on 2026-11-05; v3 lists an account's transactions newest first under `data`.
+  return NETWORK === "mainnet" ? "https://api.nearblocks.io/v3" : "https://api-testnet.nearblocks.io/v3";
 }
 
 async function recentTxns(account: string): Promise<NbTxn[]> {
   const key = serverEnv.nearblocksApiKey();
-  const r = await fetch(`${nearblocksBase()}/account/${account}/txns-only?per_page=25&order=desc`, {
+  const r = await fetch(`${nearblocksBase()}/accounts/${account}/txns?per_page=25`, {
     headers: key ? { authorization: `Bearer ${key}` } : {},
     signal: AbortSignal.timeout(10_000),
     cache: "no-store",
   });
   if (!r.ok) throw new Error(`NearBlocks HTTP ${r.status}`);
-  const j = (await r.json()) as { txns?: NbTxn[] };
-  return j.txns ?? [];
+  const j = (await r.json()) as { data?: NbTxn[]; txns?: NbTxn[] };
+  return j.data ?? j.txns ?? [];
 }
 
 function secretOk(req: Request): boolean {
@@ -98,7 +101,7 @@ export async function GET(req: Request) {
         const blockTime = t.block_timestamp ? new Date(Number(BigInt(t.block_timestamp) / 1_000_000n)).toISOString() : new Date().toISOString();
         const insert = rows.map((r) => ({
           network: NETWORK, estate, unit: r.unit, standard: r.standard, event: r.event, data: r.data,
-          tx_hash: t.transaction_hash, block_height: t.block?.block_height ?? 0, block_time: blockTime,
+          tx_hash: t.transaction_hash, block_height: Number(t.block?.block_height ?? 0), block_time: blockTime,
         }));
         const { error } = await sb.from(TABLES.events).upsert(insert, { onConflict: "tx_hash,event,unit", ignoreDuplicates: true });
         if (!error) {
@@ -125,5 +128,24 @@ export async function GET(req: Request) {
       rep.error = e instanceof Error ? e.message : String(e);
     }
   }
-  return ok({ network: NETWORK, report });
+  // Operational alerts: low gas / verification balances and estates the poller couldn't read.
+  const funds = await balances(relayerCredentials()?.accountId ?? null);
+  const failing = Object.entries(report).filter(([, r]) => r.error).map(([e, r]) => `${e}: ${r.error}`);
+  const problems = [...funds.low, ...failing];
+  const alerted = problems.length ? await alert(`Plote (${NETWORK}) needs attention:\n- ${problems.join("\n- ")}`) : false;
+  await sb.rpc("rate_limits_prune").then(() => undefined, () => undefined);
+  await sb.rpc("security_prune").then(() => undefined, () => undefined); // 0003: expired nonces, old verify claims
+  return ok({ network: NETWORK, report, balances: funds.detail, alerted });
+}
+
+/** Posts to ALERT_WEBHOOK_URL (Slack reads `text`, Discord reads `content`). Never throws. */
+async function alert(message: string): Promise<boolean> {
+  const url = serverEnv.alertWebhookUrl();
+  if (!url) return false;
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: message, content: message.slice(0, 1900) }), signal: AbortSignal.timeout(5000) });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }

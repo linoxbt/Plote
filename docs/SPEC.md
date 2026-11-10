@@ -1822,7 +1822,7 @@ For the refund demo, a second estate `baobab-heights.plote.testnet` can be creat
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJ…` | **no** |
 | `RELAYER_ACCOUNT_ID` | `relayer.plote.testnet` | no |
 | `RELAYER_PRIVATE_KEY` | `ed25519:…` | **no** |
-| `RELAYER_ALLOWED_METHODS` | `open_capture,submit_evidence,qs_sign,sync,sync_deposits,sweep_unattributed` | no |
+| `RELAYER_ALLOWED_METHODS` | `open_capture,submit_evidence,qs_sign` (the relayer never pays for other methods; sync calls are signed by the user or made by the server) | no |
 | `ONECLICK_BASE_URL` | `https://1click.chaindefuser.com` | no |
 | `ONECLICK_JWT` | `eyJ…` (optional) | **no** |
 | `MAINNET_UNIT_ACCOUNT` | `a-4b.harmattan-court.plote.<you>.near` | no |

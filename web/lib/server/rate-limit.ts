@@ -1,4 +1,24 @@
-// In-memory sliding-window rate limit. Per serverless instance — enough for a hackathon relayer.
+// Rate limits. `rateLimitShared` counts in Postgres (supabase/migrations/0002_rate_limits.sql), so a limit holds across
+// every serverless instance; if the database can't answer within 1.5 s it falls back to the per-instance counter below
+// rather than failing the request.
+import { supabaseAdmin } from "./supabase-admin";
+
+export async function rateLimitShared(key: string, limit: number, windowMs: number): Promise<{ ok: boolean; retryAfterS: number; shared: boolean }> {
+  const sb = supabaseAdmin();
+  if (sb) {
+    try {
+      const call = sb.rpc("rate_limit_hit", { p_key: key, p_limit: limit, p_window_seconds: Math.max(1, Math.round(windowMs / 1000)) });
+      const res = await Promise.race([call, new Promise<null>((r) => setTimeout(() => r(null), 1500))]);
+      const row = res && !res.error ? (Array.isArray(res.data) ? res.data[0] : res.data) : null;
+      if (row && typeof row.allowed === "boolean") return { ok: row.allowed, retryAfterS: Number(row.retry_after) || 0, shared: true };
+    } catch {
+      /* fall through to the local counter */
+    }
+  }
+  return { ...rateLimit(key, limit, windowMs), shared: false };
+}
+
+// In-memory sliding-window rate limit, per serverless instance (the fallback).
 
 const buckets = new Map<string, number[]>();
 
