@@ -1,3 +1,4 @@
+import { PloteError } from "@/lib/errors";
 // GET /api/oneclick/status?depositAddress= — proxy of 1Click GET /v0/status.
 // On SUCCESS it calls estate.report_deposit({ unit_id, amount }) once with the relayer key (the estate's deposit reporter),
 // but only when the recipient is a unit account of an estate configured on this network (NEXT_PUBLIC_ESTATES).
@@ -73,9 +74,20 @@ export async function GET(req: Request) {
           synced = true;
           sync = "done";
         } catch (e) {
-          await sb.from(TABLES.oneclickQuotes).update({ synced: false }).eq("deposit_address", dep);
-          sync = "failed";
-          syncNote = `report_deposit for ${recipient} failed (${e instanceof Error ? e.message : "unknown error"}); a later poll retries it.`;
+          // Retry only when the estate definitely refused the report (a contract panic with a stable E_ code, e.g.
+          // E_BALANCE_PENDING / E_IN_FLIGHT): nothing was booked. A timeout or network error may have landed anyway,
+          // and reporting again would let a refunded ft_transfer_call spanning both reads be booked twice (audit 3
+          // reporter residual), so those stay claimed and are flagged for an operator instead of retried blindly.
+          const refused = e instanceof PloteError && e.code.startsWith("E_");
+          if (refused) {
+            await sb.from(TABLES.oneclickQuotes).update({ synced: false }).eq("deposit_address", dep);
+            sync = "failed";
+            syncNote = `report_deposit for ${recipient} was refused (${e.code}); a later poll retries it.`;
+          } else {
+            sync = "pending";
+            syncNote = `report_deposit for ${recipient} didn't confirm (${e instanceof Error ? e.message.slice(0, 120) : "unknown error"}); it isn't retried automatically, so an operator should check the unit's paid amount before reporting again.`;
+            console.warn("plote:report-deposit-uncertain", JSON.stringify({ deposit: dep, unit: recipient }));
+          }
         }
       } else {
         syncNote = "Another request is syncing this payment right now.";
