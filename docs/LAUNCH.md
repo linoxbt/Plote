@@ -54,7 +54,8 @@ hard stop: don't take a deposit until all of them are ticked and the evidence is
 
 - [ ] Supabase migrations applied, in order: `supabase/migrations/0001_init.sql`, `0002_rate_limits.sql`,
       `0003_security.sql`, `0004_audit2.sql` (poller receipt index, upload size/deadline columns, paid-verdict store,
-      1Click → family-wall copy). Point-in-time recovery on.
+      1Click → family-wall copy), `0005_poll_schedule.sql` (pg_cron schedule for the poller; needs `POLL_SECRET` in
+      Vercel and the same value in Vault as `plote_poll_secret`). Point-in-time recovery on.
 - [ ] Server variables in Vercel (secrets in the dashboard, never in git):
 
       | Variable | Needed for |
@@ -62,6 +63,7 @@ hard stop: don't take a deposit until all of them are ticked and the evidence is
       | `SUPABASE_SERVICE_ROLE_KEY` | uploads, event cache, rate limits, single-use nonces |
       | `RELAYER_ACCOUNT_ID`, `RELAYER_PRIVATE_KEY` | gasless surveyor calls; the estate's `verdict_relayer` |
       | `CRON_SECRET` | the poller and the detailed `/api/health` view (header `x-cron-secret`) |
+      | `POLL_SECRET` | the Supabase pg_cron call to the poller (same value as Vault `plote_poll_secret`) |
       | `NOTIFY_SECRET` | signs email confirm/unsubscribe links (falls back to `CRON_SECRET` if unset; set it so the two secrets are independent — unsubscribe links already sent keep working) |
       | `RESEND_API_KEY` + `RESEND_FROM` | milestone emails; both required, `RESEND_FROM` must be on a domain verified in Resend (no default sender). `GET /api/notify/status` says whether emails are on |
       | `ALERT_WEBHOOK_URL` | Slack/Discord alerts from the poller |
@@ -72,12 +74,12 @@ hard stop: don't take a deposit until all of them are ticked and the evidence is
       | `ONECLICK_JWT`, `MAINNET_UNIT_ACCOUNT`, `MAINNET_RELAYER_*` | mainnet 1Click build only |
 - [ ] `ALERT_WEBHOOK_URL` set; the poller posts when the relayer drops below 1 NEAR, an estate's verification
       budget below 0.3 NEAR, a developer/payout account below 0.5 NEAR, an estate or a transaction can't be read, or a
-      run couldn't reach the previous cursor. When **every** estate fails the poller answers 502, so the scheduled
-      GitHub job fails too (and GitHub emails the repository owner).
+      run couldn't reach the previous cursor. When **every** estate fails the poller answers 502 (visible in
+      `net._http_response` and the Vercel logs).
 - [ ] An uptime monitor on `/api/health`: `balances.ok`, `accounts.ok` and `photo_checks.ok` (false when the latest
       verdicts all show `ai_unavailable` / `challenge_unverified` / `worker_error`, i.e. NEAR AI or the worker is down).
-- [ ] The 5-minute poller (`.github/workflows/poll.yml`) has the `CRON_SECRET` repository secret. No `APP_URL`
-      variable is needed: it calls the production URL unless a repository variable `APP_URL` overrides it.
+- [ ] The 5-minute poller runs from Supabase pg_cron (`plote-poll`, migration 0005). GitHub's scheduled
+      `poll.yml` stays as a manual fallback (`workflow_dispatch`); GitHub does not reliably fire its schedule.
 - [ ] Rate limits and single-use nonces are shared across instances (Postgres). If the database can't answer they
       fall back to per-instance memory and log `plote:rate-limit-fallback` / `plote:once-fallback`: alert on those in
       the Vercel logs. Playground estates have hourly caps on uploads (5 per account, 50 in total) and relayed
