@@ -80,3 +80,10 @@ export function parseUnitQuery(input: string, defaultEstate?: string): UnitRef |
   // `a-4b.harmattan-court` (slug) or full estate account
   return { estate: estateAccount(rest), unit };
 }
+
+/**
+ * The estate the landing page and /nft feature (harmattan-court when configured). Lives here, not in a "use client"
+ * module: a server page importing a constant from a client module gets a client reference, not the string.
+ */
+export const DEMO_ESTATE = ESTATES.find((e) => estateSlug(e) === "harmattan-court") ?? ESTATES[0] ?? "harmattan-court.plote.testnet";
+export const DEMO_ESTATE_SLUG = estateSlug(DEMO_ESTATE);

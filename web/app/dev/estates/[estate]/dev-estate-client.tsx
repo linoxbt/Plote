@@ -66,7 +66,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
   return (
     <Page>
       <EstateBanners estate={e} />
-      <EstateHeader e={e} slug={estateSlug(account)} right={<LinkButton href={`/dev/estates/${estateSlug(account)}/releases`} variant="primary" size="sm">Claim releases</LinkButton>} />
+      <EstateHeader e={e} slug={estateSlug(account)} right={<><LinkButton href={`/dev/estates/${estateSlug(account)}/releases`} variant="primary" size="sm">Claim releases</LinkButton><LinkButton href={`/gate/${estateSlug(account)}`} size="sm" prefetch={false}>Gate scanner</LinkButton></>} />
       <RequireWallet what="the developer console">
         {!isDev ? <BracketCard tone="amber" className="mb-6">You&apos;re signed in as <span className="mono">{accountId}</span>; only <span className="mono">{e.developer_id}</span> can add units.</BracketCard> : null}
         <div className="space-y-6">
@@ -137,7 +137,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
               <h2 className="text-xl font-normal">Day-to-day key</h2>
               <p className="text-sm text-muted">
                 Adds a function-call key to <span className="mono">{e.developer_id}</span> that can only call <span className="mono">{DEV_KEY_METHODS.join(", ")}</span> on{" "}
-                <span className="mono">{account}</span> (0.25 NEAR gas allowance, can&apos;t move money). Claims and deadline-extension proposals then go through without a wallet popup. The key stays in this browser.
+                <span className="mono">{account}</span> (0.25 NEAR gas allowance, can&apos;t move money). Claims then go through without a wallet popup. Proposals (such as a deadline extension) carry a 0.05 NEAR deposit, so they still open your wallet. The key stays on this device and can&apos;t be read back out of the browser where it supports that.
               </p>
               <AppKeyToggle contractId={account} role="dev" methods={DEV_KEY_METHODS} enableLabel="Add claim key" activeLabel="Claim key is on: claims sign without a popup." success="Key added. claim_release now signs from this browser." />
             </BracketCard>

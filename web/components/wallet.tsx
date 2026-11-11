@@ -1,12 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { LogOut, Wallet as WalletIcon } from "lucide-react";
+import { explainError } from "@/lib/errors";
 import { LOGIN_KEY_METHODS } from "@/lib/estate";
 import { loginKeyContract } from "@/lib/estates";
 import { getConnector, signInWithLoginKey } from "@/lib/near";
 import { truncateAccount } from "@/lib/format";
+import { useTx } from "./toast";
 import { Button } from "./ui";
+
+/** The visitor closed the wallet picker or declined in the wallet: not an error worth a toast. */
+export function isUserCancel(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e ?? "");
+  return /reject|cancel|closed|denied|dismiss|abort/i.test(msg);
+}
 
 type WalletCtx = {
   accountId: string | null;
@@ -29,6 +38,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { push } = useTx();
 
   useEffect(() => {
     let alive = true;
@@ -51,10 +61,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             setWalletName(wallet.manifest?.name ?? null);
           }
         } catch {
-          /* not signed in */
+          /* no wallet connected yet: the normal signed-out state */
         }
       })
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)))
+      // The wallet selector itself failed to load (blocked script, offline). Kept for RequireWallet; Connect retries and toasts.
+      .catch((e) => alive && setError(explainError(e).message))
       .finally(() => alive && setReady(true));
     return () => {
       alive = false;
@@ -70,12 +81,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setAccountId(accountId);
       setWalletName(wallet.manifest?.name ?? null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!/reject|cancel|closed/i.test(msg)) setError(msg);
+      if (!isUserCancel(e)) {
+        const x = explainError(e);
+        setError(x.message);
+        push({ state: "error", title: "Couldn't connect your wallet", message: x.message, code: x.code, raw: x.raw });
+      }
     } finally {
       setConnecting(false);
     }
-  }, []);
+  }, [push]);
 
   const disconnect = useCallback(async () => {
     try {
@@ -104,10 +118,10 @@ export function ConnectButton({ compact = false }: { compact?: boolean }) {
   if (accountId) {
     return (
       <div className="flex items-center gap-1">
-        <a href="/me" className="btn btn-ghost btn-sm mono max-w-[11rem]" title={accountId}>
+        <Link href="/me" prefetch={false} className="btn btn-ghost btn-sm mono max-w-[11rem]" title={accountId}>
           <span className="h-1.5 w-1.5 rounded-full bg-orange" aria-hidden />
           <span className="truncate">{truncateAccount(accountId, compact ? 14 : 20)}</span>
-        </a>
+        </Link>
         <button type="button" className="btn btn-ghost btn-sm min-w-11 px-2" onClick={disconnect} aria-label="Disconnect wallet" title="Disconnect">
           <LogOut className="h-4 w-4" strokeWidth={1.5} aria-hidden />
         </button>
@@ -123,7 +137,7 @@ export function ConnectButton({ compact = false }: { compact?: boolean }) {
 
 /** Renders children only when a wallet is connected; otherwise a connect prompt. */
 export function RequireWallet({ children, what = "this" }: { children: ReactNode; what?: string }) {
-  const { accountId, ready, connect, connecting } = useWallet();
+  const { accountId, ready, connect, connecting, error } = useWallet();
   if (accountId) return <>{children}</>;
   return (
     <div className="corners bg-surface flex flex-col items-center gap-3 p-8 text-center">
@@ -133,6 +147,11 @@ export function RequireWallet({ children, what = "this" }: { children: ReactNode
       <Button variant="primary" onClick={connect} loading={connecting || !ready}>
         Connect wallet
       </Button>
+      {error ? (
+        <p role="alert" className="max-w-md text-sm text-red">
+          Couldn&apos;t connect: {error} Try again, or pick a different wallet.
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ShoppingCart } from "lucide-react";
-import { approvedCount } from "@/lib/estate";
+import { nftApprovedCount } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { formatDate, pct, shareOf, toBig, unitDisplay } from "@/lib/format";
 import { useNow } from "@/lib/hooks";
@@ -21,9 +21,9 @@ export function UnitImage({ e, u, ms, token, className }: { e: EstateView; u: Un
     <HouseNFT
       media={token?.metadata?.media ?? null}
       estateName={e.name}
-      unitLabel={unitDisplay(u.id)}
+      unitLabel={u.label}
       unitId={u.id}
-      approvedCount={approvedCount(ms)}
+      approvedCount={nftApprovedCount(ms)}
       total={ms?.length || 4}
       status={u.status}
       paid={u.paid}

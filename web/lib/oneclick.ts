@@ -57,7 +57,11 @@ export type StatusResponse = {
     originChainTxHashes?: { hash: string; explorerUrl?: string }[];
     destinationChainTxHashes?: { hash: string; explorerUrl?: string }[];
   };
+  /** Our server has reported the delivery to the estate (`report_deposit`), so the unit's balance is credited. */
   synced?: boolean;
+  /** Progress of that report: pending/failed are retried on the next status poll. */
+  sync?: "done" | "pending" | "skipped" | "failed" | "not_needed";
+  sync_note?: string;
 };
 
 export const STABLE_SYMBOLS = ["USDC", "USDT"];

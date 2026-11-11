@@ -48,7 +48,9 @@ export function VotesClient({ slug }: { slug: string }) {
       <div className="mb-6 space-y-2">
         <h2 className="text-2xl font-normal">Holder votes</h2>
         <p className="max-w-2xl text-sm text-muted">
-          One vote per allocation token, cast by whoever holds it. A proposal passes the moment more than half of the electorate votes yes. Tokens allocated after a proposal opened can&apos;t vote on it.
+          Each allocation token votes once, cast by whoever holds it, weighted by what has been paid into its unit (in whole USDC, up to the price). A
+          proposal passes the moment yes is more than half of the total weight. Tokens allocated after a proposal opened can&apos;t vote on it. Proposals
+          opened before weighting count one vote per token.
         </p>
         {isHolder ? <LoginKeyToggle contractId={account} /> : accountId ? <p className="text-sm text-muted">You don&apos;t hold a token in this estate, so you can&apos;t vote here.</p> : null}
       </div>
@@ -85,12 +87,20 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
     enabled: !!accountId && p.status === "Open",
     retry: 0,
   });
+  const weight = useQuery({
+    queryKey: ["vote-weight", estate, p.id, accountId],
+    queryFn: () => E.voteWeightAvailable(estate, p.id, accountId!),
+    enabled: !!accountId && p.status === "Open" && !!p.weighted,
+    retry: 0,
+  });
+  const unitWord = p.weighted ? "USDC weight" : "votes";
+  const fmt = (n: number) => n.toLocaleString("en-US");
   const expired = p.status === "Open" && nsToMs(p.expires_at) < now;
   const need = Math.floor(p.electorate / 2) + 1;
   const vote = async (approve: boolean) => {
     if (!accountId) return connect();
     const r = await run(`Vote ${approve ? "yes" : "no"} on #${p.id}`, () => callNoPopup(accountId, E.vote(estate, p.id, approve)), {
-      success: `Your ${avail.data ?? ""} token vote(s) are recorded.`,
+      success: p.weighted && weight.data !== undefined ? `Your vote is recorded with a weight of ${fmt(weight.data)} USDC.` : `Your ${avail.data ?? ""} token vote(s) are recorded.`,
     });
     if (r) qc.invalidateQueries({ queryKey: ["proposals", estate] });
   };
@@ -110,14 +120,15 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <div>
-            <p className="mono text-sm">Yes {p.yes} / {p.electorate} <span className="text-muted">(needs {need})</span></p>
-            <Bar value={p.electorate ? (p.yes / p.electorate) * 100 : 0} label={`${p.yes} yes of ${p.electorate}`} />
+            <p className="mono text-sm">Yes {fmt(p.yes)} / {fmt(p.electorate)} <span className="text-muted">(needs {fmt(need)})</span></p>
+            <Bar value={p.electorate ? (p.yes / p.electorate) * 100 : 0} label={`${p.yes} yes of ${p.electorate} ${unitWord}`} />
           </div>
           <div>
-            <p className="mono text-sm">No {p.no} / {p.electorate}</p>
-            <Bar value={p.electorate ? (p.no / p.electorate) * 100 : 0} tone="red" label={`${p.no} no of ${p.electorate}`} />
+            <p className="mono text-sm">No {fmt(p.no)} / {fmt(p.electorate)}</p>
+            <Bar value={p.electorate ? (p.no / p.electorate) * 100 : 0} tone="red" label={`${p.no} no of ${p.electorate} ${unitWord}`} />
           </div>
         </div>
+        <p className="mono text-xs text-muted">{p.weighted ? "USDC-weighted: each token counts the whole USDC paid into its unit (up to the price)." : "One vote per token (opened before weighted votes)."}</p>
         <details className="text-xs text-muted">
           <summary className="min-h-9 cursor-pointer">Exact proposal</summary>
           <pre className="mono overflow-auto bg-bg p-2">{JSON.stringify(p.kind, null, 2)}</pre>
@@ -127,7 +138,12 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="primary" onClick={() => vote(true)} disabled={!!accountId && avail.data === 0}><ThumbsUp className="h-4 w-4" aria-hidden /> Vote yes</Button>
             <Button onClick={() => vote(false)} disabled={!!accountId && avail.data === 0}><ThumbsDown className="h-4 w-4" aria-hidden /> Vote no</Button>
-            {accountId ? <span className="mono text-xs text-muted">{avail.data === undefined ? "…" : `${avail.data} eligible token(s)`}</span> : null}
+            {accountId ? (
+              <span className="mono text-xs text-muted">
+                {avail.data === undefined ? "…" : `${avail.data} eligible token(s)`}
+                {p.weighted && weight.data !== undefined ? ` · weight ${fmt(weight.data)} USDC` : ""}
+              </span>
+            ) : null}
           </div>
         ) : null}
         {expired ? (

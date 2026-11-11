@@ -9,38 +9,54 @@ import { ESTATES } from "./config";
 import { estate as E } from "./estate";
 import { getFxRate } from "./format";
 import { usdc } from "./usdc";
-import type { EstateView, EvidenceView, MilestoneView, NftToken, ProposalView, UnitView } from "./types";
+import type { CaptureView, EstateView, EvidenceView, MilestoneView, NftToken, ProposalView, UnitView } from "./types";
 
-type Opts = { poll?: number | false; enabled?: boolean };
+/** `poll` may be a function of the latest data, so a page can stop polling once what it waits for is final. */
+type Opts<T = unknown> = { poll?: number | false | ((data: T | undefined) => number | false); enabled?: boolean };
 
-function base<T>(key: unknown[], fn: () => Promise<T>, o: Opts = {}): UseQueryOptions<T, Error, T, unknown[]> {
+function base<T>(key: unknown[], fn: () => Promise<T>, o: Opts<T> = {}): UseQueryOptions<T, Error, T, unknown[]> {
+  const poll = o.poll;
   return {
     queryKey: key,
     queryFn: fn,
     retry: 1,
     staleTime: 5000,
-    refetchInterval: o.poll ?? false,
+    refetchInterval: typeof poll === "function" ? (q) => poll(q.state.data) : (poll ?? false),
     enabled: o.enabled ?? true,
   };
 }
 
-export const useEstate = (e: string, o?: Opts) => useQuery(base<EstateView>(["estate", e], () => E.getEstate(e), o));
-export const useUnits = (e: string, o?: Opts) => useQuery(base<UnitView[]>(["units", e], () => E.listUnits(e, 0, 100), o));
-export const useUnit = (e: string, id: string, o?: Opts) => useQuery(base<UnitView | null>(["unit", e, id], () => E.getUnit(e, id), o));
-export const useMilestones = (e: string, o?: Opts) => useQuery(base<MilestoneView[]>(["milestones", e], () => E.getMilestones(e), o));
-export const useEvidence = (e: string, id: string, o?: Opts) =>
-  useQuery(base<EvidenceView | null>(["evidence", e, id], () => E.getEvidence(e, id), o));
-export const useEvidenceList = (e: string, milestone?: number, o?: Opts) =>
-  useQuery(base<EvidenceView[]>(["evidence-list", e, milestone ?? "all"], () => E.listEvidence(e, { milestone, limit: 50 }), o));
-export const useProposals = (e: string, o?: Opts) => useQuery(base<ProposalView[]>(["proposals", e], () => E.listProposals(e, 0, 50), o));
-export const useCapture = (e: string, milestone: number | null, o?: Opts) =>
-  useQuery(base(["capture", e, milestone], () => (milestone === null ? Promise.resolve(null) : E.getCapture(e, milestone)), o));
-export const useNftToken = (e: string, id: string, o?: Opts) => useQuery(base<NftToken | null>(["nft", e, id], () => E.nftToken(e, id), o));
+const UNITS_PAGE = 100;
+const UNITS_MAX_PAGES = 50; // 5,000 units: far beyond any estate, but a hard stop if a node misbehaves
 
-export const useUsdcBalance = (account: string | null | undefined, o?: Opts) =>
-  useQuery(base(["usdc-bal", account], () => usdc.balanceOf(account!), { ...o, enabled: !!account && (o?.enabled ?? true) }));
-export const useUsdcRegistered = (account: string | null | undefined, o?: Opts) =>
-  useQuery(base(["usdc-reg", account], () => usdc.storageBalanceOf(account!).then((b) => !!b), { ...o, enabled: !!account && (o?.enabled ?? true) }));
+/** Every unit of an estate: `list_units` pages of 100 until a short page. */
+export async function listAllUnits(e: string): Promise<UnitView[]> {
+  const out: UnitView[] = [];
+  for (let page = 0; page < UNITS_MAX_PAGES; page++) {
+    const batch = (await E.listUnits(e, page * UNITS_PAGE, UNITS_PAGE)) ?? [];
+    out.push(...batch);
+    if (batch.length < UNITS_PAGE) break;
+  }
+  return out;
+}
+
+export const useEstate = (e: string, o?: Opts<EstateView>) => useQuery(base<EstateView>(["estate", e], () => E.getEstate(e), o));
+export const useUnits = (e: string, o?: Opts<UnitView[]>) => useQuery(base<UnitView[]>(["units", e], () => listAllUnits(e), o));
+export const useUnit = (e: string, id: string, o?: Opts<UnitView | null>) => useQuery(base<UnitView | null>(["unit", e, id], () => E.getUnit(e, id), o));
+export const useMilestones = (e: string, o?: Opts<MilestoneView[]>) => useQuery(base<MilestoneView[]>(["milestones", e], () => E.getMilestones(e), o));
+export const useEvidence = (e: string, id: string, o?: Opts<EvidenceView | null>) =>
+  useQuery(base<EvidenceView | null>(["evidence", e, id], () => E.getEvidence(e, id), o));
+export const useEvidenceList = (e: string, milestone?: number, o?: Opts<EvidenceView[]>) =>
+  useQuery(base<EvidenceView[]>(["evidence-list", e, milestone ?? "all"], () => E.listEvidence(e, { milestone, limit: 50 }), o));
+export const useProposals = (e: string, o?: Opts<ProposalView[]>) => useQuery(base<ProposalView[]>(["proposals", e], () => E.listProposals(e, 0, 50), o));
+export const useCapture = (e: string, milestone: number | null, o?: Opts<CaptureView | null>) =>
+  useQuery(base<CaptureView | null>(["capture", e, milestone], () => (milestone === null ? Promise.resolve(null) : E.getCapture(e, milestone)), o));
+export const useNftToken = (e: string, id: string, o?: Opts<NftToken | null>) => useQuery(base<NftToken | null>(["nft", e, id], () => E.nftToken(e, id), o));
+
+export const useUsdcBalance = (account: string | null | undefined, o?: Opts<string>) =>
+  useQuery(base<string>(["usdc-bal", account], () => usdc.balanceOf(account!), { ...o, enabled: !!account && (o?.enabled ?? true) }));
+export const useUsdcRegistered = (account: string | null | undefined, o?: Opts<boolean>) =>
+  useQuery(base<boolean>(["usdc-reg", account], () => usdc.storageBalanceOf(account!).then((b) => !!b), { ...o, enabled: !!account && (o?.enabled ?? true) }));
 
 /** All configured estates' get_estate, each succeeding or failing on its own. */
 export function useAllEstates(estates: string[] = ESTATES) {

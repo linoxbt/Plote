@@ -94,8 +94,10 @@ export function CountUp({ value, duration = 1200 }: { value: string; duration?: 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, reduce]);
+  // Screen readers get the real value once, as text; the animated digits are hidden from them.
   return (
-    <span ref={ref} aria-label={value}>
+    <span ref={ref}>
+      <span className="sr-only">{value}</span>
       <span aria-hidden>{shown}</span>
     </span>
   );

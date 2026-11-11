@@ -51,10 +51,3 @@ export async function chipins(estate: string, unit: string): Promise<ChipinRecor
   if (error) throw new Error(error.message);
   return (data ?? []) as ChipinRecord[];
 }
-
-export async function evidenceFileByHash(sha256: string): Promise<EvidenceFileRecord | null> {
-  const sb = getSupabase();
-  if (!sb) return null;
-  const { data } = await sb.from(TABLES.evidenceFiles).select("*").eq("sha256", sha256).limit(1).maybeSingle();
-  return (data as EvidenceFileRecord | null) ?? null;
-}

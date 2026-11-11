@@ -62,7 +62,7 @@ export function AppKeyToggle({
       {state === "pending" ? (
         <p className="mono text-xs text-amber">
           A key was requested but isn&apos;t on your account yet (your wallet may not support adding it at sign-in).{" "}
-          <button type="button" className="min-h-9 underline" onClick={() => { forgetLoginKey(accountId, contractId, role); refresh(); }}>forget it</button>
+          <button type="button" className="min-h-9 underline" onClick={() => void forgetLoginKey(accountId, contractId, role).then(refresh)}>forget it</button>
         </p>
       ) : null}
       <Button

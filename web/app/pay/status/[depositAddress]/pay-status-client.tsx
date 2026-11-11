@@ -14,7 +14,6 @@ import { estateSlug } from "@/lib/estates";
 import { shortHash, toBig, unitDisplay } from "@/lib/format";
 import { sendTx } from "@/lib/near";
 import { chainName, explorerUrl, oneclick, statusStep } from "@/lib/oneclick";
-import { unit as U } from "@/lib/unit";
 
 const STEPS = ["Waiting for deposit", "Deposit seen", "Swapping", "Delivered to unit"];
 
@@ -22,7 +21,14 @@ export function PayStatusClient({ depositAddress, hint }: { depositAddress: stri
   const q = useQuery({
     queryKey: ["oneclick-status", depositAddress],
     queryFn: () => oneclick.status(depositAddress),
-    refetchInterval: (query) => (["SUCCESS", "REFUNDED", "FAILED"].includes(query.state.data?.status ?? "") ? false : 5000),
+    // Keep polling past SUCCESS until our server has reported the delivery to the estate (each poll retries that report).
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (!d) return 5000;
+      if (d.status === "REFUNDED" || d.status === "FAILED") return false;
+      if (d.status === "SUCCESS") return d.synced || d.sync === "skipped" || d.sync === "not_needed" || query.state.dataUpdateCount > 60 ? false : 10_000;
+      return 5000;
+    },
     retry: 2,
   });
   const recipient = (q.data?.quoteResponse?.quoteRequest?.recipient as string | undefined) ?? null;
@@ -90,17 +96,17 @@ export function PayStatusClient({ depositAddress, hint }: { depositAddress: stri
           <KV k="Recipient unit">{recipient ?? "—"}</KV>
           <KV k="Origin tx">{st.swapDetails?.originChainTxHashes?.[0] ? (st.swapDetails.originChainTxHashes[0].explorerUrl ? <a className="underline" href={st.swapDetails.originChainTxHashes[0].explorerUrl} target="_blank" rel="noreferrer">{shortHash(st.swapDetails.originChainTxHashes[0].hash)} ↗</a> : shortHash(st.swapDetails.originChainTxHashes[0].hash)) : "—"}</KV>
           <KV k="NEAR tx">{st.swapDetails?.nearTxHashes?.[0] ? <a className="underline" href={explorerTxUrl(st.swapDetails.nearTxHashes[0])} target="_blank" rel="noreferrer">{shortHash(st.swapDetails.nearTxHashes[0])} ↗</a> : "—"}</KV>
-          <KV k="Synced to the estate">{st.synced ? "yes" : st.status === "SUCCESS" ? "pending" : "—"}</KV>
+          <KV k="Credited to the unit">{st.synced ? "yes" : st.status !== "SUCCESS" ? "—" : st.sync === "failed" ? "retrying…" : st.sync === "skipped" ? "not recorded by this deployment" : "reporting…"}</KV>
         </dl>
+        {st.status === "SUCCESS" && !st.synced ? (
+          <p className="text-sm text-muted" aria-live="polite">
+            The USDC is in the unit&apos;s account. Plote is now telling the estate contract about it, so it counts towards the unit; this page keeps checking.
+            {st.sync_note ? <span className="mono mt-1 block break-words text-xs">{st.sync_note}</span> : null}
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           <a href={explorerUrl(depositAddress)} target="_blank" rel="noreferrer" className="btn btn-ghost corners">1Click explorer ↗</a>
-          {estate && unitId ? (
-            <Button onClick={async () => {
-              if (!accountId) return connect();
-              const r = await run("Sync now", () => sendTx(U.syncDeposits(recipient!)));
-              if (r) qc.invalidateQueries();
-            }}>Sync now</Button>
-          ) : null}
+          <Button onClick={() => { void q.refetch(); void unit.refetch(); }} loading={q.isFetching}>Check again</Button>
           {estate && unitId ? <Link href={`/estates/${estateSlug(estate)}/units/${unitId}`} className="btn btn-ghost corners">View {unitDisplay(unitId)}</Link> : null}
         </div>
       </BracketCard>

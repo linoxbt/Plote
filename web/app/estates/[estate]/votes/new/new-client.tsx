@@ -15,7 +15,7 @@ import { estate as E } from "@/lib/estate";
 import { estateAccount, estateSlug, isValidAccountId } from "@/lib/estates";
 import { formatDate, msToNs, nsToMs } from "@/lib/format";
 import { useEstate, useMilestones } from "@/lib/hooks";
-import { callNoPopup } from "@/lib/near";
+import { sendTx } from "@/lib/near";
 import type { ProposalKind } from "@/lib/types";
 
 type Template = "ReplaceSurveyor" | "Veto" | "Freeze" | "Unfreeze" | "ExtendDeadline" | "StepIn";
@@ -88,7 +88,7 @@ export function NewProposalClient({ slug }: { slug: string }) {
 
   const onSubmit = handleSubmit(async () => {
     if (!built.kind || !accountId) return;
-    const r = await run("Open proposal", () => callNoPopup(accountId, E.propose(account, built.kind!)), { success: "Proposal opened. Holders can vote now." });
+    const r = await run("Open proposal", () => sendTx(E.propose(account, built.kind!)), { success: "Proposal opened. Holders can vote now." });
     if (r) router.push(`/estates/${estateSlug(account)}/votes`);
   });
 
@@ -105,7 +105,7 @@ export function NewProposalClient({ slug }: { slug: string }) {
             <div className="grid gap-2 sm:grid-cols-2">
               {TEMPLATES.map((x) => (
                 <label key={x.id} className={clsx("corners corners-hover flex min-h-14 cursor-pointer items-start gap-3 bg-surface p-3", t === x.id && "corners-active")}>
-                  <input type="radio" name="tpl" className="mt-1 accent-[#FF9211]" checked={t === x.id} onChange={() => setT(x.id)} />
+                  <input type="radio" name="tpl" className="mt-1 accent-orange" checked={t === x.id} onChange={() => setT(x.id)} />
                   <span>
                     <span className="font-medium">{x.title}</span>
                     <span className="block text-xs text-muted">{x.effect}</span>
@@ -130,7 +130,7 @@ export function NewProposalClient({ slug }: { slug: string }) {
               {t === "Freeze" ? (
                 <>
                   <Field label="Reason" htmlFor="reason"><input id="reason" className="input" placeholder="No work on site for 6 weeks" {...register("reason")} /></Field>
-                  <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" className="h-5 w-5 accent-[#FF9211]" {...register("refunds_open")} /> Also open refunds for every holder</label>
+                  <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" className="h-5 w-5 accent-orange" {...register("refunds_open")} /> Also open refunds for every holder</label>
                 </>
               ) : null}
               {t === "ExtendDeadline" ? (
@@ -150,7 +150,7 @@ export function NewProposalClient({ slug }: { slug: string }) {
               <div>
                 <p className="label">Exact propose arguments</p>
                 <pre className="mono overflow-auto bg-bg p-3 text-xs">{built.kind ? JSON.stringify({ kind: built.kind }, null, 2) : `// ${built.error}`}</pre>
-                <p className="mono text-xs text-muted">near call {account} propose &apos;{built.kind ? JSON.stringify({ kind: built.kind }) : "…"}&apos; --accountId {accountId}</p>
+                <p className="mono text-xs text-muted">near call {account} propose &apos;{built.kind ? JSON.stringify({ kind: built.kind }) : "…"}&apos; --accountId {accountId} --deposit 0.05</p>
               </div>
               {!canPropose ? (
                 <p className="text-sm text-amber">{isDev ? "As the developer you can only propose a deadline extension." : "Only holders of a token in this estate can propose."}</p>

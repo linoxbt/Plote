@@ -7,10 +7,10 @@ import { MonoAmount } from "@/components/chain";
 import { DevScoreChip } from "@/components/estate-bits";
 import { RequireWallet, useWallet } from "@/components/wallet";
 import { BracketCard, EmptyState, LinkButton, LoadingCard } from "@/components/ui";
-import { currentMilestone, estate as E } from "@/lib/estate";
+import { currentMilestone } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { formatNear, nsToMs, toBig } from "@/lib/format";
-import { useAllMilestones, useNow, useRoles } from "@/lib/hooks";
+import { listAllUnits, useAllMilestones, useNow, useRoles } from "@/lib/hooks";
 
 const DAY = 86_400_000;
 
@@ -19,7 +19,7 @@ export function DevHomeClient() {
   const now = useNow(60_000);
   const roles = useRoles(accountId);
   const ms = useAllMilestones(roles.developerOf);
-  const units = useQueries({ queries: roles.developerOf.map((e) => ({ queryKey: ["units", e], queryFn: () => E.listUnits(e, 0, 100), retry: 1 })) });
+  const units = useQueries({ queries: roles.developerOf.map((e) => ({ queryKey: ["units", e], queryFn: () => listAllUnits(e), retry: 1 })) });
   return (
     <RequireWallet what="the developer console">
       {roles.loading ? <LoadingCard lines={4} /> : !roles.developerOf.length ? (

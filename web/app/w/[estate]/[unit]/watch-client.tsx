@@ -10,6 +10,7 @@ import { UnitImage } from "@/components/unit-bits";
 import { useTx } from "@/components/toast";
 import { useWallet } from "@/components/wallet";
 import { Bar, BracketCard, Button, EmptyState, ErrorState, Field, LoadingCard, Page } from "@/components/ui";
+import { copyText } from "@/lib/clipboard";
 import { APP_URL } from "@/lib/config";
 import { approvedCount } from "@/lib/estate";
 import { estateAccount, estateSlug } from "@/lib/estates";
@@ -37,7 +38,7 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
   const unit = useUnit(account, unitId);
   const ms = useMilestones(account);
   const evs = useEvidenceList(account);
-  const [copied, setCopied] = useState(false);
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
 
   if (est.isLoading || unit.isLoading) return <Page narrow><LoadingCard lines={6} /></Page>;
   if (!est.data) return <Page narrow><ErrorState error={est.error} onRetry={() => est.refetch()} /></Page>;
@@ -61,10 +62,23 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
           <div className="flex flex-wrap gap-2">
             <a className="btn btn-primary" href={`https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`} target="_blank" rel="noreferrer"><Share2 className="h-4 w-4" aria-hidden /> WhatsApp</a>
             <a className="btn btn-ghost corners" href={`https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`} target="_blank" rel="noreferrer">Post on X</a>
-            <Button onClick={async () => { try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* blocked */ } }}>
-              <Copy className="h-4 w-4" aria-hidden /> {copied ? "Copied" : "Copy link"}
+            <Button
+              onClick={async () => {
+                const ok = await copyText(url);
+                setCopy(ok ? "copied" : "failed");
+                if (ok) setTimeout(() => setCopy((c) => (c === "copied" ? "idle" : c)), 2000);
+              }}
+            >
+              <Copy className="h-4 w-4" aria-hidden /> {copy === "copied" ? "Copied" : "Copy link"}
             </Button>
           </div>
+          <p className="sr-only" aria-live="polite">{copy === "copied" ? "Link copied" : ""}</p>
+          {copy === "failed" ? (
+            <div role="alert" className="space-y-1">
+              <label htmlFor="watch-link" className="text-sm text-amber">Your browser blocked copying. Select the link and copy it:</label>
+              <input id="watch-link" className="input text-sm" readOnly value={url} autoFocus onFocus={(ev) => ev.currentTarget.select()} />
+            </div>
+          ) : null}
         </div>
       </div>
 

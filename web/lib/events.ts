@@ -10,8 +10,6 @@ export const PLOTE_EVENTS = [
   "proposal_executed", "proposal_rejected", "playground_reset", "payout_redirected",
 ] as const;
 
-export type PloteEventName = (typeof PLOTE_EVENTS)[number];
-
 export type PloteEventLog = {
   standard: string;
   version: string;
@@ -43,10 +41,6 @@ export function parseEventLogs(lines: string[]): PloteEventLog[] {
     if (e) out.push(e);
   }
   return out;
-}
-
-export function isPloteEvent(e: PloteEventLog): boolean {
-  return e.standard === "plote";
 }
 
 /** Flatten events into rows (one per data item), with the unit id pulled out when present. */

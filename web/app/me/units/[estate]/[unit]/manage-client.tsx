@@ -11,13 +11,35 @@ import { PlanTable, PositionCard, UnitImage } from "@/components/unit-bits";
 import { useTx } from "@/components/toast";
 import { RequireWallet, useWallet } from "@/components/wallet";
 import { BracketCard, Button, ErrorState, Field, LinkButton, LoadingCard, Page } from "@/components/ui";
-import { approvedCount, estate as E, MAX_GUARDIANS } from "@/lib/estate";
+import { approvedCount, estate as E, MAX_GUARDIANS, nftApprovedCount } from "@/lib/estate";
 import { estateAccount, estateSlug, isValidAccountId } from "@/lib/estates";
 import { formatUsd, parseUsdc, toBig, unitDisplay } from "@/lib/format";
 import { useEstate, useMilestones, useNftToken, useNow, useUnit, useUsdcBalance } from "@/lib/hooks";
 import { bytesToBase64, getWallet, sendTx, sendTxs, type TxSpec } from "@/lib/near";
 import { notifyMessage, timestampedNonce } from "@/lib/nep413";
 import { isRegistered, usdc } from "@/lib/usdc";
+
+/**
+ * Whether this deployment can send milestone emails (GET /api/notify/status → { configured }). A 404 (older server),
+ * any other failure or a malformed answer all count as "not configured", so the form never promises an email that can't be sent.
+ */
+function useNotifyConfigured() {
+  return useQuery({
+    queryKey: ["notify-status"],
+    staleTime: 300_000,
+    retry: 0,
+    queryFn: async (): Promise<boolean> => {
+      try {
+        const res = await fetch("/api/notify/status", { headers: { accept: "application/json" } });
+        if (!res.ok) return false;
+        const j = (await res.json()) as { configured?: unknown };
+        return j.configured === true;
+      } catch {
+        return false;
+      }
+    },
+  });
+}
 
 function Section({ id, title, children, tone }: { id: string; title: string; children: ReactNode; tone?: "red" | "accent" | "amber" }) {
   return (
@@ -40,6 +62,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
   const owed = useQuery({ queryKey: ["owed", account, accountId], queryFn: () => E.owedOf(account, accountId!), enabled: !!accountId, retry: 0 });
   const { run } = useTx();
   const qc = useQueryClient();
+  const notify = useNotifyConfigured();
   const [amount, setAmount] = useState("");
   const [ask, setAsk] = useState("");
   const [beneficiary, setBeneficiary] = useState("");
@@ -100,7 +123,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
         onClose={() => setDismissed(true)}
         title={latestTitle ? `Your ${latestTitle.toLowerCase()} is done.` : "A new stage was approved."}
         sub={`${unitDisplay(u.id)} at ${e.name} is ${u.progress_bps / 100}% built.`}
-        house={{ estateName: e.name, unitLabel: unitDisplay(u.id), unitId: u.id, approvedCount: done, total: ms.data?.length || 4, status: u.status, paid: u.paid, price: u.price }}
+        house={{ estateName: e.name, unitLabel: u.label, unitId: u.id, approvedCount: nftApprovedCount(ms.data), total: ms.data?.length || 4, status: u.status, paid: u.paid, price: u.price }}
         share={<LinkButton href={`/w/${s}/${u.id}`} variant="primary">Share it</LinkButton>}
       />
       <nav className="mono mb-4 text-xs text-muted"><Link href="/me" className="hover:text-text">My units</Link> / {s} / {unitDisplay(u.id)}</nav>
@@ -221,6 +244,12 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
 
             <Section id="notifications" title="Notifications">
               <p className="text-sm text-muted">Get an email when a stage is signed or money is released. Opt-in: your wallet signs a message to prove it&apos;s you, then you confirm from the email we send. You can delete it any time.</p>
+              {notify.isLoading ? <p className="text-sm text-muted" aria-busy="true">Checking whether email is available…</p> : !notify.data ? (
+                <p className="text-sm text-muted" role="note">
+                  Email notifications aren&apos;t set up on this deployment, so there&apos;s nothing to subscribe to here. You can still follow every stage on the{" "}
+                  <Link className="underline hover:text-orange" href={`/w/${s}/${u.id}`}>watch page</Link>.
+                </p>
+              ) : (
               <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                 <Field label="Email" htmlFor="email"><input id="email" type="email" className="input" value={email} onChange={(x) => setEmail(x.target.value)} autoComplete="email" /></Field>
                 <Button className="self-end" onClick={async () => {
@@ -236,6 +265,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
                   }, { success: "Check your inbox: click the link we sent to confirm." });
                 }}><Mail className="h-4 w-4" aria-hidden /> Subscribe</Button>
               </div>
+              )}
             </Section>
 
             <Section id="danger" title="Danger zone" tone="red">

@@ -65,7 +65,7 @@ export function ReleasesClient({ slug }: { slug: string }) {
                     const can = toBig(u.releasable_now) > 0n;
                     return (
                       <tr key={u.id} className="border-t border-line">
-                        <td><input type="checkbox" className="h-5 w-5 accent-[#FF9211]" disabled={!can} checked={sel.has(u.id)} aria-label={`Select ${unitDisplay(u.id)}`} onChange={(x) => setSel((s) => { const n = new Set(s); if (x.target.checked) n.add(u.id); else n.delete(u.id); return n; })} /></td>
+                        <td><input type="checkbox" className="h-5 w-5 accent-orange" disabled={!can} checked={sel.has(u.id)} aria-label={`Select ${unitDisplay(u.id)}`} onChange={(x) => setSel((s) => { const n = new Set(s); if (x.target.checked) n.add(u.id); else n.delete(u.id); return n; })} /></td>
                         <td className="py-2"><span className="mono font-normal">{unitDisplay(u.id)}</span> <StatusBadge status={u.status} /></td>
                         <td className="text-right"><MonoAmount value={u.paid} naira={false} account={u.account} /></td>
                         <td className="mono text-right">{u.approved_bps / 100}%</td>

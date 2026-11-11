@@ -343,71 +343,185 @@ export async function sendTxs(specs: TxSpec[]): Promise<TxResult[]> {
 //  - "login": added during sign-in (near-connect `addFunctionCallKey`) or later from the votes page, for the
 //    frequent non-payable estate calls (vote, propose, sync, qs_sign, submit_evidence, declare_default…).
 //  - "dev": the developer's day-to-day key for claim_release / propose (deadline extensions), added from /dev.
-// Each key is created in the browser, added to the user's account by one wallet approval (function-call
-// permission for one contract, 0.25 NEAR allowance), and kept in localStorage.
+// Each key is created in the browser and added to the user's account by one wallet approval (function-call
+// permission for one contract, 0.25 NEAR allowance).
+//
+// Where the browser has WebCrypto Ed25519, the private key is generated NON-extractable and kept in IndexedDB as a
+// CryptoKey (like lib/phone-key.ts): page scripts can sign with it but can never read it. Browsers without it keep
+// the older path, a near-api-js secret in localStorage. Keys an older build left in localStorage are moved into
+// IndexedDB the first time they're used (imported non-extractable, checked to sign for the same public key, and only
+// then deleted from localStorage), so signed-in users keep working with the key already on their account.
 
 const FCK_PREFIX = "plote:fck:";
 export const LOGIN_KEY_ALLOWANCE = "250000000000000000000000"; // 0.25 NEAR
 
 export type AppKeyRole = "login" | "dev";
-type StoredKey = { sk: string; methods: string[] | null; pk?: string };
+/** localStorage record (fallback path and legacy builds). */
+type StoredSecret = { sk: string; methods: string[] | null; pk?: string };
+/** IndexedDB record: the private key is a non-extractable CryptoKey. */
+type StoredCryptoKey = { kind: "webcrypto"; publicKey: string; privateKey: CryptoKey; methods: string[] | null; createdAt: number };
+type AppKey =
+  | { kind: "webcrypto"; publicKey: string; privateKey: CryptoKey; methods: string[] | null }
+  | { kind: "secret"; publicKey: string | null; secret: string; methods: string[] | null };
 
 function fckKey(accountId: string, contractId: string, role: AppKeyRole = "login") {
   return `${FCK_PREFIX}${NETWORK}:${accountId}:${contractId}${role === "login" ? "" : `:${role}`}`;
 }
 
-function readStored(accountId: string, contractId: string, role: AppKeyRole): StoredKey | null {
+// IndexedDB: same database and store as lib/phone-key.ts ("plote" / "keys"), different slot names.
+function openKeyDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("plote", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("keys");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function keyDb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest): Promise<T> {
+  const db = await openKeyDb();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const tx = db.transaction("keys", mode);
+      const req = fn(tx.objectStore("keys"));
+      tx.oncomplete = () => resolve(req.result as T);
+      tx.onerror = () => reject(tx.error ?? req.error);
+      tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function readCryptoKey(slot: string): Promise<StoredCryptoKey | null> {
+  if (typeof indexedDB === "undefined") return null;
+  try {
+    const r = await keyDb<StoredCryptoKey | undefined>("readonly", (s) => s.get(slot));
+    return r && r.kind === "webcrypto" && r.privateKey instanceof CryptoKey ? r : null;
+  } catch {
+    return null;
+  }
+}
+
+function readSecret(slot: string): StoredSecret | null {
   let raw: string | null = null;
   try {
-    raw = window.localStorage.getItem(fckKey(accountId, contractId, role));
+    raw = window.localStorage.getItem(slot);
   } catch {
     return null;
   }
   if (!raw) return null;
   if (raw.startsWith("ed25519:")) return { sk: raw, methods: null }; // legacy: bare secret, methods unknown
   try {
-    const j = JSON.parse(raw) as Partial<StoredKey>;
+    const j = JSON.parse(raw) as Partial<StoredSecret>;
     return typeof j.sk === "string" ? { sk: j.sk, methods: Array.isArray(j.methods) ? j.methods : null, pk: j.pk } : null;
   } catch {
     return null;
   }
 }
 
-/** Remember a key pair this browser created (call only after the AddKey was approved). */
-export function saveAppKey(accountId: string, contractId: string, role: AppKeyRole, secret: string, methods: string[], publicKey?: string) {
+function removeSecret(slot: string) {
   try {
-    window.localStorage.setItem(fckKey(accountId, contractId, role), JSON.stringify({ sk: secret, methods, pk: publicKey } satisfies StoredKey));
+    window.localStorage.removeItem(slot);
   } catch {
-    /* if storage is blocked the key just isn't remembered */
+    /* ignore */
   }
 }
 
-export function getLoginKey(accountId: string, contractId: string, role: AppKeyRole = "login"): string | null {
-  return readStored(accountId, contractId, role)?.sk ?? null;
-}
-
-/** Public key of a stored app key ("ed25519:…"), for checking it on-chain with `viewAccessKey`. */
-export async function appKeyPublic(accountId: string, contractId: string, role: AppKeyRole = "login"): Promise<string | null> {
-  const k = readStored(accountId, contractId, role);
-  if (!k) return null;
-  if (k.pk) return k.pk;
+async function secretPublicKey(secret: string): Promise<string | null> {
   try {
     const { KeyPair } = await import("near-api-js");
-    return KeyPair.fromString(k.sk as `ed25519:${string}`).getPublicKey().toString();
+    return KeyPair.fromString(secret as `ed25519:${string}`).getPublicKey().toString();
   } catch {
     return null;
   }
 }
 
-/** A fresh ed25519 key pair (browser only). */
-export async function newKeyPair(): Promise<{ secret: string; publicKey: string }> {
+/** Move a localStorage secret into IndexedDB as a non-extractable key. Returns the new record, or null to keep the old one. */
+async function migrateSecret(slot: string, k: StoredSecret): Promise<StoredCryptoKey | null> {
+  const { ed25519WebCryptoSupported, importSecretNonExtractable } = await import("./webcrypto-ed25519");
+  if (typeof indexedDB === "undefined" || !(await ed25519WebCryptoSupported())) return null;
+  const publicKey = k.pk ?? (await secretPublicKey(k.sk));
+  if (!publicKey) return null;
+  const privateKey = await importSecretNonExtractable(k.sk, publicKey);
+  if (!privateKey) return null;
+  const rec: StoredCryptoKey = { kind: "webcrypto", publicKey, privateKey, methods: k.methods, createdAt: Date.now() };
+  try {
+    await keyDb("readwrite", (s) => s.put(rec, slot));
+  } catch {
+    return null;
+  }
+  // Only forget the plaintext copy once the stored CryptoKey reads back for the same public key.
+  const back = await readCryptoKey(slot);
+  if (!back || back.publicKey !== publicKey) return null;
+  removeSecret(slot);
+  return back;
+}
+
+/** The app key for (account, contract, role) on this device, migrating a legacy localStorage key on the way. */
+async function loadAppKey(accountId: string, contractId: string, role: AppKeyRole): Promise<AppKey | null> {
+  if (typeof window === "undefined") return null;
+  const slot = fckKey(accountId, contractId, role);
+  const ck = await readCryptoKey(slot);
+  if (ck) return { kind: "webcrypto", publicKey: ck.publicKey, privateKey: ck.privateKey, methods: ck.methods };
+  const sk = readSecret(slot);
+  if (!sk) return null;
+  const moved = await migrateSecret(slot, sk).catch(() => null);
+  if (moved) return { kind: "webcrypto", publicKey: moved.publicKey, privateKey: moved.privateKey, methods: moved.methods };
+  return { kind: "secret", publicKey: sk.pk ?? null, secret: sk.sk, methods: sk.methods };
+}
+
+/**
+ * A new key pair for an app key. Call `save` only after the AddKey was approved. Non-extractable WebCrypto where
+ * available; otherwise a near-api-js secret kept in localStorage.
+ */
+async function createAppKey(): Promise<{ publicKey: string; save: (accountId: string, contractId: string, role: AppKeyRole, methods: string[]) => Promise<void> }> {
+  const { ed25519WebCryptoSupported, generateNonExtractable } = await import("./webcrypto-ed25519");
+  if (typeof indexedDB !== "undefined" && (await ed25519WebCryptoSupported())) {
+    const { privateKey, publicKey } = await generateNonExtractable();
+    return {
+      publicKey,
+      save: async (accountId, contractId, role, methods) => {
+        const slot = fckKey(accountId, contractId, role);
+        try {
+          await keyDb("readwrite", (s) => s.put({ kind: "webcrypto", publicKey, privateKey, methods, createdAt: Date.now() } satisfies StoredCryptoKey, slot));
+          removeSecret(slot); // a key this one replaces
+        } catch {
+          /* if storage is blocked the key just isn't remembered; calls fall back to the wallet */
+        }
+      },
+    };
+  }
   const { KeyPair } = await import("near-api-js");
   const kp = KeyPair.fromRandom("ed25519");
-  return { secret: kp.toString(), publicKey: kp.getPublicKey().toString() };
+  const publicKey = kp.getPublicKey().toString();
+  return {
+    publicKey,
+    save: async (accountId, contractId, role, methods) => {
+      try {
+        window.localStorage.setItem(fckKey(accountId, contractId, role), JSON.stringify({ sk: kp.toString(), methods, pk: publicKey } satisfies StoredSecret));
+      } catch {
+        /* if storage is blocked the key just isn't remembered */
+      }
+    },
+  };
+}
+
+/** Public key of a stored app key ("ed25519:…"), for checking it on-chain with `viewAccessKey`. */
+export async function appKeyPublic(accountId: string, contractId: string, role: AppKeyRole = "login"): Promise<string | null> {
+  const k = await loadAppKey(accountId, contractId, role);
+  if (!k) return null;
+  return k.publicKey ?? (k.kind === "secret" ? secretPublicKey(k.secret) : null);
+}
+
+/** How a stored app key is held on this device (for the UI): "device" = non-extractable key, "local" = localStorage secret. */
+export async function appKeyStorage(accountId: string, contractId: string, role: AppKeyRole = "login"): Promise<"device" | "local" | null> {
+  const k = await loadAppKey(accountId, contractId, role);
+  return k ? (k.kind === "webcrypto" ? "device" : "local") : null;
 }
 
 export async function addLoginKey(accountId: string, contractId: string, methodNames: string[], role: AppKeyRole = "login"): Promise<string> {
-  const { secret, publicKey } = await newKeyPair();
+  const key = await createAppKey();
   const w = await getWallet();
   await w.signAndSendTransaction({
     receiverId: accountId,
@@ -415,19 +529,24 @@ export async function addLoginKey(accountId: string, contractId: string, methodN
       {
         type: "AddKey",
         params: {
-          publicKey,
+          publicKey: key.publicKey,
           accessKey: { permission: { receiverId: contractId, allowance: LOGIN_KEY_ALLOWANCE, methodNames } },
         },
       },
     ],
   });
-  saveAppKey(accountId, contractId, role, secret, methodNames, publicKey);
-  return publicKey;
+  await key.save(accountId, contractId, role, methodNames);
+  return key.publicKey;
 }
 
-export function forgetLoginKey(accountId: string, contractId: string, role: AppKeyRole = "login") {
+/** Forget an app key on this device (both stores). The key stays on the account until removed with the wallet. */
+export async function forgetLoginKey(accountId: string, contractId: string, role: AppKeyRole = "login"): Promise<void> {
+  if (typeof window === "undefined") return;
+  const slot = fckKey(accountId, contractId, role);
+  removeSecret(slot);
+  if (typeof indexedDB === "undefined") return;
   try {
-    window.localStorage.removeItem(fckKey(accountId, contractId, role));
+    await keyDb("readwrite", (s) => s.delete(slot));
   } catch {
     /* ignore */
   }
@@ -440,7 +559,7 @@ export async function removeAppKey(accountId: string, contractId: string, role: 
     const w = await getWallet();
     await w.signAndSendTransaction({ receiverId: accountId, actions: [{ type: "DeleteKey", params: { publicKey } }] });
   }
-  forgetLoginKey(accountId, contractId, role);
+  await forgetLoginKey(accountId, contractId, role);
 }
 
 /**
@@ -454,13 +573,13 @@ export async function signInWithLoginKey(contractId: string | null, methodNames:
   const manifest = c.availableWallets.find((w) => w.manifest.id === walletId)?.manifest;
   const supportsKey = !!contractId && !!manifest?.features?.signInWithFunctionCallKey;
   if (supportsKey) {
-    const kp = await newKeyPair();
+    const key = await createAppKey();
     try {
       const wallet = await c.connect({
         walletId,
         addFunctionCallKey: {
           contractId: contractId!,
-          publicKey: kp.publicKey,
+          publicKey: key.publicKey,
           allowMethods: { anyMethod: false, methodNames },
           gasAllowance: { kind: "limited", amount: LOGIN_KEY_ALLOWANCE },
         },
@@ -468,7 +587,7 @@ export async function signInWithLoginKey(contractId: string | null, methodNames:
       const accounts = await wallet.getAccounts();
       const accountId = accounts[0]?.accountId ?? null;
       // Kept locally; `callNoPopup` falls back to the wallet if the wallet didn't actually add it.
-      if (accountId) saveAppKey(accountId, contractId!, "login", kp.secret, methodNames, kp.publicKey);
+      if (accountId) await key.save(accountId, contractId!, "login", methodNames);
       return { wallet, accountId, keyRequested: true };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -481,11 +600,26 @@ export async function signInWithLoginKey(contractId: string | null, methodNames:
   return { wallet, accountId: accounts[0]?.accountId ?? null, keyRequested: false };
 }
 
-async function sendWithKey(accountId: string, secret: string, spec: TxSpec): Promise<TxResult> {
-  const { Account, KeyPairSigner, JsonRpcProvider, actions } = await import("near-api-js");
+async function signerFor(k: AppKey) {
+  const { KeyPairSigner, PublicKey, Signer } = await import("near-api-js");
+  if (k.kind === "secret") return KeyPairSigner.fromSecretKey(k.secret as `ed25519:${string}`);
+  const { signWith } = await import("./webcrypto-ed25519");
+  const { publicKey, privateKey } = k;
+  class DeviceKeySigner extends Signer {
+    async getPublicKey() {
+      return PublicKey.fromString(publicKey);
+    }
+    protected async signBytes(bytes: Uint8Array) {
+      return signWith(privateKey, bytes);
+    }
+  }
+  return new DeviceKeySigner();
+}
+
+async function sendWithKey(accountId: string, key: AppKey, spec: TxSpec): Promise<TxResult> {
+  const { Account, JsonRpcProvider, actions } = await import("near-api-js");
   const provider = new JsonRpcProvider({ url: RPC_URLS[0] });
-  const signer = KeyPairSigner.fromSecretKey(secret as `ed25519:${string}`);
-  const account = new Account(accountId, provider, signer);
+  const account = new Account(accountId, provider, await signerFor(key));
   const res = await account.signAndSendTransaction({
     receiverId: spec.receiverId,
     actions: spec.actions.map((a) => actions.functionCall(a.method, a.args, BigInt(a.gas), BigInt(a.deposit))),
@@ -503,11 +637,11 @@ export async function callNoPopup(accountId: string, spec: TxSpec): Promise<TxRe
   if (isNonPayable(spec)) {
     const methods = spec.actions.map((a) => a.method);
     for (const role of ["dev", "login"] as const) {
-      const k = typeof window === "undefined" ? null : readStored(accountId, spec.receiverId, role);
+      const k = await loadAppKey(accountId, spec.receiverId, role).catch(() => null);
       if (!k) continue;
       if (k.methods && !methods.every((m) => k.methods!.includes(m))) continue;
       try {
-        return await sendWithKey(accountId, k.sk, spec);
+        return await sendWithKey(accountId, k, spec);
       } catch (e) {
         // A contract panic is a real answer; key problems fall back to the next key / the wallet.
         if (e instanceof PloteError && e.code.startsWith("E_")) throw e;

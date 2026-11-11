@@ -9,6 +9,7 @@ import { Activity } from "@/components/estate-bits";
 import { MilestoneTrack } from "@/components/milestones";
 import { DefaultCard, DefaultExplainer } from "@/components/default-resale";
 import { PayFromOtherChain } from "@/components/pay-other-chain";
+import { ReservationActions } from "@/components/reservation";
 import { useTx } from "@/components/toast";
 import { EvidenceThumbs, ListingCard, PlanTable, PositionCard, UnitImage } from "@/components/unit-bits";
 import { BracketCard, Button, ChainLink, ErrorState, KV, LinkButton, LoadingCard, Page, Tabs, tabPanelProps } from "@/components/ui";
@@ -92,6 +93,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
               ) : null}
             </BracketCard>
           ) : null}
+          <ReservationActions estate={account} e={e} u={u} />
           {u.status !== "Available" && u.status !== "Reserved" ? (
             <BracketCard>
               <PositionCard e={e} u={u} />

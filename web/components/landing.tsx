@@ -2,22 +2,20 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { CheckCircle2 } from "lucide-react";
-import { ESTATES, IS_MAINNET } from "@/lib/config";
-import { approvedCount, estate as E } from "@/lib/estate";
-import { estateSlug, unitAccount } from "@/lib/estates";
+import { APP_URL, IS_MAINNET, ONECLICK_ENABLED } from "@/lib/config";
+import { approvedCount, estate as E, nftApprovedCount } from "@/lib/estate";
+import { DEMO_ESTATE, estateSlug, unitAccount } from "@/lib/estates";
 import { formatUsd, formatDuration, nsToMs, toBig } from "@/lib/format";
-import { useAllEstates, useAllMilestones } from "@/lib/hooks";
+import { useAllEstates, useAllMilestones, useEstate, useMilestones, useUnit } from "@/lib/hooks";
 import { chainName, oneclick, PICKER_CHAINS, STABLE_SYMBOLS } from "@/lib/oneclick";
 import { CheckChip, CheckInput, type CheckOutcome } from "./check";
 import { HouseNFT } from "./house-nft";
 import { CountUp, usePrefersReducedMotion } from "./motion";
 import { BracketCard, ChainLink, LinkButton } from "./ui";
 
-const DEMO_ESTATE = ESTATES.find((e) => estateSlug(e) === "harmattan-court") ?? ESTATES[0] ?? "harmattan-court.plote.testnet";
 
 // ---------------- hero: isometric apartment block ----------------
 
@@ -29,8 +27,8 @@ function pts(...p: [number, number][]) {
   return p.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
 }
 
+/** Floors rise in one after another, then the 4B marker pops (CSS only: `.hero-floor` / `.hero-dot`, off under reduced motion). */
 export function HeroBlock() {
-  const reduce = useReducedMotion();
   const floors = [0, 1, 2, 3];
   return (
     <svg viewBox="0 0 400 420" className="h-auto w-full max-w-md" role="img" aria-label="Isometric drawing of a four-storey apartment block: three floors built, the top floor dashed as not yet built, with unit 4B marked in orange.">
@@ -45,12 +43,7 @@ export function HeroBlock() {
         const dashed = i === 3;
         const stroke = { stroke: "#FF9211", strokeWidth: 1.5, strokeDasharray: dashed ? "5 5" : undefined, fill: dashed ? "none" : "#090909" };
         return (
-          <motion.g
-            key={i}
-            initial={reduce ? false : { opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: reduce ? 0 : 0.2 + i * 0.35, ease: "easeOut" }}
-          >
+          <g key={i} className="hero-floor" style={{ animationDelay: `${200 + i * 350}ms` }}>
             <polygon points={left} {...stroke} className={dashed ? "march" : undefined} />
             <polygon points={right} {...stroke} className={dashed ? "march" : undefined} />
             {i === 3 ? <polygon points={top} {...stroke} className="march" /> : null}
@@ -65,18 +58,8 @@ export function HeroBlock() {
             {i === 3 ? (
               <circle className="ping" cx={P[0] + R[0] * 0.55 + 17} cy={P[1] + R[1] * 0.55 - 31} r="5" fill="#FF9211" />
             ) : null}
-            {i === 3 ? (
-              <motion.circle
-                cx={P[0] + R[0] * 0.55 + 17}
-                cy={P[1] + R[1] * 0.55 - 31}
-                r="5"
-                fill="#FD8D37"
-                initial={reduce ? false : { scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: reduce ? 0 : 1.8, duration: 0.3 }}
-              />
-            ) : null}
-          </motion.g>
+            {i === 3 ? <circle className="hero-dot" cx={P[0] + R[0] * 0.55 + 17} cy={P[1] + R[1] * 0.55 - 31} r="5" fill="#FD8D37" /> : null}
+          </g>
         );
       })}
       <text x="292" y="148" fill="#FD8D37" fontFamily="var(--font-jet), monospace" fontSize="12">
@@ -118,7 +101,7 @@ export function useLiveTotals() {
 
 function LiveValue({ v, loading }: { v: string | null; loading: boolean }) {
   if (loading && v === null) return <span className="skeleton inline-block h-8 w-20 align-middle" />;
-  return v === null ? <span aria-label="not available">—</span> : <CountUp value={v} />;
+  return v === null ? <span><span aria-hidden>—</span><span className="sr-only">not available</span></span> : <CountUp value={v} />;
 }
 
 /** "Plote in numbers": four live counters, each linking to the chain. */
@@ -241,13 +224,14 @@ export function NftShowcase() {
         <HouseNFT
           animated
           estateName={estQ.data?.name ?? "Harmattan Court"}
-          unitLabel="A-4B"
+          unitLabel={u?.label ?? ""}
           unitId="a-4b"
           approvedCount={shown}
           total={msQ.data?.length || 4}
           status={shown >= 4 ? "HandedOver" : shown > 0 && !reduce ? "Allocated" : (u?.status ?? "—")}
           paid={u?.paid ?? "0"}
           price={u?.price ?? "0"}
+          showMoney={!!u}
         />
       </div>
       <div>
@@ -281,6 +265,44 @@ export function NftShowcase() {
   );
 }
 
+/** The demo unit's token as the chain has it right now: the on-chain image when minted, else drawn from live state. */
+export function LiveDemoNft() {
+  const unitQ = useUnit(DEMO_ESTATE, "a-4b");
+  const msQ = useMilestones(DEMO_ESTATE);
+  const estQ = useEstate(DEMO_ESTATE);
+  const u = unitQ.data;
+  const loading = unitQ.isLoading || msQ.isLoading;
+  const caption = loading
+    ? "Reading the token from the chain…"
+    : u
+      ? `Live: ${approvedCount(msQ.data)} of ${msQ.data?.length ?? "—"} stages approved · ${u.status}`
+      : "Live state unavailable right now, so this is the drawing with nothing filled in.";
+  return (
+    <figure className="w-full max-w-sm space-y-2">
+      <div className="overflow-hidden rounded-2xl ring-1 ring-white/15">
+        {loading ? (
+          <div className="skeleton aspect-square w-full" aria-hidden />
+        ) : (
+          <HouseNFT
+            estateName={estQ.data?.name ?? "Harmattan Court"}
+            unitLabel={u?.label ?? ""}
+            unitId="a-4b"
+            approvedCount={nftApprovedCount(msQ.data)}
+            total={msQ.data?.length || 4}
+            status={u?.status ?? "—"}
+            paid={u?.paid ?? "0"}
+            price={u?.price ?? "0"}
+            showMoney={!!u}
+          />
+        )}
+      </div>
+      <figcaption className="mono flex items-center gap-1 text-xs text-muted" aria-live="polite">
+        {caption} <ChainLink account={unitAccount(DEMO_ESTATE, "a-4b")} />
+      </figcaption>
+    </figure>
+  );
+}
+
 // ---------------- proof, not promises: one real proof card ----------------
 
 export function LiveProofCard() {
@@ -293,6 +315,7 @@ export function LiveProofCard() {
   const ms = useQuery({ queryKey: ["milestones", DEMO_ESTATE], queryFn: () => E.getMilestones(DEMO_ESTATE), retry: 0 });
   const ev = q.data?.find((e) => e.status === "Pass" && e.verdict);
   const v = ev?.verdict;
+  const signed = !!ev && !!ms.data?.[ev.milestone]?.signed_at;
   const age = v?.exif_time && ev ? nsToMs(ev.submitted_at) - nsToMs(v.exif_time) : null;
   const rows: [string, boolean][] = ev && v
     ? [
@@ -301,7 +324,7 @@ export function LiveProofCard() {
         [`Never used before (nearest match ${v.nearest_distance}/64)`, true],
         [v.ai_stage ? `Shows ${v.ai_stage} — ${v.ai_confidence ?? "?"}% confidence` : "Stage checked", true],
         [`Challenge code ${ev.challenge} in frame`, true],
-        ...(ms.data?.[ev.milestone]?.signed_at ? [[`Signed by QS ${est.data?.surveyor_id ?? "—"}`, true] as [string, boolean]] : []),
+        ...(signed ? [[`Signed by QS ${est.data?.surveyor_id ?? "—"}`, true] as [string, boolean]] : []),
       ]
     : [];
   return (
@@ -309,7 +332,11 @@ export function LiveProofCard() {
       <div className="corners corners-orange relative aspect-[4/3] overflow-hidden bg-surface-2">
         {ev ? <img src={ev.url} alt="Milestone photo from the demo estate" className="h-full w-full object-cover" loading="lazy" /> : (
           <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted">
-            {q.isLoading ? "Loading the latest proof…" : "No passed proof on-chain yet. The first one appears here once the demo estate is seeded."}
+            {q.isLoading
+              ? "Loading the latest proof…"
+              : q.error
+                ? "Couldn't read proofs from the chain just now, so there's nothing to show. Nothing here is made up: try again in a moment."
+                : "No photo has passed the check on this estate yet. The first one that does appears here, with every check it passed."}
           </div>
         )}
       </div>
@@ -323,17 +350,23 @@ export function LiveProofCard() {
             ))}
           </ul>
         ) : (
-          <ul className="mono space-y-2 text-sm text-muted">
-            {["Taken — m from site", "Taken — before upload", "Never used before (nearest match —/64)", "Shows — · —% confidence", "Signed by QS —"].map((t) => (
-              <li key={t}>○ {t}</li>
-            ))}
-          </ul>
+          <div className="space-y-2">
+            <p className="text-sm">Every photo that releases money must pass these checks:</p>
+            <ul className="mono space-y-2 text-sm text-muted">
+              {["Taken on site (GPS inside the geofence)", "Taken this week (EXIF time)", "Never used before (perceptual hash)", "Shows the claimed stage (AI check)", "Challenge code written in the frame", "Signed by the surveyor"].map((t) => (
+                <li key={t}><span aria-hidden>○</span> {t}</li>
+              ))}
+            </ul>
+          </div>
         )}
         <p className="text-xs text-muted">
-          Checked inside an Intel TDX enclave on OutLayer, with stage recognition by NEAR AI Cloud. The code that checks it is public, and its fingerprint is on-chain.
+          {v?.source === "https"
+            ? "This verdict came through the HTTPS fallback worker rather than the OutLayer enclave; the proof page says so and shows what was checked."
+            : "Checked inside an Intel TDX enclave on OutLayer, with stage recognition by NEAR AI Cloud. The code that checks it is public, and its fingerprint is on-chain."}
+          {ev && !signed ? " The surveyor hasn't signed this stage yet." : ""}
         </p>
         <LinkButton href={ev ? `/proof/${estateSlug(DEMO_ESTATE)}/${ev.id}` : `/estates/${estateSlug(DEMO_ESTATE)}/milestones`} variant="primary">
-          Open the full proof →
+          {ev ? "Open the full proof →" : "See the milestones →"}
         </LinkButton>
       </div>
     </BracketCard>
@@ -342,8 +375,9 @@ export function LiveProofCard() {
 
 // ---------------- chain chips (from /v0/tokens, filtered) ----------------
 
+/** Chains 1Click can pay from. Only the mainnet build asks /v0/tokens (NEAR Intents has no testnet); elsewhere a static list. */
 export function ChainChips() {
-  const q = useQuery({ queryKey: ["oneclick-tokens"], queryFn: oneclick.tokens, retry: 0, staleTime: 600_000 });
+  const q = useQuery({ queryKey: ["oneclick-tokens"], queryFn: oneclick.tokens, retry: 0, staleTime: 600_000, enabled: ONECLICK_ENABLED });
   const fromApi = q.data
     ? Array.from(new Set(q.data.filter((t) => STABLE_SYMBOLS.includes(t.symbol.toUpperCase()) && PICKER_CHAINS.includes(t.blockchain)).map((t) => t.blockchain)))
     : [];
@@ -361,25 +395,40 @@ export function ChainChips() {
 
 // ---------------- phone mockup: WhatsApp preview + watch timeline ----------------
 
+const APP_HOST = (() => {
+  try {
+    return new URL(APP_URL).host;
+  } catch {
+    return "plote";
+  }
+})();
+
+/** WhatsApp preview of the demo unit's watch page: live progress when the chain answers, neutral copy otherwise. */
 export function PhoneMockup() {
+  const u = useUnit(DEMO_ESTATE, "a-4b").data;
+  const ms = useMilestones(DEMO_ESTATE).data;
+  const est = useEstate(DEMO_ESTATE).data;
+  const name = est?.name ?? "Harmattan Court";
+  const done = approvedCount(ms);
+  const stages = ms?.length ? ms.map((m) => m.title) : STAGES;
   return (
     <div className="mx-auto w-[260px] rounded-[24px] border border-line bg-surface p-3 shadow-2xl" aria-hidden>
       <div className="rounded-[20px] bg-[#0b141a] p-3">
         <div className="ml-auto max-w-[85%] rounded-lg bg-[#005c4b] p-2 text-[11px] text-white/90">
           <div className="overflow-hidden rounded bg-bg">
-            <HouseNFT estateName="Harmattan Court" unitLabel="A-4B" unitId="a-4b" approvedCount={2} total={4} status="Allocated" paid="0" price="0" className="aspect-[300/200] w-full object-cover object-top" />
+            <HouseNFT estateName={name} unitLabel={u?.label ?? ""} unitId="a-4b" approvedCount={nftApprovedCount(ms)} total={ms?.length || 4} status={u?.status ?? "Allocated"} paid={u?.paid ?? "0"} price={u?.price ?? "0"} showMoney={!!u} className="aspect-square w-full" />
             <div className="p-2">
-              <p className="font-normal text-white">A-4B at Harmattan Court is 50% built</p>
-              <p className="text-white/60">plote.app</p>
+              <p className="font-normal text-white">{u ? `A-4B at ${name} is ${Math.round(u.progress_bps / 100)}% built` : `Watch A-4B at ${name} being built`}</p>
+              <p className="text-white/60">{APP_HOST}</p>
             </div>
           </div>
           <p className="mt-1">Mum, this is the flat. You can watch every stage here 👆</p>
         </div>
         <div className="mt-3 space-y-2 rounded bg-bg p-2">
-          {["Foundation", "Roofing", "Finishing", "Handover"].map((s, i) => (
-            <div key={s} className="flex items-center gap-2 text-[11px]">
-              <span className={clsx("h-2 w-2 rounded-full", i < 2 ? "bg-orange" : "bg-line")} />
-              <span className={i < 2 ? "text-text" : "text-muted"}>{s}</span>
+          {stages.map((s, i) => (
+            <div key={`${i}-${s}`} className="flex items-center gap-2 text-[11px]">
+              <span className={clsx("h-2 w-2 rounded-full", i < done ? "bg-orange" : "bg-line")} />
+              <span className={i < done ? "text-text" : "text-muted"}>{s}</span>
             </div>
           ))}
         </div>
@@ -410,16 +459,6 @@ export function SourceLinks() {
     </p>
   );
 }
-
-export function WatchExampleLink() {
-  return (
-    <LinkButton href={`/w/${estateSlug(DEMO_ESTATE)}/a-4b`} variant="primary">
-      See an example
-    </LinkButton>
-  );
-}
-
-export const LANDING_ESTATE_SLUG = estateSlug(DEMO_ESTATE);
 
 export function FinalCta() {
   return (

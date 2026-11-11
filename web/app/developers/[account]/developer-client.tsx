@@ -25,10 +25,10 @@ function Dial({ score, isNew }: { score: number; isNew: boolean }) {
   const v = isNew ? 0 : score / 100;
   return (
     <svg viewBox="0 0 128 128" className="h-40 w-40" role="img" aria-label={isNew ? "New on Plote, no score yet" : `Score ${score} out of 100`}>
-      <circle cx="64" cy="64" r={r} stroke="#252A31" strokeWidth="10" fill="none" />
-      <circle cx="64" cy="64" r={r} stroke="#FF9211" strokeWidth="10" fill="none" strokeDasharray={`${c * v} ${c}`} transform="rotate(-90 64 64)" />
-      <text x="64" y={isNew ? 62 : 70} textAnchor="middle" fill="#E9ECEF" fontFamily="monospace" fontSize={isNew ? 13 : 30}>{isNew ? "New on" : score}</text>
-      {isNew ? <text x="64" y="80" textAnchor="middle" fill="#E9ECEF" fontFamily="monospace" fontSize="13">Plote</text> : <text x="64" y="88" textAnchor="middle" fill="#8B939D" fontFamily="monospace" fontSize="10">/ 100</text>}
+      <circle cx="64" cy="64" r={r} stroke="rgba(255, 255, 255, 0.12)" strokeWidth="10" fill="none" />
+      <circle cx="64" cy="64" r={r} stroke="var(--orange)" strokeWidth="10" fill="none" strokeDasharray={`${c * v} ${c}`} transform="rotate(-90 64 64)" />
+      <text x="64" y={isNew ? 62 : 70} textAnchor="middle" fill="var(--text)" fontFamily="var(--font-jet), monospace" fontSize={isNew ? 13 : 30}>{isNew ? "New on" : score}</text>
+      {isNew ? <text x="64" y="80" textAnchor="middle" fill="var(--text)" fontFamily="var(--font-jet), monospace" fontSize="13">Plote</text> : <text x="64" y="88" textAnchor="middle" fill="var(--muted)" fontFamily="var(--font-jet), monospace" fontSize="10">/ 100</text>}
     </svg>
   );
 }

@@ -159,18 +159,36 @@ export function CaptureClient({ slug }: { slug: string }) {
     try {
       const bytes = await file.arrayBuffer(); // original bytes — never re-encoded
       const sha = await sha256Hex(bytes);
-      const nonce = timestampedNonce();
-      const message = uploadMessage(account, sha);
-      const signed = await signer.signNep413({ message, nonce, recipient: account });
       const contentType = file.type || "image/jpeg";
-      const res = await fetch("/api/evidence/upload-url", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ estate: account, contentType, size: file.size, sha256: sha, ...signed, nonce: bytesToBase64(nonce), message, recipient: account, exif: pre ? { time: pre.exifTime, gps: pre.gps } : null }),
-      });
-      const j = (await res.json()) as { code?: string; message?: string; signedUrl?: string; publicUrl?: string };
-      if (!res.ok || !j.signedUrl || !j.publicUrl) throw Object.assign(new Error(j.message ?? "upload-url failed"), { code: j.code });
-      await putWithProgress(j.signedUrl, bytes, contentType, setProgress);
+      // Each signed upload URL lives 5 minutes (`expiresAt`). Ask for one right before uploading, and ask again if it
+      // has (nearly) run out — e.g. the wallet prompt sat open — or the upload failed after it expired.
+      type UploadUrl = { signedUrl: string; publicUrl: string; expiresAtMs: number };
+      const requestUrl = async (): Promise<UploadUrl> => {
+        const nonce = timestampedNonce();
+        const message = uploadMessage(account, sha);
+        const signed = await signer.signNep413({ message, nonce, recipient: account });
+        const res = await fetch("/api/evidence/upload-url", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ estate: account, contentType, size: file.size, sha256: sha, ...signed, nonce: bytesToBase64(nonce), message, recipient: account, exif: pre ? { time: pre.exifTime, gps: pre.gps } : null }),
+        });
+        const j = (await res.json()) as { code?: string; message?: string; signedUrl?: string; publicUrl?: string; expiresAt?: string };
+        if (!res.ok || !j.signedUrl || !j.publicUrl) throw Object.assign(new Error(j.message ?? "upload-url failed"), { code: j.code });
+        const exp = j.expiresAt ? Date.parse(j.expiresAt) : NaN;
+        return { signedUrl: j.signedUrl, publicUrl: j.publicUrl, expiresAtMs: Number.isFinite(exp) ? exp : Date.now() + 5 * 60_000 };
+      };
+      const URL_MARGIN_MS = 20_000; // don't start an upload in the URL's last 20 s
+      let up = await requestUrl();
+      if (Date.now() + URL_MARGIN_MS >= up.expiresAtMs) up = await requestUrl();
+      try {
+        await putWithProgress(up.signedUrl, bytes, contentType, setProgress);
+      } catch (putErr) {
+        if (Date.now() < up.expiresAtMs) throw putErr;
+        setProgress(0);
+        up = await requestUrl();
+        await putWithProgress(up.signedUrl, bytes, contentType, setProgress);
+      }
+      const j = { publicUrl: up.publicUrl };
       const capturedAt = msToNs(pre?.exifTime ?? nowMs());
       const dgps = pre?.device ? ([Math.round(pre.device[0] * 1e6), Math.round(pre.device[1] * 1e6)] as [number, number]) : null;
       const r = await signer.call(E.submitEvidence(account, { milestone, url: j.publicUrl, sha256: sha, captured_at: capturedAt, device_gps: dgps }));

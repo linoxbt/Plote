@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import { Building2, Camera, DoorOpen, Eye, KeyRound, LifeBuoy, ListChecks, Repeat, ShieldCheck, Users, Vote, Wallet } from "lucide-react";
 import {
-  ChainChips, EstateCards, FinalCta, HeroBlock, HeroCheck, LANDING_ESTATE_SLUG, LiveEscrowCard, LiveStrip, NftShowcase, PhoneMockup, SourceLinks,
+  ChainChips, EstateCards, FinalCta, HeroBlock, HeroCheck, LiveEscrowCard, LiveProofCard, LiveStrip, NftShowcase, PhoneMockup, SourceLinks,
 } from "@/components/landing";
 import {
   Container, Dial, Eyebrow, Faq, FeatureCard, GlowPanel, Heading, HeroOrbs, Hl, Marquee, Orbit, PillLink, Section, Split, StepCard, TextLink,
 } from "@/components/site";
 import { STEP_ART } from "@/components/step-art";
+import { DEMO_ESTATE_SLUG as LANDING_ESTATE_SLUG } from "@/lib/estates";
 import { FAQ } from "@/components/faq-data";
 
 // Landing page. Layout inspired by coredao.org; copy from SPEC §12. Every section leads to its own full page.
@@ -153,12 +154,16 @@ export default function Landing() {
             </ul>
             <div className="flex flex-wrap gap-3">
               <PillLink href="/verification">How verification works</PillLink>
-              <PillLink href="/estates/harmattan-court/milestones" variant="ghost">
+              <PillLink href={`/estates/${LANDING_ESTATE_SLUG}/milestones`} variant="ghost">
                 See the proofs
               </PillLink>
             </div>
           </div>
         </GlowPanel>
+        <div className="mt-8">
+          <h3 className="mb-4 text-xl">The latest proof on the demo estate, read from the chain</h3>
+          <LiveProofCard />
+        </div>
       </Section>
 
       {/* ── The token ── */}

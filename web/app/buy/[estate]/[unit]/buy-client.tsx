@@ -10,11 +10,12 @@ import { NftReveal } from "@/components/celebration";
 import { DefaultExplainer } from "@/components/default-resale";
 import { CountdownChip, MonoAmount } from "@/components/chain";
 import { OneClickPay } from "@/components/oneclick-pay";
+import { ReservationActions } from "@/components/reservation";
 import { useTx } from "@/components/toast";
 import { RequireWallet, useWallet } from "@/components/wallet";
 import { BracketCard, Button, ErrorState, Field, LinkButton, LoadingCard, Page } from "@/components/ui";
 import { IS_TESTNET, ONECLICK_ENABLED } from "@/lib/config";
-import { approvedCount, estate as E } from "@/lib/estate";
+import { estate as E, nftApprovedCount } from "@/lib/estate";
 import { estateAccount, estateSlug } from "@/lib/estates";
 import { formatDuration, formatUsd, nsToMs, parseUsdc, shareOf, toBig, unitDisplay } from "@/lib/format";
 import { useEstate, useMilestones, useUnit, useUsdcBalance, useUsdcRegistered } from "@/lib/hooks";
@@ -58,7 +59,7 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
   const reserve = async (andPay: boolean) => {
     if (andPay) {
       if (!amountBase) return setAmountErr("Enter an amount");
-      const r = await run(`Reserve ${unitDisplay(u.id)} and pay ${formatUsd(amountBase)}`, () => sendTxs([E.reserve(account, u.id), ...payTxs(amountBase)]), { success: "Reserved and paid. Your token mints as soon as the deposit syncs." });
+      const r = await run(`Reserve ${unitDisplay(u.id)} and pay ${formatUsd(amountBase)}`, () => sendTxs([E.reserve(account, u.id), ...payTxs(amountBase)]), { success: "Reserved and paid. Wallet payments count straight away; the token mints once they reach the minimum." });
       if (r) refresh();
     } else {
       const r = await run(`Reserve ${unitDisplay(u.id)}`, () => sendTx(E.reserve(account, u.id)), { success: `Reserved for ${formatDuration(nsToMs(e.params.reserve_ttl_ns))}.` });
@@ -131,7 +132,6 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
                 <p className="mono text-sm text-muted">Your USDC: {bal.data ? formatUsd(bal.data) : "—"} {reg.data === false ? "· not registered yet (adds a 0.00125 NEAR registration)" : ""}</p>
                 <Button variant="primary" onClick={pay}>Pay {amountBase ? formatUsd(amountBase) : ""} into {unitDisplay(u.id)}</Button>
                 {IS_TESTNET ? <FaucetInline /> : null}
-                {toBig(u.paid) >= minBase ? <Button size="sm" onClick={() => run("Sync deposit", () => sendTx(E.sync(account, u.id))).then(refresh)}>Payment landed but no token yet? Sync now</Button> : null}
               </div>
             ) : amountBase ? (
               <OneClickPay estate={s} unit={u.id} recipient={u.account} amount={amountBase} />
@@ -140,7 +140,7 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
         ) : (
           <BracketCard tone="accent" className="space-y-5 text-center">
             <h2 className="text-2xl font-normal">3. Done — {unitDisplay(u.id)} is yours.</h2>
-            <NftReveal estateName={e.name} unitLabel={unitDisplay(u.id)} unitId={u.id} approvedCount={approvedCount(ms.data)} total={ms.data?.length || 4} status={u.status} paid={u.paid} price={u.price} />
+            <NftReveal estateName={e.name} unitLabel={u.label} unitId={u.id} approvedCount={nftApprovedCount(ms.data)} total={ms.data?.length || 4} status={u.status} paid={u.paid} price={u.price} />
             <p className="text-muted">You hold the only allocation token this unit will ever have. Your money sits in <span className="mono">{u.account}</span> until each stage is proven.</p>
             <div className="flex flex-wrap justify-center gap-2">
               <LinkButton href={`/w/${s}/${u.id}`} variant="primary">Share your house</LinkButton>
@@ -149,6 +149,7 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
             </div>
           </BracketCard>
         )}
+        <ReservationActions estate={account} e={e} u={u} className="mt-4 space-y-4" />
       </RequireWallet>
       <p className="mt-6 text-sm text-muted"><Link href={`/estates/${s}/units/${u.id}`} className="underline">← Unit details</Link></p>
     </Page>
@@ -177,7 +178,7 @@ function FaucetInline() {
   return (
     <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
       <Coins className="h-4 w-4" aria-hidden /> Need test USDC?
-      <Button size="sm" onClick={async () => { if (!accountId) return; const r = await run("Get 5,000 test USDC", () => sendTx(usdc.mint(FAUCET_AMOUNT, accountId))); if (r) qc.invalidateQueries(); }}>[Get 5,000]</Button>
+      <Button size="sm" onClick={async () => { if (!accountId) return; const r = await run("Get 5,000 test USDC", () => sendTx(usdc.mint(FAUCET_AMOUNT, accountId))); if (r) qc.invalidateQueries(); }}>Get 5,000</Button>
     </p>
   );
 }

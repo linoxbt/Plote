@@ -2,10 +2,26 @@
   "name": "Plote",
   "short_name": "Plote",
   "description": "Pay for the house you can see. Surveyor capture app included.",
-  "start_url": "/qs",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#090909",
   "theme_color": "#090909",
+  "shortcuts": [
+    {
+      "name": "Surveyor app",
+      "short_name": "Surveyor",
+      "description": "Capture and sign milestone photos",
+      "url": "/qs",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Check a unit",
+      "short_name": "Check",
+      "url": "/check",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/icon-192.png",

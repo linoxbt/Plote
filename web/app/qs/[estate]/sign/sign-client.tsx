@@ -62,7 +62,7 @@ export function SignClient({ slug }: { slug: string }) {
                     </>
                   ) : <p className="text-sm text-muted">Verified {formatDateTime(m.verified_at)}.</p>}
                   <label className="flex min-h-11 flex-wrap items-center gap-3 text-sm">
-                    <input type="checkbox" className="h-5 w-5 accent-[#FF9211]" checked={!!checked[m.index]} onChange={(x) => setChecked((c) => ({ ...c, [m.index]: x.target.checked }))} />
+                    <input type="checkbox" className="h-5 w-5 accent-orange" checked={!!checked[m.index]} onChange={(x) => setChecked((c) => ({ ...c, [m.index]: x.target.checked }))} />
                     I inspected this site in person on
                     <input type="date" className="input w-44" value={dates[m.index] ?? today} onChange={(x) => setDates((d) => ({ ...d, [m.index]: x.target.value }))} aria-label="Inspection date" />
                   </label>

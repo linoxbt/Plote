@@ -14,9 +14,10 @@ export function Providers({ children }: { children: ReactNode }) {
   );
   return (
     <QueryClientProvider client={qc}>
-      <WalletProvider>
-        <ToastProvider>{children}</ToastProvider>
-      </WalletProvider>
+      {/* Toasts outside the wallet, so wallet connection failures can raise one. */}
+      <ToastProvider>
+        <WalletProvider>{children}</WalletProvider>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

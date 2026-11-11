@@ -20,7 +20,8 @@ import { recentEvents, supabaseConfigured } from "@/lib/supabase";
 export function ProofClient({ slug, id }: { slug: string; id: string }) {
   const account = estateAccount(slug);
   const est = useEstate(account);
-  const evq = useEvidence(account, id, { poll: 5000 });
+  // Poll only while the check is still running; Pass / Fail / Error are final, so stop there.
+  const evq = useEvidence(account, id, { poll: (d) => (d && d.status !== "Pending" ? false : 5000) });
   const all = useEvidenceList(account);
   const ms = useMilestones(account);
   const ev = evq.data;
@@ -55,7 +56,8 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
   const center: [number, number] = [e.geofence.lat_e6 / 1e6, e.geofence.lon_e6 / 1e6];
   const exifMs = v?.exif_time ? nsToMs(v.exif_time) : null;
   const subMs = nsToMs(ev.submitted_at);
-  const aiModel = "Qwen/Qwen3-VL-30B-A3B-Instruct";
+  // The model that judged the stage, as the worker recorded it; with no record we don't guess (and hide the links).
+  const aiModel = v?.ai_model?.trim() || null;
   // The model's own notes (SPEC 6.4 "observations"), stored with the verdict (INTERFACE `Verdict.ai_observations`).
   const notes = (v?.ai_observations ?? []).filter((o) => o.trim() !== "");
 
@@ -77,8 +79,9 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
         <p className="max-w-3xl text-lg">{verdictSentence(ev)}</p>
       </header>
 
+      {/* min-w-0 on both columns: long hashes, account chips and mono values wrap or truncate instead of widening the track (390px overflow). */}
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <figure className={clsx("corners p-2", pass ? "corners-orange" : ev.status === "Pending" ? "corners-amber" : "corners-red")}>
             <img src={ev.url} alt={`Site photo for ${m?.title ?? "the milestone"}`} className="w-full bg-surface-2 object-contain" />
             <figcaption className="mono mt-2 break-all text-xs text-muted">
@@ -109,7 +112,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
             <h2 className="mb-3 text-lg font-normal">Nearest previous photo</h2>
             {nearest ? (
               <div className="space-y-3">
-                <p className="mono text-sm">Hamming distance {nearest.d}/64 <span className="text-muted">(reuse if ≤ {e.params.max_phash_distance})</span>{v ? <span className="text-muted"> · on-chain nearest {v.nearest_distance}/64</span> : null}</p>
+                <p className="mono break-words text-sm">Hamming distance {nearest.d}/64 <span className="text-muted">(reuse if ≤ {e.params.max_phash_distance})</span>{v ? <span className="text-muted"> · on-chain nearest {v.nearest_distance}/64</span> : null}</p>
                 {nearest.d < 16 ? (
                   <div className="grid grid-cols-2 gap-2">
                     <img src={ev.url} alt="This photo" className="aspect-[4/3] w-full object-cover" />
@@ -121,7 +124,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
           </BracketCard>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <BracketCard>
             <h2 className="mb-3 text-lg font-normal">Checks</h2>
             <ProofChecklist evidence={ev} geofenceRadius={e.geofence.radius_m} />
@@ -171,12 +174,15 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
                 <ul className="list-disc pl-5 text-sm">{notes.map((o, i) => <li key={i}>{o}</li>)}</ul>
               </div>
             ) : v ? <p className="text-xs text-muted">The model recorded no observations for this photo.</p> : null}
-            {v?.ai_chat_id ? (
+            {aiModel ? <dl><KV k="Model">{aiModel}</KV></dl> : null}
+            {v?.ai_chat_id && aiModel ? (
               <p className="text-sm">
                 <a className="underline hover:text-orange" href={`${NEAR_AI_URL}/signature/${encodeURIComponent(v.ai_chat_id)}?model=${encodeURIComponent(aiModel)}&signing_algo=ecdsa`} target="_blank" rel="noreferrer">NEAR AI signature ↗</a>{" · "}
                 <a className="underline hover:text-orange" href={`${NEAR_AI_URL}/attestation/report?model=${encodeURIComponent(aiModel)}`} target="_blank" rel="noreferrer">model attestation ↗</a>
               </p>
-            ) : <p className="text-xs text-muted">The NEAR AI signature link appears when the worker records a NEAR AI chat id.</p>}
+            ) : v?.ai_chat_id ? (
+              <p className="break-all text-xs text-muted">NEAR AI chat <span className="mono">{v.ai_chat_id}</span>. This verdict doesn&apos;t record which model answered, so the signature and attestation links aren&apos;t shown.</p>
+            ) : <p className="text-xs text-muted">The NEAR AI signature link appears when the worker records a NEAR AI chat id and model.</p>}
           </BracketCard>
         </div>
       </div>

@@ -55,6 +55,13 @@ export const GITHUB_URL = clean(process.env.NEXT_PUBLIC_GITHUB_URL) ?? "https://
 export const MAINNET_APP_URL = clean(process.env.NEXT_PUBLIC_MAINNET_APP_URL);
 export const TESTNET_APP_URL = clean(process.env.NEXT_PUBLIC_TESTNET_APP_URL);
 
+/**
+ * Mainnet Lite (SPEC §17.4): the one mainnet unit account that takes a real 1Click payment, e.g.
+ * `a-4b.harmattan-court.plote.<you>.near`. Public (it's an account id), shown on /pay. Must match the server's
+ * MAINNET_UNIT_ACCOUNT, which the quote route accepts as a recipient.
+ */
+export const MAINNET_UNIT_ACCOUNT = clean(process.env.NEXT_PUBLIC_MAINNET_UNIT_ACCOUNT);
+
 /** Path B (1Click) only runs on the mainnet build: NEAR Intents has no testnet. */
 export const ONECLICK_ENABLED = IS_MAINNET;
 export const ONECLICK_EXPLORER = "https://explorer.near-intents.org";

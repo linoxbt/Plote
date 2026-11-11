@@ -7,12 +7,12 @@ import { MonoAmount } from "@/components/chain";
 import { BuyListingButton } from "@/components/unit-bits";
 import { BracketCard, EmptyState, ErrorState, LoadingCard } from "@/components/ui";
 import { ESTATES } from "@/lib/config";
-import { estate as E } from "@/lib/estate";
+import { listAllUnits } from "@/lib/hooks";
 import { estateSlug } from "@/lib/estates";
 import { formatDate, toBig, unitDisplay } from "@/lib/format";
 
 export function MarketClient() {
-  const qs = useQueries({ queries: ESTATES.map((e) => ({ queryKey: ["units", e], queryFn: () => E.listUnits(e, 0, 100), retry: 1 })) });
+  const qs = useQueries({ queries: ESTATES.map((e) => ({ queryKey: ["units", e], queryFn: () => listAllUnits(e), retry: 1 })) });
   const loading = qs.some((q) => q.isLoading);
   const failed = qs.filter((q) => q.error);
   const listings = qs.flatMap((q, i) => (q.data ?? []).filter((u) => u.listing).map((u) => ({ estate: ESTATES[i], u })));

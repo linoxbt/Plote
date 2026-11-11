@@ -3,7 +3,9 @@
 import { EstateBanners } from "@/components/banners";
 import { Activity, EscrowSummary, EstateHeader, UnitGrid, useEstateData } from "@/components/estate-bits";
 import { MilestoneTrack } from "@/components/milestones";
-import { BracketCard, ErrorState, LoadingCard, Page } from "@/components/ui";
+import Link from "next/link";
+import { DoorOpen } from "lucide-react";
+import { BracketCard, ErrorState, LinkButton, LoadingCard, Page } from "@/components/ui";
 import { estateAccount, estateSlug } from "@/lib/estates";
 import { useMilestones } from "@/lib/hooks";
 
@@ -31,6 +33,16 @@ export function EstateClient({ slug }: { slug: string }) {
         <BracketCard>
           <h2 className="mb-4 text-xl font-normal">Recent activity</h2>
           <Activity estate={account} />
+        </BracketCard>
+        <BracketCard className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <h2 className="text-lg font-normal">At the gate</h2>
+            <p className="text-sm text-muted">
+              After handover, holders show a gate pass from their phone. Guards check it here against the chain — no login, nothing to install.
+              {" "}Developer? <Link href={`/dev/estates/${estateSlug(account)}`} prefetch={false} className="underline hover:text-orange">Open the console</Link>.
+            </p>
+          </div>
+          <LinkButton href={`/gate/${estateSlug(account)}`} size="sm" prefetch={false}><DoorOpen className="h-4 w-4" aria-hidden /> Gate scanner</LinkButton>
         </BracketCard>
       </div>
     </Page>

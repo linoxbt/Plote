@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   images: { unoptimized: true },
   serverExternalPackages: ["near-api-js"],
+  // The share-card route reads its vendored fonts from disk at request time; make sure they ship with the function.
+  outputFileTracingIncludes: { "/api/og/unit": ["./app/api/og/unit/fonts/*.ttf"] },
   async headers() {
     return [
       {

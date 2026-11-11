@@ -139,7 +139,7 @@ export function NewEstateWizard() {
           <Field label="Surveyor account (holders can vote to replace)" htmlFor="surveyor" error={errors.surveyor?.message}><input id="surveyor" className="input" {...register("surveyor")} placeholder="qs-adaeze.testnet" /></Field>
         </div>
         <div className={step === 3 ? "space-y-4" : "hidden"}>
-          <label className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5 accent-[#FF9211]" {...register("demo")} /> Demo mode (2-minute veto and grace windows, 10-minute votes)</label>
+          <label className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5 accent-orange" {...register("demo")} /> Demo mode (2-minute veto and grace windows, 10-minute votes)</label>
           <Field label="Units to add" htmlFor="units" error={errors.units?.message}><input id="units" className="input" inputMode="numeric" {...register("units")} /></Field>
           <p className="text-sm text-muted">Estimated NEAR needed: <span className="mono text-text">≈ {nearNeeded} NEAR</span> (estate storage ≈ 5 NEAR, {units} units × 0.03 NEAR, 5 NEAR verification budget).</p>
         </div>

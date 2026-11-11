@@ -251,7 +251,3 @@ export function shortHash(h: string | null | undefined, n = 6): string {
   if (!h) return "—";
   return h.length <= n * 2 + 1 ? h : `${h.slice(0, n)}…${h.slice(-n)}`;
 }
-
-export function e6ToDeg(v: number): number {
-  return v / 1e6;
-}

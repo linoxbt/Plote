@@ -87,6 +87,8 @@ export type Verdict = {
   exif_time: string | null; gps: [number, number] | null; gps_source: "exif" | "device" | null;
   distance_m: number | null; ai_stage: string | null; ai_confidence: number | null;
   challenge_read: string | null; ai_chat_id: string | null; ai_observations?: string[];
+  /** The NEAR AI model id that judged the stage, when the worker records it (needed for the signature/attestation links). */
+  ai_model?: string | null;
   worker_commit: string; attestation: string | null;
   source: "outlayer" | "https";
 };
@@ -105,8 +107,11 @@ export type ProposalStatus = "Open" | "Executed" | "Rejected" | "Expired";
 
 export type ProposalView = {
   id: string; kind: unknown /* ProposalKind */; proposer: string;
-  created_at: string; expires_at: string; electorate: number; yes: number; no: number;
+  created_at: string; expires_at: string;
+  /** With `weighted`: whole USDC of min(paid, price) per token; otherwise token counts (proposals opened before the rule). */
+  electorate: number; yes: number; no: number;
   voted: string[]; status: ProposalStatus;
+  weighted?: boolean;
 };
 
 export type DevStats = {

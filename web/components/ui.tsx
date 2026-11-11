@@ -11,7 +11,7 @@ export { clsx as cx };
 
 // ---------------- BracketCard ----------------
 
-type Tone = "default" | "orange" | "red" | "amber" | "accent";
+type Tone = "default" | "orange" | "red" | "amber" | "accent" | "info";
 
 export function BracketCard({
   children, className, tone = "default", hover = false, as = "div", ...rest
@@ -150,7 +150,7 @@ export function AwaitingDeployment({ raw, code, className }: { raw?: string; cod
   return (
     <BracketCard className={clsx("space-y-3", className)} aria-live="polite">
       <div className="flex items-start gap-3">
-        <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber" strokeWidth={1.5} aria-hidden />
+        <Clock className="mt-0.5 h-5 w-5 shrink-0 text-info" strokeWidth={1.5} aria-hidden />
         <div className="min-w-0 flex-1 space-y-1">
           <p className="font-medium">Awaiting deployment</p>
           <p className="text-sm text-muted">
@@ -211,16 +211,6 @@ export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: Re
 
 export function Page({ children, className, narrow }: { children: ReactNode; className?: string; narrow?: boolean }) {
   return <main id="main" className={clsx("relative mx-auto w-full px-4 py-10 sm:px-6 sm:py-16 lg:px-8", narrow ? "max-w-3xl" : "max-w-7xl", className)}>{children}</main>;
-}
-
-export function Stat({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <p className="label">{label}</p>
-      <div className="mono text-lg tabular-nums">{children}</div>
-      {hint ? <div className="text-xs text-muted">{hint}</div> : null}
-    </div>
-  );
 }
 
 export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {
@@ -301,8 +291,4 @@ export function Field({ label, hint, error, children, htmlFor }: { label: string
       {error ? <p className="mt-1 text-xs text-red">{error}</p> : hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
     </div>
   );
-}
-
-export function Dash() {
-  return <span aria-label="not available">—</span>;
 }

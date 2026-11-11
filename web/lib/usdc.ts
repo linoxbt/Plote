@@ -7,8 +7,6 @@ import type { FtMetadata, StorageBalance, StorageBalanceBounds, U128 } from "./t
 
 /** NEP-145 registration on the mock token (and Circle USDC) is 0.00125 NEAR. */
 export const USDC_STORAGE_DEPOSIT = nearToYocto("0.00125");
-/** `mint` is capped at 10,000 USDC per call. */
-export const MINT_CAP = "10000000000";
 /** The faucet mints 5,000 test USDC (SPEC §13.4). */
 export const FAUCET_AMOUNT = "5000000000";
 

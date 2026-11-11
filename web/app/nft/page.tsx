@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DoorOpen, KeyRound, LifeBuoy, ListChecks, Repeat, Vote, Wallet } from "lucide-react";
-import { NftShowcase } from "@/components/landing";
-import { HouseNFT } from "@/components/house-nft";
+import { LiveDemoNft, NftShowcase } from "@/components/landing";
 import { CtaBand, Faq, FeatureCard, GlowPanel, Heading, Hl, PageHero, PillLink, Section, Split, StatGrid } from "@/components/site";
 
 export const metadata: Metadata = {
@@ -34,7 +33,7 @@ export default function NftPage() {
             </PillLink>
           </>
         }
-        art={<div className="w-full max-w-sm overflow-hidden rounded-2xl ring-1 ring-white/15"><HouseNFT estateName="Harmattan Court" unitLabel="A-4B" unitId="a-4b" approvedCount={2} total={4} status="Allocated" paid="0" price="0" /></div>}
+        art={<LiveDemoNft />}
       />
 
       <Section label="What the token does">

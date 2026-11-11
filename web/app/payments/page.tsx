@@ -18,8 +18,8 @@ export default function PaymentsPage() {
         actions={
           <>
             <PillLink href="/estates">Choose a unit</PillLink>
-            <PillLink href="/faucet" variant="ghost">
-              Get test USDC
+            <PillLink href="/pay" variant="ghost">
+              Pay from another chain
             </PillLink>
           </>
         }

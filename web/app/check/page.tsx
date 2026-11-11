@@ -3,8 +3,9 @@ import { Page, PageHeader } from "@/components/ui";
 import { CheckClient } from "./check-client";
 
 export const metadata: Metadata = {
-  title: "Is unit X taken?",
-  description: "Check any off-plan unit in seconds: owner, amount paid and status, read live from the chain. No login.",
+  title: "Check a unit",
+  description: "Is this off-plan unit taken? Check any unit in seconds: holder, amount paid and status, read live from the chain. No login.",
+  openGraph: { title: "Is this unit taken? · Plote", description: "Check any off-plan unit in seconds, live from the chain. No login." },
 };
 
 export default async function CheckPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

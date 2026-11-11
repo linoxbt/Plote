@@ -3,7 +3,7 @@
 import { clsx } from "clsx";
 import { useState } from "react";
 import {
-  AlertOctagon, BadgeCheck, CircleDashed, Clock, Copy, Home, KeyRound, Loader2, Lock, ShieldCheck, ShieldX, XCircle, type LucideIcon,
+  AlertOctagon, BadgeCheck, CircleDashed, Clock, Copy, Home, Loader2, Lock, ShieldCheck, ShieldX, XCircle, type LucideIcon,
 } from "lucide-react";
 import { NETWORK } from "@/lib/config";
 import { countdown, formatNaira, formatUsdc, truncateAccount, usdcAriaLabel } from "@/lib/format";
@@ -68,7 +68,7 @@ export function AccountChip({ account, max = 22, className, label }: { account: 
   return (
     <span className={clsx("mono inline-flex max-w-full items-center gap-1 bg-surface-2 py-0.5 pl-2 text-sm", className)} title={account}>
       {label ? <span className="text-muted">{label}</span> : null}
-      <span className="truncate">{truncateAccount(account, max)}</span>
+      <span className="min-w-0 truncate">{truncateAccount(account, max)}</span>
       <button type="button" onClick={copy} className="relative inline-flex h-7 w-7 items-center justify-center text-muted before:absolute before:-inset-2 before:content-[''] hover:text-orange" aria-label={`Copy ${account}`}>
         {copied ? <BadgeCheck className="h-3.5 w-3.5 text-orange" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
       </button>
@@ -138,14 +138,6 @@ export function StatusBadge({ status, kind = "unit", className, suffix }: {
   if (!status) return <Badge def={{ label: "Unknown", tone: "muted", Icon: CircleDashed }} className={className} />;
   const map = (kind === "unit" ? UNIT_BADGE : kind === "milestone" ? MILESTONE_BADGE : kind === "evidence" ? EVIDENCE_BADGE : PROPOSAL_BADGE) as Record<string, BadgeDef>;
   return <Badge def={map[status] ?? { label: status, tone: "muted", Icon: CircleDashed }} className={className} suffix={suffix} />;
-}
-
-export function NotPloteBadge() {
-  return <Badge def={{ label: "Not a Plote unit", tone: "red", Icon: AlertOctagon }} />;
-}
-
-export function KeyBadge({ label }: { label: string }) {
-  return <Badge def={{ label, tone: "accent", Icon: KeyRound }} />;
 }
 
 // ---------------- NetworkPill ----------------

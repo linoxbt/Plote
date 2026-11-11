@@ -18,7 +18,7 @@ export function QrImage({ text, size = 220, label }: { text: string; size?: numb
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    QRCode.toDataURL(text, { margin: 1, width: size, color: { dark: "#090909", light: "#E9ECEF" } })
+    QRCode.toDataURL(text, { margin: 1, width: size, color: { dark: "#090909", light: "#FFFFFF" } /* --bg on --text: the qrcode lib needs hex */ })
       .then((u) => alive && setSrc(u))
       .catch(() => alive && setSrc(null));
     return () => {

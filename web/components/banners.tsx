@@ -19,10 +19,10 @@ export function PlaygroundBanner() {
 export function DemoBanner({ estate }: { estate: EstateView }) {
   const p = estate.params;
   return (
-    <div className="corners corners-amber flex items-start gap-3 bg-amber/5 p-3 text-sm" role="note">
-      <Timer className="mt-0.5 h-4 w-4 shrink-0 text-amber" strokeWidth={1.5} aria-hidden />
+    <div className="corners corners-info flex items-start gap-3 bg-info/5 p-3 text-sm" role="note">
+      <Timer className="mt-0.5 h-4 w-4 shrink-0 text-info" strokeWidth={1.5} aria-hidden />
       <p>
-        <span className="mono font-normal text-amber">DEMO MODE</span> — short timers for the demo: veto window {formatDuration(nsToMs(p.veto_window_ns))}, grace{" "}
+        <span className="mono font-normal text-info">DEMO MODE</span> — short timers for the demo: veto window {formatDuration(nsToMs(p.veto_window_ns))}, grace{" "}
         {formatDuration(nsToMs(p.grace_ns))}, votes {formatDuration(nsToMs(p.proposal_period_ns))}. A NEAR AI outage is only a warning, but the challenge code must still be read from the photo, so it can fail the check.
       </p>
     </div>

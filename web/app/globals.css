@@ -5,7 +5,8 @@
  * Near-black canvas (#090909 / #121212 / #181717), one orange accent (#FF9211 fills, #FD8D37 highlights,
  * #E55D08 / #E97122 gradient depth) against a light-blue counter-glow (#51D1FF / #8DD8FE), Lexend 300,
  * 16px cards, 50px pill buttons 56px tall: white primary (#FBFCFC on #1D2023), translucent ghost.
- * Meanings: orange = verified / action / value, sky = pending / in progress, red = refund / danger. Dark only.
+ * Meanings: orange = verified / action / value, amber = pending / warning, sky ("info") = neutral notices,
+ * red = refund / danger. Dark only.
  */
 :root {
   --bg: #090909;
@@ -25,7 +26,9 @@
   --sky: #51d1ff;
   --sky-2: #8dd8fe;
   --red: #f26b5b;
-  --amber: #8dd8fe;
+  /* A real amber for pending / warnings (≈10:1 on #090909); sky stays the brand's counter-glow and "info". */
+  --amber: #f5b83d;
+  --info: var(--sky);
   color-scheme: dark;
 }
 
@@ -48,6 +51,7 @@
   --color-sky-2: var(--sky-2);
   --color-red: var(--red);
   --color-amber: var(--amber);
+  --color-info: var(--info);
   --font-sans: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jet), ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -135,7 +139,10 @@ a {
   box-shadow: inset 0 0 0 1px rgba(242, 107, 91, 0.5);
 }
 .corners-amber {
-  box-shadow: inset 0 0 0 1px rgba(141, 216, 254, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(245, 184, 61, 0.45);
+}
+.corners-info {
+  box-shadow: inset 0 0 0 1px rgba(81, 209, 255, 0.45);
 }
 
 /* ---- glow panels: Core's orange + light-blue gradients ---- */
@@ -414,33 +421,6 @@ details > summary::-webkit-details-marker {
   to { transform: scaleX(1); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-  .step-check {
-    stroke-dashoffset: 0;
-  }
-  .marquee,
-  .glow-accent,
-  .glow-sky,
-  .glow-orange,
-  .glow-edge,
-  .hero-glow,
-  .orb,
-  .spin-slow,
-  .spin-slow-reverse,
-  .march,
-  .ping {
-    animation: none;
-  }
-}
-
 /* ---- how-it-works step illustrations (SPEC §12.5) — small, slow loops ---- */
 .step-shackle {
   transform-box: fill-box;
@@ -473,8 +453,8 @@ details > summary::-webkit-details-marker {
   animation: step-fill 3.4s ease-out infinite;
 }
 @keyframes step-fill {
-  0%, 30% { fill: #252a31; }
-  50%, 100% { fill: #FF9211; }
+  0%, 30% { fill: rgba(255, 255, 255, 0.12); }
+  50%, 100% { fill: var(--orange); }
 }
 .step-arrow {
   animation: step-arrow 3.4s ease-out infinite;
@@ -483,4 +463,96 @@ details > summary::-webkit-details-marker {
   0%, 45% { transform: translateX(-6px); opacity: 0; }
   65% { opacity: 1; }
   100% { transform: translateX(4px); opacity: 0; }
+}
+
+/* ---- landing hero block: floors rise in, then the unit marker pops (was framer-motion) ---- */
+.motion .hero-floor {
+  animation: hero-floor 500ms ease-out both;
+}
+@keyframes hero-floor {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+.hero-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.motion .hero-dot {
+  animation: hero-dot 300ms ease-out 1.8s both;
+}
+@keyframes hero-dot {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+/* ---- celebration overlay + NFT reveal (was framer-motion) ---- */
+.motion .fade-in {
+  animation: fade-in 300ms ease-out both;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.motion .nft-reveal {
+  animation: nft-reveal 800ms ease-out both;
+}
+@keyframes nft-reveal {
+  from { opacity: 0; transform: perspective(800px) scale(0.9) rotateY(40deg); }
+  to { opacity: 1; transform: none; }
+}
+.confetti-bit {
+  animation: confetti-fall var(--dur, 2s) ease-in var(--delay, 0s) both;
+}
+@keyframes confetti-fall {
+  from { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  to { transform: translateY(100vh) rotate(var(--rot, 360deg)); opacity: 0.2; }
+}
+
+/*
+ * Reduced motion. Kept LAST so it wins over every animation rule above at equal specificity
+ * (it used to sit before the step illustrations, so .step-check's dashoffset stayed hidden).
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .step-check {
+    stroke-dashoffset: 0;
+  }
+  .marquee,
+  .glow-accent,
+  .glow-sky,
+  .glow-orange,
+  .glow-edge,
+  .hero-glow,
+  .orb,
+  .spin-slow,
+  .spin-slow-reverse,
+  .march,
+  .ping,
+  .step-shackle,
+  .step-coin,
+  .step-check,
+  .step-fill,
+  .step-arrow,
+  .hero-floor,
+  .hero-dot,
+  .confetti-bit {
+    animation: none;
+  }
+  .step-coin {
+    opacity: 1;
+    transform: translateY(26px);
+  }
+  .step-fill {
+    fill: var(--orange);
+  }
+  .confetti-bit {
+    display: none;
+  }
 }

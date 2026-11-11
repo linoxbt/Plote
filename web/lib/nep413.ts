@@ -115,7 +115,6 @@ export function nonceTimestamp(nonce: Uint8Array): number {
   return Number(new DataView(nonce.buffer, nonce.byteOffset, nonce.byteLength).getBigUint64(0, false));
 }
 
-export const nonceToBase64 = bytesToBase64;
 export const nonceFromBase64 = base64ToBytes;
 
 // ---------------- gate pass (SPEC §9.5) ----------------
