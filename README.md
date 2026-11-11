@@ -172,14 +172,14 @@ flowchart LR
 | Judge sandbox estate | [`playground.plote.testnet`](https://testnet.nearblocks.io/address/playground.plote.testnet), 60 units at $1,000 | ✅ Live |
 | Demo estate | [`harmattan-court.plote.testnet`](https://testnet.nearblocks.io/address/harmattan-court.plote.testnet), 6 units | ✅ Live |
 | Refund-demo estate | [`baobab-heights.plote.testnet`](https://testnet.nearblocks.io/address/baobab-heights.plote.testnet), 5 units, foundation deadline missed | ✅ Live (judge holds `b-2a`, `b-2b` with refunds open) |
-| Estate code (all three estates) | sha256 `158ce0ab0b7f4fbf4372c011d9f39433af28ff49c9f3d459d2c1baad76230c26` · NEAR `code_hash` `2T89xpkpUq3M44Jq2QKkXgAkNQw6caVUaU5V7Le9w8Qd` | ✅ Compare with `view_account` |
+| Estate code (all three estates) | NEAR `code_hash` `2T89xpkpUq3M44Jq2QKkXgAkNQw6caVUaU5V7Le9w8Qd` (sha256 `158ce0ab…6230c26`), a local build | ⚠️ Not yet the reproducible artifact: see [Reproducible build](#reproducible-build) |
 | Unit code (global, by hash) | `75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9` (105,621 B) | ✅ Published |
 | Test USDC | [`musdc.plote.testnet`](https://testnet.nearblocks.io/address/musdc.plote.testnet) | ✅ Live |
 | Verifier project | `plote.testnet/plote-verifier` on `outlayer.testnet` | ✅ Published |
-| Verifier version (pinned on-chain) | `31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8` | ✅ All estates pinned |
+| Verifier version (pinned on-chain) | `31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8` | ✅ All estates pinned · ⚠️ pre-hardening build: the verifier fixes in [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) aren't in it |
 | Verifier secrets access | `Predecessor(Whitelist[estate])`: only runs requested by the estate contract itself can use its NEAR AI key | ✅ Playground, Harmattan Court |
 | Verifier binary | [FastFS](https://test.fastfs.io/plote.testnet/outlayer.testnet/31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8.wasm) (anyone can re-hash it) | ✅ |
-| Off-chain cache | Supabase (7 tables, row-level security, `evidence` bucket) | ✅ Live |
+| Off-chain cache | Supabase (12 tables across migrations 0001–0004, row-level security on all of them, `evidence` bucket) | ✅ Live (0004 applied at the next deploy) |
 | Gasless relayer | `relayer.plote.testnet` | ✅ Live |
 | Live photo checks | Full pipeline verified live (browser capture → relayer → upload → on-chain commit → OutLayer TEE → verdict); stage and code reading need NEAR AI credits | ⏳ Waiting on NEAR AI credits for the API key |
 | Mainnet any-chain payment (≈ $2) | One unit receiving USDC through 1Click | ⏳ Pending |
@@ -201,8 +201,8 @@ Every number on the live site is read from the chain. Until a figure exists it s
    3. Choose **Sign**, wait for the 2-minute veto window, then **Claim**.
 
    20 % of each unit's paid amount moves to the developer, and not a cent more.
-5. **Read a proof.** `/proof/<estate>/<id>` shows every check, the photo, the model's observations, the pinned worker version and the raw verdict.
-6. **Refund** (Baobab Heights, once deployed): units past their deadline show **Get my money back**. One tap and everything not released returns to the holder.
+5. **Read a proof.** `/proof/<estate>/<id>` (for example the photo you just captured in the playground) shows every check, the photo, the model's observations, the pinned worker version and the raw verdict. Harmattan Court has no photo evidence on-chain yet, and the playground's checks so far failed on `challenge_unverified` because NEAR AI wasn't reachable (see "Live photo checks" above), so there is no passed proof to link to yet.
+6. **Refund** (Baobab Heights): units past their deadline show **Get my money back**. One tap and everything not released returns to the holder.
 
 The full narrated flow is in [`docs/demo-script.md`](docs/demo-script.md). Shared judge-wallet credentials are provided with the submission, not in this repository.
 
@@ -320,10 +320,27 @@ just web
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | read-only cache (row-level security allows select on public tables only) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **server only** | signed photo upload URLs, poller writes |
 | `RELAYER_ACCOUNT_ID`, `RELAYER_PRIVATE_KEY` | **server only** | gasless meta-transactions (NEP-366) |
-| `CRON_SECRET` | **server only** | protects the 5-minute poller endpoint |
-| `ONECLICK_JWT`, `RESEND_API_KEY` | server, optional | removes the 1Click fee; milestone emails |
+| `CRON_SECRET` | **server only** | protects the 5-minute poller endpoint and the detailed health view |
+| `NOTIFY_SECRET` | **server only** | signs email confirm/unsubscribe links (falls back to `CRON_SECRET`) |
+| `RESEND_API_KEY` + `RESEND_FROM` | server, optional | milestone emails; both required, sender on a Resend-verified domain |
+| `ALERT_WEBHOOK_URL`, `NEARBLOCKS_API_KEY` | server, optional | poller alerts; the poller's receipt listing |
+| `ONECLICK_JWT` | server, optional | removes the 1Click fee (mainnet build) |
 
-Every variable has a testnet default, so the app builds and renders with no env at all. A feature that needs a missing secret returns a clear 503. Hosting notes are in [`docs/hosting.md`](docs/hosting.md).
+Every variable has a testnet default, so the app builds and renders with no env at all. A feature that needs a missing secret returns a clear 503. The full list, and the database migrations to apply (`0001`–`0004`), are in [`docs/hosting.md`](docs/hosting.md).
+
+### Reproducible build
+
+`cargo near build reproducible-wasm` (or the `reproducible-build` GitHub workflow, which publishes `hashes.txt`)
+builds the estate and unit contracts in a Docker image pinned by digest, so anyone can rebuild them and compare the
+hash with what is deployed (`view_account` → `code_hash`).
+
+**The live testnet estates do not run that artifact yet.** They were deployed from a local `non-reproducible-wasm`
+build (the `code_hash` in the table above), so today their code can be read but not byte-for-byte reproduced. They
+become verifiable when the reproducible artifact is redeployed with
+`scripts/upgrade-estate-code.ts --expected-hash <sha256 from hashes.txt> <estate>`, which refuses any other WASM and
+prints the deployed hash:
+
+Deployed code hash: `<filled at deploy>`
 
 ---
 
@@ -335,7 +352,7 @@ Every variable has a testnet default, so the app builds and renders with no env 
 | Unit and mock USDC contracts | 5 + 3 tests | ✅ pass |
 | Real WASMs together | `just test-integration` (near-mock with real receipts and metered gas): unit creation, buy → allocate, capture → evidence → verdict → sign → 20 % release, reused-photo failure, freeze vote, resale, refund + burn | ✅ 5/5 |
 | Verifier | 74 library tests + 4 that run the binary; challenge-is-hard in every mode; prompt-injection, orientation-reuse and timeout cases | ✅ pass |
-| Web | typecheck, lint, 77 Vitest tests (incl. relayer signature checks), production build | ✅ pass |
+| Web | typecheck, lint, Vitest unit tests (relayer signature checks, event poller, gate passes, notify tokens, API routes), production build | ✅ pass |
 | End-to-end | 14 Playwright tests on mobile and desktop against the production build | ✅ pass |
 | Live on testnet (10 Nov) | Real transactions against the deployed contracts and the live site: buy (mint → reserve → pay → NFT), photo capture through the browser phone key and relayer into the OutLayer TEE, resale in one transaction, holder vote, refund + burn, API guards. Scripts in `scripts/e2e/` | ✅ pass (a passing photo needs NEAR AI credits) |
 | Static analysis | `cargo clippy -D warnings`, `cargo fmt --check` | ✅ clean |

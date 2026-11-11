@@ -7,11 +7,16 @@ import { z } from "zod";
 import { ESTATES, TABLES, USDC_ID } from "@/lib/config";
 import { unitAccount } from "@/lib/estates";
 import { base64ToBytes, rpc } from "@/lib/near";
-import { jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
+import { clientIp, jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
+import { rateLimitShared } from "@/lib/server/rate-limit";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { type TxView, usedAmount, wallText } from "@/lib/server/chipin";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 15;
+
+/** The whole chain lookup (both RPCs) gets this long; a transaction that isn't final yet is retried by the client. */
+const LOOKUP_DEADLINE_MS = 8000;
 
 const Body = z.object({
   estate: z.string().min(2).max(64),
@@ -30,11 +35,23 @@ export async function POST(req: Request) {
   if (!p.ok) return p.res;
   const b = p.data;
   if (!ESTATES.includes(b.estate)) return jsonError("E_BAD_ARGS", "Unknown estate.");
+  // Each post costs one or two RPC lookups: a few per minute per IP is plenty for a person posting their own payment.
+  const rl = await rateLimitShared(`chipin:${clientIp(req)}`, 10, 60_000);
+  if (!rl.ok) return jsonError("RATE_LIMITED", `Too many requests. Try again in ${rl.retryAfterS}s.`, 429, { "retry-after": String(rl.retryAfterS) });
   let tx: TxView;
   try {
-    tx = await rpc<TxView>("EXPERIMENTAL_tx_status", { tx_hash: b.txHash, sender_account_id: b.sender, wait_until: "FINAL" });
+    const lookup = rpc<TxView>("EXPERIMENTAL_tx_status", { tx_hash: b.txHash, sender_account_id: b.sender, wait_until: "FINAL" }, { timeoutMs: 4000 });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, rej) => {
+      timer = setTimeout(() => rej(new Error("deadline")), LOOKUP_DEADLINE_MS);
+    });
+    try {
+      tx = await Promise.race([lookup, deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
   } catch {
-    return jsonError("TX_NOT_FOUND", "Couldn't find that transaction yet.", 404);
+    return jsonError("TX_NOT_FOUND", "Couldn't find that transaction yet. Try again in a few seconds.", 404);
   }
   const t = tx.transaction;
   const acts = t?.actions ?? [];

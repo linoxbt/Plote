@@ -4,7 +4,7 @@ use crate::events::emit;
 use crate::*;
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
-use near_sdk::{env, near, require, AccountId, Promise};
+use near_sdk::{assert_one_yocto, env, near, require, AccountId, Promise};
 use std::collections::HashMap;
 
 pub(crate) fn valid_unit_id(id: &str) -> bool {
@@ -28,6 +28,12 @@ impl Estate {
             "E_TOO_MANY",
             "1 to {} units per call",
             MAX_UNITS_PER_CALL
+        );
+        ensure!(
+            self.units.len() + units.len() as u32 <= MAX_UNITS,
+            "E_TOO_MANY",
+            "an estate has at most {} units",
+            MAX_UNITS
         );
         let need = ADD_UNIT_DEPOSIT.saturating_mul(units.len() as u128);
         ensure!(
@@ -54,6 +60,12 @@ impl Estate {
             );
             ensure!(input.price.0 > 0, "E_BAD_ARGS", "price must be positive");
             ensure!(input.label.len() <= 64, "E_BAD_ARGS", "label too long");
+            ensure!(
+                input.plan.len() <= MAX_PLAN_LEN,
+                "E_TOO_MANY",
+                "at most {} instalments per plan",
+                MAX_PLAN_LEN
+            );
             let mut last = 0u128;
             for (k, inst) in input.plan.iter().enumerate() {
                 ensure!(
@@ -138,16 +150,16 @@ impl Estate {
                 .then(
                     Self::ext(estate.clone())
                         .with_static_gas(GAS_ON_UNIT_CREATED)
-                        .on_unit_created(input.id),
+                        .on_unit_created(input.id, None),
                 )
                 .detach();
         }
     }
 
-    /// Callback of `add_units` and `retry_unit_setup`. Result 0: the unit account exists with the unit code (the
-    /// creation batch, or `get_info` on retry). Result 1: its USDC registration.
+    /// Callback of `add_units` and `retry_unit_setup` (`retry: true`). Result 0: the unit account exists with the unit
+    /// code (the creation batch, or `get_info` on retry). Result 1: its USDC registration.
     #[private]
-    pub fn on_unit_created(&mut self, unit_id: String) -> bool {
+    pub fn on_unit_created(&mut self, unit_id: String, retry: Option<bool>) -> bool {
         let Some(mut unit) = self.units.get(&unit_id).cloned() else {
             return false;
         };
@@ -165,6 +177,15 @@ impl Estate {
             // (not ready: nobody can reserve or pay) for `retry_unit_setup`.
             env::log_str(&format!(
                 "unit {} USDC registration failed; call retry_unit_setup",
+                unit_id
+            ));
+            false
+        } else if retry.unwrap_or(false) {
+            // On retry the account was created earlier (add_units' batch succeeded); a failed `get_info` (e.g. out of
+            // gas, or a node hiccup) doesn't mean it's gone. Deleting the record would orphan an account nobody can
+            // re-add (audit finding 11), so keep it for another retry.
+            env::log_str(&format!(
+                "unit {} get_info failed on retry; record kept, call retry_unit_setup again",
                 unit_id
             ));
             false
@@ -211,7 +232,7 @@ impl Estate {
         check.and(register).then(
             Self::ext(env::current_account_id())
                 .with_static_gas(GAS_ON_UNIT_CREATED)
-                .on_unit_created(unit_id),
+                .on_unit_created(unit_id, Some(true)),
         )
     }
 
@@ -223,16 +244,38 @@ impl Estate {
             .saturating_add(env::attached_deposit().as_yoctonear());
     }
 
-    /// Developer may repoint the verifier worker until the first unit is sold; afterwards the code is fixed.
+    /// Developer may repoint the verifier worker until the first unit is sold; afterwards the code is fixed. The
+    /// playground (judge sandbox, no real money) may repoint it at any time, but only to a pinned build.
     pub fn set_verifier(&mut self, verifier: VerifierSource) {
         self.assert_developer();
-        ensure!(
-            !self.first_sale_done,
-            "E_ALREADY_SOLD",
-            "the verifier is fixed once a unit is sold"
-        );
+        if self.params.playground {
+            ensure!(
+                !verifier.commit.trim().is_empty(),
+                "E_BAD_ARGS",
+                "the verifier must be pinned (non-empty commit / version key)"
+            );
+        } else {
+            ensure!(
+                !self.first_sale_done,
+                "E_ALREADY_SOLD",
+                "the verifier is fixed once a unit is sold"
+            );
+        }
         crate::assert_safe_checks(&self.params, &self.geofence, &verifier);
         self.verifier = verifier;
+    }
+
+    /// Developer: correct the app URL the NFT `reference` points at (`https://`, ≤ 200 chars). Attach 1 yocto.
+    #[payable]
+    pub fn set_app_url(&mut self, url: String) {
+        assert_one_yocto();
+        self.assert_developer();
+        crate::assert_app_url(&url);
+        emit(
+            "app_url_changed",
+            json!({ "old": self.app_url, "new": url }),
+        );
+        self.app_url = url;
     }
 
     /// Playground only: reopen every milestone with deadlines re-based on now, so the next judge can run

@@ -1,51 +1,62 @@
 import { describe, expect, it } from "vitest";
-import { houseSvg, houseSvgDataUri, litParts } from "@/lib/svg-house";
+import { dollars, houseSvg, houseSvgDataUri, litParts, type HouseSvgInput } from "@/lib/svg-house";
+// Written by the Rust test `svg_fixtures_for_web` (contracts/estate/src/svg.rs) from the contract's own `unit_svg`.
+import fixtures from "./fixtures/svg-house.json";
 
-const base = { estateName: "Harmattan Court", unitLabel: "A-4B", unitId: "a-4b", total: 4, status: "Allocated", paid: "8500000000", price: "85000000000" };
+type Fixture = { input: HouseSvgInput; svg: string; dataUri: string };
+const cases = fixtures as Fixture[];
+
+const base: HouseSvgInput = {
+  estateName: "Harmattan Court", unitLabel: "Block A · Unit 4B", unitId: "a-4b", approvedCount: 0, total: 4,
+  status: "Allocated", paid: "8500000000", price: "85000000000",
+};
 const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
 
-describe("dynamic NFT SVG", () => {
-  it.each([0, 1, 2, 3, 4])("draws %i filled progress segments of 4", (n) => {
-    const svg = houseSvg({ ...base, approvedCount: n });
-    expect(count(svg, /class="sf"/g)).toBe(n);
-    expect(count(svg, /class="se"/g)).toBe(4 - n);
-    expect(svg).toContain(`${n}/4`);
+describe("dynamic NFT SVG = the contract's unit_svg", () => {
+  it("has fixtures from the contract", () => {
+    expect(cases.length).toBeGreaterThanOrEqual(15);
   });
-  it("fills house parts in order and lights windows gold only at handover", () => {
-    const parts = (svg: string) => count(svg, /<path class="f"/g);
-    expect(parts(houseSvg({ ...base, approvedCount: 0 }))).toBe(0);
-    expect(parts(houseSvg({ ...base, approvedCount: 2 }))).toBe(2);
-    expect(houseSvg({ ...base, approvedCount: 3 })).not.toContain('class="g"');
-    expect(houseSvg({ ...base, approvedCount: 4 })).toContain('class="g"');
-    expect(houseSvg({ ...base, approvedCount: 1, status: "HandedOver" })).toContain('class="g"');
+  it.each(cases.map((c, k) => [k, c] as const))("fixture %i matches byte for byte", (_k, c) => {
+    expect(houseSvg(c.input)).toBe(c.svg);
+    expect(houseSvgDataUri(c.input)).toBe(c.dataUri);
   });
-  it("shows the status badge, mono unit label and paid / price", () => {
+  it("uses the brand palette and fonts", () => {
     const svg = houseSvg({ ...base, approvedCount: 2 });
-    expect(svg).toContain("TAKEN");
-    expect(svg).toContain(">A-4B<");
-    expect(svg).toContain("font-family:monospace");
-    expect(svg).toContain("$8,500 / $85,000");
-    expect(houseSvg({ ...base, approvedCount: 0, status: "InDefault" })).toContain("IN DEFAULT");
+    expect(svg).toContain("viewBox='0 0 400 400'");
+    expect(svg).toContain("fill='#090909'");
+    expect(svg).toContain("#FF9211");
+    expect(svg).toContain("font-family='Lexend,sans-serif'");
+    expect(houseSvg({ ...base, status: "InDefault" })).toContain("#f26b5b");
   });
-  it("stays under 2 KB", () => {
-    for (const status of ["Available", "Reserved", "Allocated", "InDefault", "HandedOver"]) {
-      expect(new TextEncoder().encode(houseSvg({ ...base, approvedCount: 4, status })).length).toBeLessThan(2048);
+  it("fills progress segments and lights windows gold only when all are approved", () => {
+    for (let n = 0; n <= 4; n++) {
+      const svg = houseSvg({ ...base, approvedCount: n });
+      expect(count(svg, /height='6' rx='3' fill='#FF9211'/g)).toBe(n);
+      expect(svg).toContain(`>${n}/4<`);
     }
+    expect(houseSvg({ ...base, approvedCount: 3 })).not.toContain("#FFD27A");
+    expect(houseSvg({ ...base, approvedCount: 4 })).toContain("fill='#FFD27A' stroke='#FFD27A'");
   });
-  it("supports other milestone counts and clamps input", () => {
-    expect(count(houseSvg({ ...base, total: 6, approvedCount: 3 }), /class="sf"/g)).toBe(3);
-    expect(count(houseSvg({ ...base, approvedCount: 99 }), /class="sf"/g)).toBe(4);
+  it("maps progress onto 4 parts with div_ceil, like the contract", () => {
     expect(litParts(3, 6)).toBe(2);
+    expect(litParts(1, 6)).toBe(1);
+    expect(litParts(5, 4)).toBe(4);
     expect(litParts(0, 0)).toBe(0);
+    expect(litParts(1, 3, "HandedOver")).toBe(2);
   });
-  it("escapes text", () => {
-    const svg = houseSvg({ ...base, estateName: "<script>&", approvedCount: 0 });
+  it("formats dollars like the contract", () => {
+    expect(dollars("85000000000")).toBe("$85,000");
+    expect(dollars("999000000")).toBe("$999");
+    expect(dollars("1234567000000")).toBe("$1,234,567");
+    expect(dollars("not a number")).toBe("$0");
+  });
+  it("escapes and bounds text", () => {
+    const svg = houseSvg({ ...base, estateName: "<script>&", status: '<img src=x onerror="&#97;lert(1)">' });
     expect(svg).not.toContain("<script>");
+    expect(svg).not.toContain("<img");
     expect(svg).toContain("&lt;script&gt;&amp;");
   });
-  it("builds a base64 data URI", () => {
-    const uri = houseSvgDataUri({ ...base, approvedCount: 1 });
-    expect(uri.startsWith("data:image/svg+xml;base64,")).toBe(true);
-    expect(atob(uri.split(",")[1])).toContain("<svg");
+  it("stays small", () => {
+    for (const c of cases) expect(new TextEncoder().encode(houseSvg(c.input)).length).toBeLessThan(2600);
   });
 });

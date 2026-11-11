@@ -10,5 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # A block scalar: an unquoted `run:` value can't contain ": " (it made this file invalid YAML).
+      # The poller answers 502 when every estate failed, so this step (and the job) fails and prints the report;
+      # partial failures answer 200 and go to ALERT_WEBHOOK_URL instead.
       - run: |
-          curl -fsS -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" "${{ vars.APP_URL || 'https://plote-vert.vercel.app' }}/api/cron/poll"
+          curl -sS --fail-with-body --max-time 90 -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" "${{ vars.APP_URL || 'https://plote-vert.vercel.app' }}/api/cron/poll"

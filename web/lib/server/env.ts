@@ -23,8 +23,19 @@ export const serverEnv = {
   mainnetRelayerPrivateKey: () => v("MAINNET_RELAYER_PRIVATE_KEY"),
   nearblocksApiKey: () => v("NEARBLOCKS_API_KEY"),
   resendApiKey: () => v("RESEND_API_KEY"),
-  resendFrom: () => v("RESEND_FROM") ?? "Plote <notify@plote.app>",
+  /** Required with RESEND_API_KEY: a sender on a domain verified in Resend. No default (an unverified sender fails). */
+  resendFrom: () => v("RESEND_FROM"),
   cronSecret: () => v("CRON_SECRET"),
+  /** HMAC key for confirm/unsubscribe links. Falls back to CRON_SECRET (so links sent before it existed keep working). */
+  notifySecret: () => v("NOTIFY_SECRET"),
+  /** Extra accounts the health check and poller watch for low NEAR (comma-separated), besides each estate's developer/payout. */
+  monitorAccounts: () =>
+    (v("MONITOR_ACCOUNTS") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  /** The poller only reports which storage files it would delete unless this is "1". */
+  storageCleanupDelete: () => v("STORAGE_CLEANUP_DELETE") === "1",
   /** Optional Slack/Discord-compatible webhook for operational alerts (low balances, poller errors). */
   alertWebhookUrl: () => v("ALERT_WEBHOOK_URL"),
 };

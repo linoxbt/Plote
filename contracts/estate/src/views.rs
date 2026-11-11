@@ -150,6 +150,9 @@ pub struct ProposalView {
     pub yes: u32,
     pub no: u32,
     pub voted: Vec<String>,
+    /// true: `electorate`/`yes`/`no` are vote weights in whole USDC (`min(paid, price)` per token); false: a proposal
+    /// opened before weighted voting, counted per token.
+    pub weighted: bool,
     pub status: ProposalStatus,
 }
 
@@ -354,6 +357,25 @@ impl Estate {
             .unwrap_or(0)
     }
 
+    /// The vote weight `vote` would cast for `account_id` right now (same token cap per call as `vote`).
+    pub fn vote_weight_available(&self, proposal_id: U64, account_id: AccountId) -> u32 {
+        let now = Self::now();
+        self.proposals
+            .get(&proposal_id.0)
+            .filter(|p| p.status == ProposalStatus::Open && now < p.expires_at)
+            .map(|p| {
+                let ids = self.eligible_tokens(p, &account_id);
+                if !crate::votes::is_weighted(p) {
+                    return ids.len().min(MAX_VOTE_TOKENS_PER_CALL) as u32;
+                }
+                ids.iter()
+                    .take(MAX_VOTE_TOKENS_PER_CALL)
+                    .filter_map(|id| self.units.get(id))
+                    .fold(0u32, |w, u| w.saturating_add(crate::votes::vote_weight(u)))
+            })
+            .unwrap_or(0)
+    }
+
     pub fn dev_stats(&self) -> DevStats {
         let now = Self::now();
         let due = self
@@ -423,7 +445,13 @@ fn proposal_view(p: &Proposal, now: u64) -> ProposalView {
         electorate: p.electorate,
         yes: p.yes,
         no: p.no,
-        voted: p.voted.clone(),
+        voted: p
+            .voted
+            .iter()
+            .filter(|v| v.as_str() != crate::votes::WEIGHTED_MARK)
+            .cloned()
+            .collect(),
+        weighted: crate::votes::is_weighted(p),
         status: if p.status == ProposalStatus::Open && now >= p.expires_at {
             ProposalStatus::Expired
         } else {
@@ -464,13 +492,18 @@ impl Estate {
             released: U128(u.released),
             refunded_out: U128(u.refunded_out),
             in_flight: U128(u.in_flight),
-            listing: u.listing.clone(),
+            // A default listing's ask is what the holder has paid now (what a purchase would cost).
+            listing: u.listing.clone().map(|mut l| {
+                l.ask = U128(Self::listing_ask(u, &l));
+                l
+            }),
             beneficiary: u.beneficiary.clone(),
             guardians: u.guardians.clone(),
             recovery: u.recovery.clone(),
             lien: u.lien.clone(),
             refundable_now: U128(if refunds_open { self.refundable(u) } else { 0 }),
-            releasable_now: U128(if self.frozen.is_some() {
+            // claim_release moves nothing while frozen or while refunds are open (E_FROZEN / E_REFUNDS_OPEN).
+            releasable_now: U128(if self.frozen.is_some() || self.refunds_open(now) {
                 0
             } else {
                 self.releasable(u, now)

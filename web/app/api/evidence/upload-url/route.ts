@@ -1,5 +1,9 @@
 // POST /api/evidence/upload-url — Supabase signed upload URL for one evidence photo (SPEC §6.5, §14.1).
 // Caller proves with a NEP-413 signature that they are the estate's surveyor (any account on a playground estate).
+// Playground estates (anyone may act as surveyor) get much lower caps. Supabase signed upload URLs live 2 h and can't
+// be shortened or bound to a size/hash, so the declared size and a 5-minute deadline (SPEC §17.2) are recorded with
+// the row; the poller's storage check deletes uploads that arrive late or with another size (see storage-cleanup.ts).
+// The bytes' sha256 is checked by the verifier against the hash signed on-chain.
 
 import { z } from "zod";
 import { ESTATES, NETWORK, SUPABASE_BUCKET, TABLES } from "@/lib/config";
@@ -10,6 +14,8 @@ import { verifySignedRequest } from "@/lib/server/auth";
 import { clientIp, jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
 import { rateLimitShared } from "@/lib/server/rate-limit";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { HOUR_MS, uploadLimits } from "@/lib/server/limits";
+import { UPLOAD_URL_TTL_MS } from "@/lib/server/storage-cleanup";
 
 export const dynamic = "force-dynamic";
 
@@ -60,13 +66,22 @@ export async function POST(req: Request) {
     return jsonError("RPC_UNAVAILABLE", "Couldn't read the estate contract.", 503);
   }
   if (!est.params.playground && est.surveyor_id !== b.accountId) return jsonError("E_NOT_SURVEYOR", "Only the estate's surveyor can upload evidence.", 403);
-  const rl = await rateLimitShared(`upload:${b.accountId}`, 20, 60_000);
-  if (!rl.ok) return jsonError("RATE_LIMITED", "Too many uploads. Wait a minute.", 429);
+  for (const [key, limit, windowMs] of uploadLimits(b.accountId, est.params.playground)) {
+    const rl = await rateLimitShared(key, limit, windowMs);
+    if (!rl.ok) {
+      const msg = windowMs >= HOUR_MS ? `The playground allows a few uploads per hour. Try again in ${Math.ceil(rl.retryAfterS / 60)} min.` : "Too many uploads. Wait a minute.";
+      return jsonError("RATE_LIMITED", msg, 429, { "retry-after": String(rl.retryAfterS) });
+    }
+  }
 
   const path = `${estateSlug(b.estate)}/${crypto.randomUUID()}.${TYPES[b.contentType]}`;
   const { data, error } = await sb.storage.from(SUPABASE_BUCKET).createSignedUploadUrl(path);
   if (error || !data) return jsonError("STORAGE_ERROR", error?.message ?? "Couldn't create an upload URL.", 502);
   const publicUrl = sb.storage.from(SUPABASE_BUCKET).getPublicUrl(path).data.publicUrl;
-  const ins = await sb.from(TABLES.evidenceFiles).insert({ estate: b.estate, path, sha256: b.sha256, uploaded_by: b.accountId, exif: b.exif ?? null });
-  return ok({ signedUrl: data.signedUrl, token: data.token, path, publicUrl, network: NETWORK, recorded: !ins.error });
+  const expiresAt = new Date(Date.now() + UPLOAD_URL_TTL_MS).toISOString();
+  const row = { estate: b.estate, path, sha256: b.sha256, uploaded_by: b.accountId, exif: b.exif ?? null };
+  let ins = await sb.from(TABLES.evidenceFiles).insert({ ...row, size_bytes: b.size, upload_expires_at: expiresAt });
+  // Before migration 0004 the two columns don't exist: keep recording the row without them.
+  if (ins.error && /size_bytes|upload_expires_at/.test(ins.error.message ?? "")) ins = await sb.from(TABLES.evidenceFiles).insert(row);
+  return ok({ signedUrl: data.signedUrl, token: data.token, path, publicUrl, network: NETWORK, recorded: !ins.error, expiresAt });
 }

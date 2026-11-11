@@ -9,7 +9,8 @@ import { serverEnv } from "@/lib/server/env";
 import { claimOnce } from "@/lib/server/once";
 import { rateLimitShared } from "@/lib/server/rate-limit";
 import { bytesToBase64 } from "@/lib/near";
-import { checkDelegate, decodeSignedDelegate, delegateHash, relayerCredentials, relaySignedDelegate, verifyDelegate } from "@/lib/server/relayer";
+import { relayLimits } from "@/lib/server/limits";
+import { chainReader, checkDelegate, decodeSignedDelegate, delegateHash, relayerCredentials, relaySignedDelegate, verifyDelegate } from "@/lib/server/relayer";
 
 export const dynamic = "force-dynamic";
 
@@ -38,9 +39,16 @@ export async function POST(req: Request) {
     return jsonError("RPC_UNAVAILABLE", "Couldn't reach NEAR to check the signed action.", 503);
   }
   if (!v.ok) return jsonError(v.code, v.message, v.code === "E_NOT_SURVEYOR" || v.code === "KEY_NOT_ALLOWED" ? 403 : 401);
-  // Counted only for verified surveyor calls, so nobody can spend someone else's (or everyone's) quota.
-  for (const [key, limit] of [[`relay:${sd.delegateAction.senderId}`, 10], [`relay-ip:${ip}`, 30], ["relay:all", 300]] as const) {
-    const rl = await rateLimitShared(key, limit, 60_000);
+  // Counted only for verified surveyor calls, so nobody can spend someone else's (or everyone's) quota. On a playground
+  // estate anyone is a surveyor, so captures there also have hourly caps.
+  let playground = false;
+  try {
+    playground = (await chainReader.estate(sd.delegateAction.receiverId)).params.playground; // cached by verifyDelegate
+  } catch {
+    return jsonError("RPC_UNAVAILABLE", "Couldn't reach NEAR to check the estate.", 503);
+  }
+  for (const [key, limit, windowMs] of relayLimits(sd.delegateAction.senderId, ip, playground, check.methods)) {
+    const rl = await rateLimitShared(key, limit, windowMs);
     if (!rl.ok) return jsonError("RATE_LIMITED", `Too many relayed calls. Try again in ${rl.retryAfterS}s.`, 429, { "retry-after": String(rl.retryAfterS) });
   }
   // The chain rejects a replay, but the relayer would still pay for the failed receipt.

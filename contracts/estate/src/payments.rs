@@ -1,7 +1,8 @@
-//! Money in and out of unit accounts. Core rule (SPEC 5.1): the unit account's USDC balance is the
-//! truth; the estate never trusts a message about an amount, it re-reads the balance.
+//! Money in and out of unit accounts. Deposits are booked only from an accepted `ft_transfer_call` amount or from a
+//! deposit report confirmed by two balance reads (see "deposits" below); a raw balance read never credits anything.
 
 use crate::events::emit;
+use crate::votes::vote_weight;
 use crate::*;
 use near_contract_standards::non_fungible_token::events::{NftBurn, NftMint};
 use near_sdk::json_types::{U128, U64};
@@ -68,8 +69,8 @@ impl Estate {
         );
         let by = env::predecessor_account_id();
         let now = Self::now();
-        // A 1Click payment for the last reservation can land after it lapsed. `sync` credits whoever holds the
-        // reservation at that moment, so until `late_claim_ns` after the last reservation ended only that reserver
+        // A 1Click payment for the last reservation can land after it lapsed. `report_deposit` credits whoever holds
+        // the reservation at that moment, so until `late_claim_ns` after the last reservation ended only that reserver
         // may reserve again; late money meanwhile becomes unattributed and `sweep_unattributed` returns it to them.
         if let Some(last) = &unit.last_reservation {
             let open_at = last
@@ -109,8 +110,10 @@ impl Estate {
         }
     }
 
-    /// The reserver gives the unit back. Any USDC they paid is returned with the 0.05 NEAR deposit.
+    /// The reserver gives the unit back. Any USDC they paid is returned with the 0.05 NEAR deposit. Attach 1 yocto.
+    #[payable]
     pub fn cancel_reservation(&mut self, unit_id: String) -> PromiseOrValue<bool> {
+        assert_one_yocto();
         let unit = self.unit(&unit_id);
         let r = unit
             .reservation
@@ -140,8 +143,27 @@ impl Estate {
     }
 
     // ---------- deposits ----------
+    //
+    // How USDC on a unit account becomes `paid` (audit finding 1). USDC credits the receiver *before* it calls
+    // `ft_on_transfer` and takes the money back in `ft_resolve_transfer` when the receiver refuses it, so a balance read
+    // while an `ft_transfer_call` is pending can see money that is about to leave. Nothing may be credited from a raw
+    // balance read alone:
+    //
+    // * `ft_transfer_call` (wallets): the unit's `ft_on_transfer` asks `on_unit_deposit`, which credits exactly the
+    //   `amount` it accepts (returns 0). Accepted money can't be refunded any more; refused money is never credited.
+    // * plain `ft_transfer` (1Click / NEAR Intents deliver this way): no callback reaches the estate. Only the deposit
+    //   reporter, the estate's `verdict_relayer` (the app server that watches the 1Click status), may credit it with
+    //   `report_deposit`, passing the amount 1Click says it delivered. The estate credits
+    //   `min(attested, surplus at read 1, surplus at read 2)`, where both reads come from a chained promise
+    //   (read → callback → read → callback) and the books (`expected`) must not change in between; otherwise it
+    //   credits nothing and fails `E_BALANCE_PENDING` so the reporter retries.
+    //   Residual trust: the reporter can credit at most the surplus really observed on the unit account in two reads
+    //   in a row, never more than it attests. A dishonest reporter could still book a surplus that isn't a finished
+    //   plain transfer — a pending `ft_transfer_call` that spans both reads and is later refunded — so the role must be
+    //   an account Plote controls; it can't mint money that never reached the unit.
+    // * `sync` (anyone) only checks: it reads the balance and logs how it compares with the books.
 
-    /// Public and idempotent: re-read the unit's USDC balance and credit what changed.
+    /// Anyone: read the unit's USDC balance and log how it compares with the books. Credits nothing (see above).
     pub fn sync(&mut self, unit_id: String) -> Promise {
         let unit = self.unit(&unit_id);
         ensure!(
@@ -150,76 +172,147 @@ impl Estate {
             "unit {} is still being created",
             unit_id
         );
-        ensure!(
-            unit.in_flight == 0,
-            "E_IN_FLIGHT",
-            "a transfer out of {} is pending; sync after it lands",
-            unit_id
-        );
-        self.balance_check(&unit)
+        self.read_balance(&unit).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_ON_BALANCE)
+                .on_balance(unit_id),
+        )
     }
 
+    /// Callback of `sync`. Logs (and emits `balance_checked`) the balance against the books; returns the surplus seen.
+    /// Never credits: the read may include a pending `ft_transfer_call` that will be refunded.
     #[private]
     pub fn on_balance(&mut self, unit_id: String) -> U128 {
-        let Some(mut unit) = self.units.get(&unit_id).cloned() else {
+        let Some(unit) = self.units.get(&unit_id).cloned() else {
             return U128(0);
         };
-        let Some(bytes) = result_bytes(0, 256) else {
+        let Some(balance) = read_balance_result() else {
             env::log_str("balance read failed");
             return U128(0);
         };
-        let balance: U128 = serde_json::from_slice(&bytes).unwrap_or(U128(0));
-        // TODO(audit finding 8): the balance was read in an earlier receipt. If an `on_out` for this unit landed
-        // between that read and this callback (receipt order across shards isn't guaranteed), `expected` already
-        // excludes the transfer but `balance` still includes it, and the difference would be credited as new money.
-        // Fix without a state change: `balance_check` passes the unit's `expected` at read time as an extra
-        // callback argument, and this callback skips (logs, credits nothing) if `expected` differs now; a later
-        // `sync` then reads a fresh balance. (Or, with a state migration, a per-unit transfer-out counter.) Today
-        // `sync` and `on_unit_deposit` refuse to start while `in_flight > 0`, which covers in-order delivery.
-        if unit.in_flight > 0 {
-            env::log_str("transfer out pending; sync skipped");
-            return U128(0);
-        }
-        let now = Self::now();
-        let expected =
-            (unit.paid + unit.unattributed).saturating_sub(unit.released + unit.refunded_out);
-        if balance.0 <= expected {
-            if balance.0 < expected {
-                env::log_str(&format!(
-                    "WARN unit {} balance {} below expected {}",
-                    unit_id, balance.0, expected
-                ));
-            }
-            return U128(0);
-        }
-        let new_money = balance.0 - expected;
-        let active_reservation = unit
-            .reservation
-            .as_ref()
-            .map(|r| now < r.expires_at.0)
-            .unwrap_or(false);
-        if unit.status.has_token() || (unit.status == UnitStatus::Reserved && active_reservation) {
-            unit.paid += new_money;
-            self.total_paid_in += new_money;
-        } else {
-            unit.unattributed += new_money;
+        let expected = Self::expected_balance(&unit);
+        let surplus = balance.saturating_sub(expected);
+        if surplus > 0 {
+            env::log_str(&format!(
+                "unit {} holds {} above its books; a plain-transfer deposit is credited when the deposit reporter calls report_deposit, an ft_transfer_call one by on_unit_deposit",
+                unit_id, surplus
+            ));
+        } else if balance < expected {
+            env::log_str(&format!(
+                "WARN unit {} balance {} below expected {}{}",
+                unit_id,
+                balance,
+                expected,
+                if unit.in_flight > 0 {
+                    " (a transfer out is pending)"
+                } else {
+                    ""
+                }
+            ));
         }
         emit(
-            "deposit_synced",
-            json!({ "unit_id": unit_id, "new_money": U128(new_money), "paid": U128(unit.paid), "unattributed": U128(unit.unattributed) }),
+            "balance_checked",
+            json!({ "unit_id": unit_id, "balance": U128(balance), "expected": U128(expected) }),
         );
-        self.maybe_allocate(&mut unit, now);
-        // A defaulter who catches up is cured before anyone buys the listing.
-        if unit.status == UnitStatus::InDefault && !self.overdue(&unit, now) {
-            unit.status = UnitStatus::Allocated;
-            unit.listing = None;
-        }
-        self.save(unit);
-        U128(new_money)
+        U128(surplus)
     }
 
-    /// Called by a unit's `ft_on_transfer`. Returns the unused amount: everything for a unit nobody
-    /// reserved (the token bounces back to the sender), nothing otherwise.
+    /// The deposit reporter (`verdict_relayer`) credits a plain-transfer deposit 1Click reported delivered to this
+    /// unit; `amount` is the delivered USDC in base units. Credits `min(amount, surplus over the books seen in two
+    /// chained balance reads)`; returns (via the promise) the amount credited. Fails `E_BALANCE_PENDING` (nothing
+    /// credited, report again) if the unit's books changed between the reads, `E_IN_FLIGHT` while a transfer out is
+    /// pending.
+    pub fn report_deposit(&mut self, unit_id: String, amount: U128) -> Promise {
+        ensure!(
+            self.verdict_relayer.as_ref() == Some(&env::predecessor_account_id()),
+            "E_NOT_RELAYER",
+            "only the deposit reporter (the estate's verdict_relayer) can report a plain-transfer deposit"
+        );
+        let unit = self.unit(&unit_id);
+        ensure!(
+            unit.ready,
+            "E_UNIT_NOT_FOUND",
+            "unit {} is still being created",
+            unit_id
+        );
+        ensure!(amount.0 > 0, "E_BAD_ARGS", "amount must be positive");
+        ensure!(
+            unit.in_flight == 0,
+            "E_IN_FLIGHT",
+            "a transfer out of {} is pending; report after it lands",
+            unit_id
+        );
+        let expected = U128(Self::expected_balance(&unit));
+        self.read_balance(&unit).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_ON_REPORT_FIRST)
+                .on_report_first(unit_id, amount, expected),
+        )
+    }
+
+    /// First read of `report_deposit`: the books must be what they were when the report started; then read again.
+    #[private]
+    pub fn on_report_first(
+        &mut self,
+        unit_id: String,
+        amount: U128,
+        expected: U128,
+    ) -> PromiseOrValue<U128> {
+        let unit = self.unchanged_unit(&unit_id, expected.0);
+        let first = read_balance_result().unwrap_or_else(|| {
+            errors::fail("E_BALANCE_PENDING", "the balance read failed; report again")
+        });
+        if first <= expected.0 {
+            env::log_str(&format!(
+                "unit {} holds nothing above its books (balance {}, expected {}); nothing credited",
+                unit_id, first, expected.0
+            ));
+            return PromiseOrValue::Value(U128(0));
+        }
+        PromiseOrValue::Promise(
+            self.read_balance(&unit).then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_ON_REPORT_SECOND)
+                    .on_report_second(unit_id, amount, expected, U128(first)),
+            ),
+        )
+    }
+
+    /// Second read of `report_deposit`: credits `min(amount, first − expected, second − expected)`.
+    #[private]
+    pub fn on_report_second(
+        &mut self,
+        unit_id: String,
+        amount: U128,
+        expected: U128,
+        first: U128,
+    ) -> U128 {
+        let mut unit = self.unchanged_unit(&unit_id, expected.0);
+        let second = read_balance_result().unwrap_or_else(|| {
+            errors::fail("E_BALANCE_PENDING", "the balance read failed; report again")
+        });
+        let seen = first.0.min(second);
+        let credit = seen.saturating_sub(expected.0).min(amount.0);
+        if credit == 0 {
+            env::log_str(&format!(
+                "unit {} holds nothing above its books on the second read; nothing credited",
+                unit_id
+            ));
+            return U128(0);
+        }
+        if credit < amount.0 {
+            env::log_str(&format!(
+                "reported {} but only {} is on unit {} above its books; credited {}",
+                amount.0, credit, unit_id, credit
+            ));
+        }
+        self.credit(&mut unit, credit, Self::now(), "report");
+        self.save(unit);
+        U128(credit)
+    }
+
+    /// Called by a unit's `ft_on_transfer`. Credits exactly `amount` and returns 0 when the unit takes payments (a
+    /// holder, or an active reservation, and no transfer out pending); otherwise returns `amount`, which USDC refunds.
     pub fn on_unit_deposit(
         &mut self,
         unit_id: String,
@@ -227,23 +320,24 @@ impl Estate {
         amount: U128,
         msg: String,
     ) -> U128 {
-        let unit = self.unit(&unit_id);
+        let mut unit = self.unit(&unit_id);
         ensure!(
             env::predecessor_account_id() == unit.account,
             "E_NOT_UNIT",
             "only the unit account can report deposits"
         );
         let now = Self::now();
-        let active_reservation = unit
-            .reservation
-            .as_ref()
-            .map(|r| now < r.expires_at.0)
-            .unwrap_or(false);
-        let accepts =
-            unit.status.has_token() || (unit.status == UnitStatus::Reserved && active_reservation);
-        if !accepts {
+        if !Self::takes_payments(&unit, now) {
             env::log_str(&format!(
                 "deposit of {} from {} bounced: unit {} isn't reserved",
+                amount.0, sender_id, unit_id
+            ));
+            return amount;
+        }
+        if unit.in_flight > 0 {
+            // A reservation refund in flight resets `paid` when it lands; don't take money meanwhile.
+            env::log_str(&format!(
+                "deposit of {} from {} bounced: a transfer out of {} is pending; pay again after it lands",
                 amount.0, sender_id, unit_id
             ));
             return amount;
@@ -255,9 +349,8 @@ impl Estate {
                 msg.chars().take(200).collect::<String>()
             ));
         }
-        if unit.in_flight == 0 {
-            self.balance_check(&unit).detach();
-        }
+        self.credit(&mut unit, amount.0, now, "ft_transfer_call");
+        self.save(unit);
         U128(0)
     }
 
@@ -355,6 +448,13 @@ impl Estate {
             MAX_RELEASE_PER_CALL
         );
         let now = Self::now();
+        // While holders can take their money back, none of it goes to the developer (audit finding 5): a milestone
+        // signed after its deadline + grace doesn't close refunds, so it mustn't unlock releases either.
+        ensure!(
+            !self.refunds_open(now),
+            "E_REFUNDS_OPEN",
+            "refunds are open (a missed deadline or a freeze vote); nothing is released meanwhile"
+        );
         let payout = self.payout_account();
         let mut started = 0;
         for id in unit_ids {
@@ -394,6 +494,15 @@ impl Estate {
                 "transfer of {} from {} to {} failed; nothing moved",
                 amount.0, unit_id, receiver
             ));
+            if kind == OutKind::ReservationRefund && unit.status == UnitStatus::Reserved {
+                // The reserver can't receive it (e.g. not registered on USDC). Don't keep the unit hostage: move the
+                // money to the estate's own account, credit it to `owed` for the reserver (`withdraw_owed`) and end
+                // the reservation when that lands (audit finding 6).
+                let estate = env::current_account_id();
+                self.send_from_unit(&mut unit, OutKind::OwedEscrow, estate, amount.0)
+                    .detach();
+                return false;
+            }
             self.save(unit);
             return false;
         }
@@ -461,6 +570,34 @@ impl Estate {
                 self.finish_reservation(&mut unit);
                 self.save(unit);
             }
+            OutKind::OwedEscrow => {
+                let by = unit
+                    .reservation
+                    .as_ref()
+                    .map(|r| r.by.clone())
+                    .or_else(|| unit.deposit_owner.clone());
+                unit.paid = unit.paid.saturating_sub(a);
+                self.total_paid_in = self.total_paid_in.saturating_sub(a);
+                match by {
+                    Some(by) => {
+                        let prev = self.owed.get(&by).copied().unwrap_or(0);
+                        self.owed.insert(by.clone(), prev + a);
+                        emit(
+                            "reservation_ended",
+                            json!({ "unit_id": unit_id, "by": by, "refunded": amount, "owed": true }),
+                        );
+                    }
+                    None => {
+                        // Unreachable (only a Reserved unit schedules this); keep the money claimable anyway.
+                        let prev = self.owed.get(&self.recovery_id).copied().unwrap_or(0);
+                        self.owed.insert(self.recovery_id.clone(), prev + a);
+                    }
+                }
+                if unit.status == UnitStatus::Reserved {
+                    self.finish_reservation(&mut unit);
+                }
+                self.save(unit);
+            }
         }
         true
     }
@@ -490,15 +627,61 @@ impl Estate {
 }
 
 impl Estate {
-    pub(crate) fn balance_check(&self, unit: &Unit) -> Promise {
+    pub(crate) fn read_balance(&self, unit: &Unit) -> Promise {
         ext_ft::ext(self.usdc_id.clone())
             .with_static_gas(GAS_FT_BALANCE)
             .ft_balance_of(unit.account.clone())
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(GAS_ON_BALANCE)
-                    .on_balance(unit.id.clone()),
-            )
+    }
+
+    /// The unit as `report_deposit` left it: same books, nothing in flight. Otherwise a transfer out (or an
+    /// `ft_transfer_call` credit) landed between the reads, and the balance can't be compared with `expected`.
+    fn unchanged_unit(&self, unit_id: &str, expected: u128) -> Unit {
+        let unit = self.unit(unit_id);
+        ensure!(
+            unit.in_flight == 0 && Self::expected_balance(&unit) == expected,
+            "E_BALANCE_PENDING",
+            "unit {} changed while its balance was being read; nothing credited, report again",
+            unit_id
+        );
+        unit
+    }
+
+    /// Does the unit take payments right now: a token holder, or an active reservation?
+    pub(crate) fn takes_payments(unit: &Unit, now: u64) -> bool {
+        let active_reservation = unit
+            .reservation
+            .as_ref()
+            .map(|r| now < r.expires_at.0)
+            .unwrap_or(false);
+        unit.status.has_token() || (unit.status == UnitStatus::Reserved && active_reservation)
+    }
+
+    /// Book `amount` of new money that is known to be on the unit account: to `paid` if the unit takes payments,
+    /// else to `unattributed` (sweepable). Then allocate the token or cure a default, and keep open proposals'
+    /// electorates in step with the new vote weight.
+    pub(crate) fn credit(&mut self, unit: &mut Unit, amount: u128, now: u64, source: &str) {
+        let old_weight = if unit.status.has_token() {
+            vote_weight(unit)
+        } else {
+            0
+        };
+        if Self::takes_payments(unit, now) {
+            unit.paid += amount;
+            self.total_paid_in += amount;
+        } else {
+            unit.unattributed += amount;
+        }
+        emit(
+            "deposit_synced",
+            json!({ "unit_id": unit.id, "new_money": U128(amount), "paid": U128(unit.paid), "unattributed": U128(unit.unattributed), "source": source }),
+        );
+        self.maybe_allocate(unit, now);
+        // A defaulter who catches up is cured before anyone buys the listing.
+        if unit.status == UnitStatus::InDefault && !self.overdue(unit, now) {
+            unit.status = UnitStatus::Allocated;
+            unit.listing = None;
+        }
+        self.track_weight_change(unit, old_weight, now);
     }
 
     pub(crate) fn send_from_unit(
@@ -519,7 +702,11 @@ impl Estate {
             )
             .then(
                 Self::ext(env::current_account_id())
-                    .with_static_gas(GAS_ON_OUT)
+                    .with_static_gas(match kind {
+                        OutKind::Refund => GAS_ON_OUT_REFUND,
+                        OutKind::ReservationRefund => GAS_ON_OUT_RESERVATION,
+                        _ => GAS_ON_OUT,
+                    })
                     .on_out(unit.id.clone(), kind, receiver, U128(amount)),
             )
     }
@@ -653,4 +840,10 @@ impl Estate {
         unit.lien = None;
         unit.approvals.clear();
     }
+}
+
+/// The `U128` an `ft_balance_of` returned as promise result 0, if the read succeeded.
+fn read_balance_result() -> Option<u128> {
+    let bytes = result_bytes(0, 256)?;
+    serde_json::from_slice::<U128>(&bytes).ok().map(|b| b.0)
 }

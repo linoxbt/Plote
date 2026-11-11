@@ -1,5 +1,5 @@
 //! The allocation NFT's image, drawn from the unit's state at view time (SPEC 5.11).
-//! An isometric house whose parts fill in teal as milestones are approved; windows turn gold at handover.
+//! An isometric house whose parts fill in brand orange as milestones are approved; windows turn gold when all are.
 
 use crate::UnitStatus;
 use near_sdk::base64::{engine::general_purpose::STANDARD, Engine};
@@ -52,10 +52,17 @@ pub fn dollars(base_units: u128) -> String {
     format!("${}", out)
 }
 
+// Brand tokens (web/app/globals.css). web/lib/svg-house.ts is a byte-for-byte port of `unit_svg`, checked against
+// fixtures this crate writes (`tests::svg_fixtures_for_web`); change both together.
+const BG: &str = "#090909";
+const LINE: &str = "#2a2a2e";
+const TEXT: &str = "#ffffff";
+const MUTED: &str = "#a3a3a8";
 const ORANGE: &str = "#FF9211";
 const DIM: &str = "#4A2A0C";
-const LINE: &str = "#3A414B";
 const GOLD: &str = "#FFD27A";
+const RED: &str = "#f26b5b";
+const SANS: &str = "Lexend,sans-serif";
 
 fn part(filled: bool) -> String {
     if filled {
@@ -66,11 +73,20 @@ fn part(filled: bool) -> String {
 }
 
 /// Map progress onto the four parts of the drawing, whatever the milestone count.
-fn stage(approved: u32, total: u32) -> u32 {
+pub fn stage(approved: u32, total: u32) -> u32 {
     if total == 0 {
         return 0;
     }
-    (approved * 4).div_ceil(total).min(4)
+    (approved.saturating_mul(4)).div_ceil(total).min(4)
+}
+
+fn status_color(status: &str) -> &'static str {
+    match status {
+        "IN DEFAULT" => RED,
+        "HANDED OVER" => GOLD,
+        "AVAILABLE" => MUTED,
+        _ => ORANGE,
+    }
 }
 
 pub fn unit_svg(i: &SvgInput) -> String {
@@ -86,31 +102,37 @@ pub fn unit_svg(i: &SvgInput) -> String {
         format!("fill='none' stroke='{LINE}'")
     };
     let mut bar = String::new();
+    let w = 280 / i.total.clamp(1, 8);
     for k in 0..i.total.min(8) {
-        let w = 280 / i.total.clamp(1, 8);
         let fill = if k < i.approved { ORANGE } else { LINE };
         bar.push_str(&format!(
-            "<rect x='{}' y='338' width='{}' height='6' fill='{}'/>",
+            "<rect x='{}' y='338' width='{}' height='6' rx='3' fill='{}'/>",
             60 + k * w,
             w - 4,
             fill
         ));
     }
+    let status = esc(i.status);
+    let sc = status_color(i.status);
+    let bw = i.status.chars().take(40).count() as u32 * 7 + 16;
     format!(
-        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><rect width='400' height='400' fill='#090909'/>\
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'><rect width='400' height='400' fill='{BG}'/>\
+<rect x='12' y='12' width='376' height='376' rx='16' fill='none' stroke='{LINE}'/>\
 <path d='M12 28V12h16M372 12h16v16M388 372v16h-16M28 388H12v-16' fill='none' stroke='{ORANGE}' stroke-width='1.5'/>\
-<text x='28' y='44' fill='#E9ECEF' font-family='sans-serif' font-size='16'>{estate}</text>\
-<text x='372' y='44' fill='{ORANGE}' font-family='monospace' font-size='11' text-anchor='end'>{status}</text>\
+<text x='28' y='46' fill='{TEXT}' font-family='{SANS}' font-size='16'>{estate}</text>\
+<rect x='{bx}' y='30' width='{bw}' height='22' rx='11' fill='none' stroke='{sc}'/>\
+<text x='{tx}' y='45' fill='{sc}' font-family='monospace' font-size='11' text-anchor='middle'>{status}</text>\
 <g stroke-width='1.5'><path d='M80 250l120 60 120-60-120-60z' {slab}/>\
 <path d='M110 245l90 45v-90l-90-45z' {body}/><path d='M200 290l90-45v-90l-90 45z' {body}/>\
 <path d='M105 158l95 47v-95z' {roof}/><path d='M200 205l95-47-95-48z' {roof}/>\
 <path d='M128 222l22 11v-22l-22-11zM162 239l22 11v-22l-22-11zM220 252l22-11v-22l-22 11zM254 235l22-11v-22l-22 11z' {win}/></g>\
-<text x='60' y='326' fill='#E9ECEF' font-family='monospace' font-size='18'>{id}</text>\
-<text x='340' y='326' fill='#8B939D' font-family='monospace' font-size='12' text-anchor='end'>{approved}/{total}</text>{bar}\
-<text x='60' y='366' fill='#8B939D' font-family='sans-serif' font-size='11'>{label}</text>\
-<text x='340' y='366' fill='#E9ECEF' font-family='monospace' font-size='11' text-anchor='end'>{paid} / {price}</text></svg>",
+<text x='60' y='326' fill='{TEXT}' font-family='monospace' font-size='18'>{id}</text>\
+<text x='340' y='326' fill='{MUTED}' font-family='monospace' font-size='12' text-anchor='end'>{approved}/{total}</text>{bar}\
+<text x='60' y='366' fill='{MUTED}' font-family='{SANS}' font-size='11'>{label}</text>\
+<text x='340' y='366' fill='{TEXT}' font-family='monospace' font-size='11' text-anchor='end'>{paid} / {price}</text></svg>",
         estate = esc(i.estate),
-        status = esc(i.status),
+        bx = 372u32.saturating_sub(bw),
+        tx = 372u32.saturating_sub(bw / 2),
         id = esc(&i.unit_id.to_uppercase()),
         approved = i.approved,
         total = i.total,
@@ -150,8 +172,10 @@ mod tests {
             let s = unit_svg(&input(a));
             assert!(s.len() < 2600, "svg is {} bytes", s.len());
             assert_eq!(
-                s.matches(&format!("y='338' width='66' height='6' fill='{ORANGE}'"))
-                    .count(),
+                s.matches(&format!(
+                    "y='338' width='66' height='6' rx='3' fill='{ORANGE}'"
+                ))
+                .count(),
                 a as usize
             );
         }
@@ -168,6 +192,158 @@ mod tests {
         let mut i = input(1);
         i.label = "<script>";
         assert!(!unit_svg(&i).contains("<script>"));
+    }
+
+    /// Writes (or, when it exists, checks) web/tests/unit/fixtures/svg-house.json: `unit_svg` outputs for the inputs
+    /// web/lib/svg-house.ts must reproduce byte for byte. Regenerate after a drawing change with
+    /// `PLOTE_WRITE_FIXTURES=1 cargo test -p plote-estate svg_fixtures_for_web`.
+    #[test]
+    fn svg_fixtures_for_web() {
+        use near_sdk::serde_json::{json, to_string_pretty, Value};
+        let statuses = [
+            UnitStatus::Available,
+            UnitStatus::Reserved,
+            UnitStatus::Allocated,
+            UnitStatus::InDefault,
+            UnitStatus::HandedOver,
+        ];
+        type Case<'a> = (&'a str, &'a str, &'a str, u32, u32, UnitStatus, u128, u128);
+        let mut cases: Vec<Case> = vec![];
+        for a in 0..=4 {
+            cases.push((
+                "Harmattan Court",
+                "Block A · Unit 4B · 3-bed",
+                "a-4b",
+                a,
+                4,
+                UnitStatus::Allocated,
+                8_500_000_000,
+                85_000_000_000,
+            ));
+        }
+        for st in statuses {
+            cases.push((
+                "Baobab Heights",
+                "Unit P-01",
+                "p-01",
+                2,
+                4,
+                st,
+                1_234_567_890,
+                95_000_000_000,
+            ));
+        }
+        cases.extend([
+            (
+                "Playground",
+                "Sandbox unit",
+                "s-1",
+                3,
+                6,
+                UnitStatus::Allocated,
+                999_999,
+                1_000_000,
+            ),
+            (
+                "Playground",
+                "One stage",
+                "x-9",
+                1,
+                1,
+                UnitStatus::HandedOver,
+                0,
+                0,
+            ),
+            (
+                "Eight",
+                "Eight stages",
+                "e-8",
+                5,
+                8,
+                UnitStatus::Allocated,
+                1_234_567_000_000,
+                2_000_000_000_000,
+            ),
+            (
+                "Over",
+                "More approved than total",
+                "o-1",
+                5,
+                4,
+                UnitStatus::Allocated,
+                1,
+                2,
+            ),
+            (
+                "<script>&\"'",
+                "<img src=x onerror='a'>",
+                "z-0",
+                0,
+                4,
+                UnitStatus::Reserved,
+                0,
+                1,
+            ),
+            (
+                "A very long estate name that goes past forty characters for sure",
+                "Ünïcødé · 公寓 · 🏠 label that is also rather long here",
+                "abcdefghijklmnop",
+                2,
+                3,
+                UnitStatus::InDefault,
+                340_282_366_920_938_463_463_374_607_431_768_211_455,
+                u128::MAX,
+            ),
+            (
+                "Nine milestones",
+                "Clamp",
+                "n-9",
+                9,
+                9,
+                UnitStatus::Allocated,
+                5_000_000,
+                10_000_000,
+            ),
+        ]);
+        let fixtures: Vec<Value> = cases
+            .iter()
+            .map(|(estate, label, id, approved, total, st, paid, price)| {
+                let svg = unit_svg(&SvgInput {
+                    estate,
+                    label,
+                    unit_id: id,
+                    approved: *approved,
+                    total: *total,
+                    status: status_text(*st),
+                    paid: *paid,
+                    price: *price,
+                });
+                assert!(svg.len() < 2600, "svg is {} bytes", svg.len());
+                json!({
+                    "input": {
+                        "estateName": estate, "unitLabel": label, "unitId": id, "approvedCount": approved,
+                        "total": total, "status": st, "paid": paid.to_string(), "price": price.to_string()
+                    },
+                    "svg": svg,
+                    "dataUri": data_uri(&svg),
+                })
+            })
+            .collect();
+        let text = to_string_pretty(&fixtures).unwrap() + "\n";
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../web/tests/unit/fixtures/svg-house.json"
+        );
+        match std::fs::read_to_string(path) {
+            Ok(existing) if std::env::var("PLOTE_WRITE_FIXTURES").is_err() => assert_eq!(
+                existing, text,
+                "web/tests/unit/fixtures/svg-house.json is stale; rerun with PLOTE_WRITE_FIXTURES=1"
+            ),
+            _ => {
+                std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
+                std::fs::write(path, &text).unwrap();
+            }
+        }
     }
 
     #[test]

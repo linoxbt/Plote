@@ -2,8 +2,11 @@
 //!
 //! The unit account holds the buyer's USDC. It has no access keys and obeys only its estate contract:
 //! the only way USDC leaves is `transfer_out`, callable by the estate alone. Incoming USDC sent with
-//! `ft_transfer_call` is accepted or bounced by asking the estate (`on_unit_deposit`); any other token
-//! is bounced straight back.
+//! `ft_transfer_call` is accepted or bounced by asking the estate (`on_unit_deposit`), which books exactly the
+//! `amount` it accepts; any other token is bounced straight back. USDC sent with a plain `ft_transfer` (1Click) is
+//! booked only when the estate's deposit reporter calls `estate.report_deposit` (two balance reads; see the estate's
+//! payments module). Live units run this code through a NEP-591 global contract pinned by hash, so changes here
+//! reach only units of estates deployed with the new hash.
 
 use near_sdk::json_types::U128;
 use near_sdk::{
@@ -91,7 +94,8 @@ impl Unit {
             .ft_transfer(receiver_id, amount, memo)
     }
 
-    /// Anyone: ask the estate to re-read this account's USDC balance (e.g. after a 1Click delivery).
+    /// Anyone: ask the estate to check this account's USDC balance against its books (logs only; it credits nothing —
+    /// a plain-transfer deposit is booked by the estate's deposit reporter with `report_deposit`).
     pub fn sync_deposits(&self) -> Promise {
         ext_estate::ext(self.estate_id.clone())
             .with_static_gas(GAS_FOR_SYNC)

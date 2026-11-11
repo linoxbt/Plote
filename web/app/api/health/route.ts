@@ -1,5 +1,13 @@
-import { NEAR_AI_URL, SUPABASE_URL, TABLES } from "@/lib/config";
+// GET /api/health — operational checks. Public view: ok / not-ok flags only (cached 30 s). With `x-cron-secret`:
+// details (account names, balances, error text).
+//  photo_checks: data-driven — failing when the latest verdicts across estates all show an infrastructure failure
+//                (ai_unavailable / challenge_unverified / worker_error), instead of pinging NEAR AI without a key.
+//  oneclick:     "mainnet only" on testnet builds (NEAR Intents has no testnet); probed on mainnet.
+//  accounts:     estates' developer and payout accounts (+ MONITOR_ACCOUNTS) above 0.5 NEAR.
+
+import { IS_MAINNET, SUPABASE_URL, TABLES } from "@/lib/config";
 import { balances } from "@/lib/server/balances";
+import { accountBalances, photoCheckStatus, publicView, recentEvidence, type Check, type Health } from "@/lib/server/health";
 import { timingSafeEqual } from "node:crypto";
 import { ok } from "@/lib/server/http";
 import { serverEnv } from "@/lib/server/env";
@@ -19,27 +27,11 @@ async function timed(fn: () => Promise<Response>): Promise<{ ok: boolean; detail
   }
 }
 
-type Check = { ok: boolean; detail: string; configured?: boolean };
-type Health = Record<string, Check>;
-
 /** Full details (account names, allowlist, balances, error text) only with `x-cron-secret`; the public view keeps the flags. */
 function detailed(req: Request): boolean {
   const want = Buffer.from(serverEnv.cronSecret() ?? "");
   const got = Buffer.from(req.headers.get("x-cron-secret") ?? "");
   return want.length > 0 && want.length === got.length && timingSafeEqual(want, got);
-}
-
-function publicView(h: Health): Health {
-  const out: Health = {};
-  for (const [k, v] of Object.entries(h)) {
-    const detail =
-      v.configured === false ? "not configured on this deployment"
-      : k === "balances" ? (v.ok ? "relayer gas and verification budgets above their minimums" : "a gas or verification balance is below its minimum")
-      : k === "relayer" ? (v.ok ? "configured" : "not working")
-      : v.ok ? "reachable" : "unreachable or returning errors";
-    out[k] = { ok: v.ok, ...(v.configured !== undefined ? { configured: v.configured } : {}), detail };
-  }
-  return out;
 }
 
 // The public view is cached briefly so the endpoint can't be used to fan out requests to NEAR, 1Click and Supabase.
@@ -55,11 +47,12 @@ export async function GET(req: Request) {
 }
 
 async function check(): Promise<Health> {
-  const ctrl = () => AbortSignal.timeout(5000);
-  const [nearai, oneclick] = await Promise.all([
-    timed(() => fetch(`${NEAR_AI_URL}/models`, { signal: ctrl(), cache: "no-store" })),
-    timed(() => oneclickFetch("/tokens", {}, 5000)),
-  ]);
+  const oneclickP: Promise<Check> = IS_MAINNET
+    ? timed(() => oneclickFetch("/tokens", {}, 5000)).then((r) => ({ ...r, configured: true }))
+    : Promise.resolve({ ok: true, configured: false, mainnet_only: true, detail: "mainnet only: NEAR Intents (1Click) has no testnet" });
+  const rc = relayerCredentials();
+  const [oneclick, evidence, funds, accounts] = await Promise.all([oneclickP, recentEvidence(), balances(rc?.accountId ?? null), accountBalances()]);
+  const pc = photoCheckStatus(evidence);
   let supabase: { ok: boolean; detail: string; configured: boolean };
   const sb = supabaseAdmin();
   if (!sb) supabase = { ok: false, configured: false, detail: "not configured (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" };
@@ -68,10 +61,15 @@ async function check(): Promise<Health> {
     const { error } = await sb.from(TABLES.events).select("id", { head: true, count: "exact" }).limit(1);
     supabase = { ok: !error, configured: true, detail: error ? error.message : `${SUPABASE_URL} · ${Date.now() - t0} ms` };
   }
-  const rc = relayerCredentials();
   const relayer = rc
     ? { ok: true, configured: true, detail: `${rc.accountId} · allowlist ${serverEnv.relayerAllowedMethods().join(",")}` }
     : { ok: false, configured: false, detail: "not configured (RELAYER_ACCOUNT_ID / RELAYER_PRIVATE_KEY)" };
-  const funds = await balances(rc?.accountId ?? null);
-  return { nearai, oneclick: { ...oneclick, configured: true }, supabase, relayer, balances: { ok: funds.ok, detail: funds.detail } };
+  return {
+    photo_checks: { ok: pc.ok, detail: pc.detail },
+    oneclick,
+    supabase,
+    relayer,
+    balances: { ok: funds.ok, detail: funds.detail },
+    accounts: { ok: accounts.ok, detail: accounts.detail },
+  };
 }

@@ -1,6 +1,8 @@
 // HTTPS fallback for photo checks (SPEC 6.6): run the worker through OutLayer's HTTPS API and pass the
 // attested verdict to the estate via submit_verdict, signed by the estate's verdict relayer.
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export type WorkerVerdict = Record<string, unknown> & { pass: boolean };
 
 /** The relayer may only submit verdicts to estates in `verify_mode: "https"` (contract: E_VERIFY_MODE). */
@@ -62,5 +64,35 @@ export function toContractVerdict(v: WorkerVerdict, attestation: string | null):
     worker_commit: typeof v.worker_commit === "string" ? v.worker_commit : "unknown",
     attestation: str(v.attestation) ?? attestation,
     source: null,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Paid results (table verify_results, migration 0004). OutLayer is paid per run; if submit_verdict then fails (RPC
+// down, relayer out of gas), the verdict is kept so a retry submits it again instead of paying for another run.
+
+export type PaidStore = {
+  load(estate: string, evidenceId: string): Promise<{ verdict: Record<string, unknown> } | null>;
+  save(estate: string, evidenceId: string, verdict: Record<string, unknown>, error: string): Promise<boolean>;
+  submitted(estate: string, evidenceId: string, txHash: string | null): Promise<void>;
+};
+
+export function paidStore(sb: Pick<SupabaseClient, "from"> | null): PaidStore {
+  return {
+    async load(estate, evidenceId) {
+      if (!sb) return null;
+      const r = await sb.from("verify_results").select("verdict").eq("estate", estate).eq("evidence_id", evidenceId).is("submitted_at", null).maybeSingle();
+      return r.error || !r.data ? null : { verdict: r.data.verdict as Record<string, unknown> };
+    },
+    async save(estate, evidenceId, verdict, error) {
+      if (!sb) return false;
+      const now = new Date().toISOString();
+      const r = await sb.from("verify_results").upsert({ estate, evidence_id: evidenceId, verdict, last_error: error.slice(0, 500), submitted_at: null, updated_at: now });
+      return !r.error;
+    },
+    async submitted(estate, evidenceId, txHash) {
+      if (!sb) return;
+      await sb.from("verify_results").update({ submitted_at: new Date().toISOString(), submitted_tx: txHash, updated_at: new Date().toISOString() }).eq("estate", estate).eq("evidence_id", evidenceId);
+    },
   };
 }

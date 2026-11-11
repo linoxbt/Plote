@@ -179,10 +179,21 @@ impl Estate {
         let mut unit = self.unit(&token_id);
         let owner = self.assert_holder(&unit);
         ensure!(unit.lien.is_none(), "E_LIEN", "a lien blocks approvals");
+        ensure!(
+            unit.approvals.contains_key(&account_id) || unit.approvals.len() < MAX_APPROVALS,
+            "E_TOO_MANY_APPROVALS",
+            "at most {} approved accounts per token; revoke one first",
+            MAX_APPROVALS
+        );
         let approval_id = unit.next_approval_id;
         unit.next_approval_id += 1;
         unit.approvals.insert(account_id.clone(), approval_id);
         self.save(unit);
+        // Only the approval's storage is kept; the rest of the deposit goes back.
+        let extra = env::attached_deposit().saturating_sub(APPROVAL_STORAGE);
+        if !extra.is_zero() {
+            Promise::new(owner.clone()).transfer(extra).detach();
+        }
         msg.map(|m| {
             ext_nft_approval_receiver::ext(account_id)
                 .with_static_gas(GAS_NFT_ON_APPROVE)

@@ -35,9 +35,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: verifier
+      # verifier/ is its own workspace (not in the root Cargo workspace), so the root fmt/clippy steps don't cover it.
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: cargo build --release --target wasm32-wasip2
 
@@ -61,6 +65,45 @@ jobs:
       - run: pnpm -C web test
       - run: pnpm -C web build
       - run: pnpm -C scripts install --frozen-lockfile && pnpm -C scripts typecheck
+
+  # Playwright smoke tests (web/tests/e2e) against a production build on localhost. Chromium only (both projects,
+  # Pixel 7 and Desktop Chrome, run on it). Pages read testnet RPC; the tests accept error states if it's down.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm -C web install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+      - run: pnpm -C web exec playwright install --with-deps chromium
+      - uses: actions/cache@v4
+        with:
+          path: web/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}-
+      - run: pnpm -C web build
+      - name: start the app and wait for it
+        run: |
+          (pnpm -C web start -p 3000 > /tmp/next.log 2>&1 &)
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3000/ && exit 0; sleep 1; done
+          cat /tmp/next.log; exit 1
+      - run: pnpm -C web test:e2e --trace off
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          CI: "true"
+      - if: failure()
+        run: cat /tmp/next.log || true
 
   secrets:
     runs-on: ubuntu-latest

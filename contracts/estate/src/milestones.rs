@@ -4,7 +4,7 @@ use crate::events::emit;
 use crate::*;
 use near_sdk::json_types::U64;
 use near_sdk::serde_json::{self, json, Value};
-use near_sdk::{env, near, Promise};
+use near_sdk::{assert_one_yocto, env, near, Promise};
 
 /// Challenge alphabet: no 0/O, 1/I/L, so handwriting can't be misread.
 const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -164,13 +164,25 @@ impl Estate {
             st
         );
         let now = Self::now();
+        let by = env::predecessor_account_id();
+        // On the playground anyone may open a capture; nobody but the surveyor may replace someone else's live one,
+        // or one judge could keep invalidating another's code (audit finding 10).
+        if let Some(c) = self.captures.get(&milestone) {
+            ensure!(
+                c.by == by || now >= c.expires_at.0 || by == self.surveyor_id,
+                "E_CAPTURE_ACTIVE",
+                "{} has an open capture for milestone {} until {}",
+                c.by,
+                milestone,
+                c.expires_at.0
+            );
+        }
         let mut seed = env::random_seed_array().to_vec();
         seed.push(milestone);
         seed.extend_from_slice(&now.to_le_bytes());
         seed.extend_from_slice(env::predecessor_account_id().as_bytes());
         let code = make_code(&seed);
         let expires_at = now + self.params.capture_ttl_ns.0;
-        let by = env::predecessor_account_id();
         self.captures.insert(
             milestone,
             Capture {
@@ -269,6 +281,10 @@ impl Estate {
         let m = &mut self.milestones[i];
         m.status = MilestoneStatus::Checking;
         m.evidence_ids.push(id);
+        if m.evidence_ids.len() > MAX_EVIDENCE_IDS {
+            let drop = m.evidence_ids.len() - MAX_EVIDENCE_IDS;
+            m.evidence_ids.drain(..drop);
+        }
         self.captures.remove(&milestone);
         self.stats.evidence_submitted += 1;
         emit(
@@ -368,6 +384,49 @@ impl Estate {
         self.apply_verdict(evidence_id.0, verdict, "https", None)
     }
 
+    /// Anyone: reopen a milestone stuck in Checking because no verdict arrived for its latest evidence within
+    /// `STALE_CHECK_NS` (1 h) of submission — an HTTPS-mode relayer that never answered, or an `on_verdict` that ran
+    /// out of gas or failed. The evidence becomes Error (reason `check_timeout`) and the milestone Open, so the surveyor
+    /// can resubmit; a late verdict for it is still accepted (it can't override newer evidence).
+    pub fn reopen_stale_check(&mut self, milestone: u8) {
+        let i = self.assert_valid_milestone(milestone);
+        let m = &self.milestones[i];
+        ensure!(
+            m.status == MilestoneStatus::Checking,
+            "E_MILESTONE_STATE",
+            "milestone {} is {:?}, not Checking",
+            milestone,
+            m.status
+        );
+        let now = Self::now();
+        let latest = m.evidence_ids.last().copied();
+        let submitted_at = latest
+            .and_then(|id| self.evidence.get(&id))
+            .map(|e| e.submitted_at);
+        match (latest, submitted_at) {
+            (Some(id), Some(at)) => {
+                ensure!(
+                    now >= at.saturating_add(STALE_CHECK_NS),
+                    "E_CHECK_PENDING",
+                    "the check of evidence {} can be reopened from {}",
+                    id,
+                    at.saturating_add(STALE_CHECK_NS)
+                );
+                self.set_error_with(
+                    id,
+                    "no verdict arrived in time; reopened by reopen_stale_check",
+                    "check_timeout",
+                );
+                // Evidence that already has a verdict but left the milestone Checking (can't happen today) reopens too.
+                if self.milestones[i].status == MilestoneStatus::Checking {
+                    self.milestones[i].status = MilestoneStatus::Open;
+                }
+            }
+            // Checking without evidence can't happen; reopen rather than stay stuck.
+            _ => self.milestones[i].status = MilestoneStatus::Open,
+        }
+    }
+
     /// Surveyor signs a Verified milestone. The holder veto window starts now.
     pub fn qs_sign(&mut self, milestone: u8) {
         self.assert_surveyor();
@@ -391,8 +450,11 @@ impl Estate {
         );
     }
 
-    /// Holder marks the unit handed over once the last milestone is approved and its veto window passed.
+    /// Holder marks the unit handed over once the last milestone is approved and its veto window passed. Attach
+    /// 1 yocto: it ends the holder's refund right for this unit.
+    #[payable]
     pub fn handover(&mut self, unit_id: String) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         self.assert_holder(&unit);
         ensure!(

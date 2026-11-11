@@ -6,7 +6,7 @@ use crate::*;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::Deserialize;
 use near_sdk::serde_json::{self, json};
-use near_sdk::{env, near, AccountId, PromiseOrValue};
+use near_sdk::{assert_one_yocto, env, near, AccountId, PromiseOrValue};
 
 #[derive(Deserialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -16,7 +16,10 @@ struct BuyMsg {
 
 #[near]
 impl Estate {
+    /// Holder lists the unit at `ask`. Attach 1 yocto (a full-access key: a listing lets anyone take the token).
+    #[payable]
     pub fn list_for_sale(&mut self, unit_id: String, ask: U128) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         self.assert_holder(&unit);
         ensure!(
@@ -47,7 +50,10 @@ impl Estate {
         self.save(unit);
     }
 
+    /// Holder withdraws a voluntary listing. Attach 1 yocto.
+    #[payable]
     pub fn cancel_listing(&mut self, unit_id: String) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         self.assert_holder(&unit);
         ensure!(
@@ -62,7 +68,8 @@ impl Estate {
         self.save(unit);
     }
 
-    /// Anyone: an instalment is overdue past `default_grace_ns` → the unit is listed at what the holder paid.
+    /// Anyone: an instalment is overdue past `default_grace_ns` → the unit is listed at what the holder paid. The ask
+    /// tracks later payments: a purchase pays the holder's `paid` at that moment (see `listing_ask`).
     pub fn declare_default(&mut self, unit_id: String) {
         let mut unit = self.unit(&unit_id);
         ensure!(
@@ -120,6 +127,15 @@ impl Estate {
         })
     }
 
+    /// What a buyer pays for a listing now: a voluntary listing's ask, or for a default listing what the holder has
+    /// paid at this moment (payments made after `declare_default` raise it; audit finding 12).
+    pub(crate) fn listing_ask(unit: &Unit, listing: &Listing) -> u128 {
+        match listing.kind {
+            ListingKind::Voluntary => listing.ask.0,
+            ListingKind::Default => unit.paid.max(1),
+        }
+    }
+
     fn try_buy(&mut self, buyer: &AccountId, amount: u128, msg: &str) -> Result<u128, String> {
         let m: BuyMsg = serde_json::from_str(msg)
             .map_err(|_| "E_BAD_ARGS: msg must be {\"buy\":\"<unit_id>\"}".to_string())?;
@@ -138,14 +154,14 @@ impl Estate {
         if unit.in_flight > 0 {
             return Err("E_IN_FLIGHT: a transfer out is pending".into());
         }
-        if amount < listing.ask.0 {
+        let ask = Self::listing_ask(&unit, &listing);
+        if amount < ask {
             return Err("E_UNDERPAID: amount is below the ask".into());
         }
         let seller = unit.holder.clone().ok_or("E_LISTING: no holder")?;
         if &seller == buyer {
             return Err("E_BAD_ARGS: buyer is the seller".into());
         }
-        let ask = listing.ask.0;
         let penalty = if listing.kind == ListingKind::Default {
             (unit.paid.saturating_mul(self.params.penalty_bps as u128) / BPS).min(ask)
         } else {

@@ -20,8 +20,10 @@ Conventions
 
 ### 1.1 Init
 
+`new` takes a single argument named `args` (the `NewArgs` object below): the call's JSON is `{"args": { ... }}`.
+
 ```jsonc
-new({
+new({ "args": {
   "developer_id": "dev-harmattan.testnet",
   "payout_id": "dev-harmattan.testnet",
   "surveyor_id": "qs-adaeze.testnet",
@@ -55,53 +57,112 @@ new({
   },
   "nft_metadata": { "spec": "nft-1.0.0", "name": "Harmattan Court allocations", "symbol": "PLOTE", "icon": null,
                     "base_uri": null, "reference": null, "reference_hash": null },
-  "app_url": "https://plote.vercel.app"                // used for NFT `reference`
-})
+  "app_url": "https://plote.vercel.app"                // REQUIRED (no default): https://, ≤ 200 chars; NFT `reference`
+} })
 ```
 
 Rules: `sum(milestones.bps) + mobilisation_bps == 10000`, `mobilisation_bps <= 1000`, deadlines strictly increasing,
 1–8 milestones (demo estates use exactly 4).
 
+Outside the playground (`params.playground == false`) `new` also refuses (`E_BAD_ARGS`) a geofence radius outside
+50..=2000 m, `max_phash_distance` outside 6..=16, `min_ai_confidence` < 60, `max_exif_age_h` outside 1..=168 and an
+empty verifier commit, on every network.
+
+Demo timings are refused only on estates whose account does **not** end in `.testnet` (i.e. mainnet), outside the
+playground: **`demo_mode: true`, `veto_window_ns` < 24 h, `grace_ns` or `default_grace_ns` < 24 h, `dust_threshold` >
+1 USDC (`"1000000"`), `capture_ttl_ns` outside 5 min..=24 h** (`E_BAD_ARGS`). Testnet estates (the demo estates
+Harmattan Court and Baobab Heights, with `demo_mode` and 2-minute windows) deploy fresh with them. Only `new` checks
+these; no `set_*` method re-checks them, so code upgrades never brick a live estate.
+
 ### 1.2 Change methods
 
 | Method | Args | Access / deposit | Returns |
 |---|---|---|---|
-| `add_units` | `{ units: [{ id, label, price: U128, plan: [{ due_at: U64, cumulative: U128 }] }] }` | developer; attach ≥ 0.035 NEAR × n (unit funding + USDC registration + record); ≤ 8 per call | Promise |
+| `add_units` | `{ units: [{ id, label, price: U128, plan: [{ due_at: U64, cumulative: U128 }] }] }` | developer; attach ≥ 0.035 NEAR × n (unit funding + USDC registration + record); ≤ 8 per call, ≤ 500 units per estate, ≤ 24 instalments per plan (`E_TOO_MANY`) | Promise |
+| `retry_unit_setup` | `{ unit_id }` | developer; attach ≥ 0.00125 NEAR; only for a unit that isn't `ready` (else `E_BAD_ARGS`). Re-checks the unit account (`get_info`) and registers it on USDC again; never deletes the unit record (a failed `get_info` keeps it for another retry) | Promise (`bool` ready) |
 | `fund_verification` | `{}` | anyone, payable | — |
-| `set_verifier` | `{ verifier }` | developer, only before the first sale | — |
+| `set_verifier` | `{ verifier }` | developer, only before the first sale (`E_ALREADY_SOLD`); the playground may repoint it at any time, but only to a non-empty commit / version key | — |
+| `set_app_url` | `{ url }` | developer; attach 1 yocto; `https://`, ≤ 200 chars, no quotes/spaces (`E_BAD_ARGS`). Emits `app_url_changed {old, new}` | — |
 | `playground_reset` | `{}` | anyone, only if `params.playground` | — |
 | `reserve` | `{ unit_id }` | anyone, attach exactly 0.05 NEAR | — |
-| `cancel_reservation` | `{ unit_id }` | the reserver | Promise (refund USDC) |
+| `cancel_reservation` | `{ unit_id }` | the reserver; attach 1 yocto | Promise (refund USDC) |
 | `expire_reservation` | `{ unit_id }` | anyone, after `expires_at` | Promise |
-| `sync` | `{ unit_id }` | anyone | Promise |
-| `on_unit_deposit` | `{ unit_id, sender_id, amount: U128, msg }` | only the unit's own account | `U128` (unused amount) |
+| `sync` | `{ unit_id }` | anyone. **Check only**: reads the unit's USDC balance, logs/emits `balance_checked {unit_id, balance, expected}`, credits nothing | Promise (`U128` surplus seen) |
+| `report_deposit` | `{ unit_id, amount: U128 }` | only the estate's `verdict_relayer` (its **deposit reporter**, `E_NOT_RELAYER`); no deposit; ~100 Tgas. Books a plain-transfer (1Click) delivery, see §1.2.1 | Promise (`U128` credited) |
+| `on_unit_deposit` | `{ unit_id, sender_id, amount: U128, msg }` | only the unit's own account. Books exactly `amount` and returns `"0"` when the unit takes payments (holder, or active reservation, and no transfer out pending); otherwise returns `amount` (USDC refunds it) | `U128` (unused amount) |
 | `refund` | `{ unit_id }` | holder; attach 1 yocto | Promise |
 | `withdraw_excess` | `{ unit_id }` | holder; attach 1 yocto | Promise |
 | `sweep_unattributed` | `{ unit_id }` | anyone | Promise |
-| `list_for_sale` | `{ unit_id, ask: U128 }` | holder, no lien | — |
-| `cancel_listing` | `{ unit_id }` | holder (Voluntary only) | — |
-| `ft_on_transfer` | NEP-141 (`msg = {"buy":"a-4b"}`) | only from `usdc_id` | `U128` |
+| `list_for_sale` | `{ unit_id, ask: U128 }` | holder, no lien; attach 1 yocto | — |
+| `cancel_listing` | `{ unit_id }` | holder (Voluntary only); attach 1 yocto | — |
+| `ft_on_transfer` | NEP-141 (`msg = {"buy":"a-4b"}`) | only from `usdc_id`. A Default listing costs the holder's `paid` **at purchase time** (later payments raise it) | `U128` |
 | `declare_default` | `{ unit_id }` | anyone | — |
-| `handover` | `{ unit_id }` | holder, handover milestone Approved and veto passed | — |
-| `set_beneficiary` | `{ unit_id, beneficiary: AccountId \| null }` | holder | — |
-| `set_guardians` | `{ unit_id, guardians: [AccountId] }` (≤ 3) | holder | — |
-| `guardian_recover` | `{ unit_id, new_owner }` | a guardian; 2 distinct guardians start a 72 h timer (demo: `grace_ns`) | — |
+| `handover` | `{ unit_id }` | holder, handover milestone Approved and veto passed; attach 1 yocto | — |
+| `set_beneficiary` | `{ unit_id, beneficiary: AccountId \| null }` | holder; attach 1 yocto | — |
+| `set_guardians` | `{ unit_id, guardians: [AccountId] }` (≤ 3) | holder; attach 1 yocto | — |
+| `guardian_recover` | `{ unit_id, new_owner }` | a guardian; attach 1 yocto; 2 distinct guardians start a 72 h timer (demo: `grace_ns`) | — |
 | `finish_recovery` | `{ unit_id }` | anyone, after the timer | — |
-| `cancel_recovery` | `{ unit_id }` | holder | — |
-| `set_lien` | `{ unit_id, lender, cap: U128 }` | holder | — |
-| `clear_lien` | `{ unit_id }` | the lender | — |
-| `open_capture` | `{ milestone: u8 }` | surveyor (anyone if playground) | `String` (6-char code) |
+| `cancel_recovery` | `{ unit_id }` | holder; attach 1 yocto | — |
+| `set_lien` | `{ unit_id, lender, cap: U128 }` | holder; attach 1 yocto | — |
+| `clear_lien` | `{ unit_id }` | the lender; attach 1 yocto | — |
+| `open_capture` | `{ milestone: u8 }` | surveyor (anyone if playground). On the playground, another account's unexpired capture for that milestone can't be replaced (`E_CAPTURE_ACTIVE`) except by the estate's `surveyor_id` | `String` (6-char code) |
 | `submit_evidence` | `{ milestone: u8, url, sha256, captured_at: U64, device_gps: [i32, i32] \| null }` | surveyor (anyone if playground) | `U64` evidence id |
 | `submit_verdict` | `{ evidence_id: U64, verdict: Verdict }` | only `verdict_relayer`, and only when `verify_mode == "https"` (else `E_VERIFY_MODE`) | `bool` (pass) |
+| `reopen_stale_check` | `{ milestone: u8 }` | anyone; the milestone must be `Checking` (`E_MILESTONE_STATE`) and its latest evidence submitted ≥ 1 h ago (`E_CHECK_PENDING`). The evidence becomes `Error` (verdict event reason `check_timeout`), the milestone `Open`; a late verdict for it is still applied | — |
 | `qs_sign` | `{ milestone: u8 }` | surveyor (anyone if playground) | — |
-| `claim_release` | `{ unit_ids: [String] }` (≤ 6; gas) | anyone (funds go to `payout_id`) | Promise |
-| `withdraw_owed` | `{}` | anyone with an owed balance | Promise |
-| `propose` | `{ kind: ProposalKind }` | holder (any kind) / developer (`ExtendDeadline`) | `U64` proposal id |
-| `vote` | `{ proposal_id: U64, approve: bool }` | holder with eligible tokens | — |
+| `claim_release` | `{ unit_ids: [String] }` (≤ 6, `E_TOO_MANY`; gas) | anyone (funds go to `payout_id` / `payout_redirect`); `E_FROZEN` while frozen, **`E_REFUNDS_OPEN` while refunds are open** (a missed deadline + grace, even if signed late, or a Freeze with refunds) | `u32` transfers started |
+| `withdraw_owed` | `{}` | anyone with an owed balance (failed resale payouts, failed reservation refunds) | Promise |
+| `propose` | `{ kind: ProposalKind }` | holder (any kind) / developer (`ExtendDeadline`); attach **0.05 NEAR** (`PROPOSAL_DEPOSIT`, kept by the estate; any excess is returned). Every kind but `Veto` needs the quorum (`E_QUORUM`, playground exempt). `ExtendDeadline` is allowed after a miss too (the recovery path, below) | `U64` proposal id |
+| `vote` | `{ proposal_id: U64, approve: bool }` | holder with eligible tokens (`E_NOT_ELIGIBLE`: none allocated before the proposal; `E_ALREADY_VOTED`: all of them voted). Votes with ≤ 50 tokens per call | — |
 | `expire_proposal` | `{ proposal_id: U64 }` | anyone, after `expires_at` | — |
 
 Plus NEP-171/177/178/181: `nft_transfer`, `nft_transfer_call`, `nft_approve`, `nft_revoke`, `nft_revoke_all`, `nft_is_approved`.
 `nft_transfer` panics `E_LIEN` while a lien is set and `E_LISTING` while a Default listing is open; a transfer moves `holder`.
+`nft_approve` attaches ≥ 0.001 NEAR (kept for storage; the rest is returned to the holder); at most 16 approved accounts
+per token (`E_TOO_MANY_APPROVALS`; re-approving an approved account is allowed). `nft_revoke` / `nft_revoke_all`: holder,
+1 yocto.
+
+Votes (SPEC §8, audit round 2): each token allocated before the proposal opened votes once, weighted by
+`min(paid, price)` **at vote time** in whole USDC (rounded up). `electorate` is the weight of those tokens and grows as
+they are paid up; a proposal executes when `yes × 2 > electorate`, is rejected when `no × 2 ≥ electorate`. A proposal
+opened before this rule (`ProposalView.weighted == false`) keeps counting one vote per token until it expires. Quorum
+(all kinds except `Veto`): ≥ 3 allocated tokens and ≥ a quarter of all units allocated (the playground is exempt).
+`Unfreeze` is rejected if the estate is no longer frozen.
+
+Recovery after a missed deadline: `ExtendDeadline` may be proposed and executed while refunds are open. With the quorum
+and a paid-weighted majority it moves the milestone's deadline (`new_deadline` must be in the future and between its
+neighbours' deadlines), which closes refunds for that milestone, so `claim_release` (`E_REFUNDS_OPEN` meanwhile) works
+again. Holders who want out vote no and refund before it passes.
+
+#### 1.2.1 Deposits
+
+USDC reaches a unit account two ways, and nothing is ever booked from a raw balance read alone (USDC credits the
+receiver before `ft_on_transfer` runs and takes refused money back in `ft_resolve_transfer`, so a read during a
+pending `ft_transfer_call` sees money that may leave):
+
+- **`ft_transfer_call`** (wallets) to the unit account: booked by `on_unit_deposit` from its `amount`, exactly once,
+  when it accepts (returns `"0"`). Refused deposits (unit not reserved, reservation lapsed, transfer out pending) are
+  refunded by USDC and never booked.
+- **plain `ft_transfer`** (1Click / NEAR Intents): booked only by `report_deposit({ unit_id, amount })` from the
+  estate's deposit reporter (`verdict_relayer`; the app server's relayer account). `amount` is what 1Click's status
+  says it delivered (`swapDetails.amountOut`, USDC base units). The estate reads the unit's balance twice in a chained
+  promise (read → `on_report_first` → read → `on_report_second`, passing the first reading and the `expected` books
+  through callback args) and credits `min(amount, first − expected, second − expected)` to `paid` (holder or active
+  reservation) or `unattributed`. If the books changed between the call and either callback (a transfer out started
+  or landed, or an `ft_transfer_call` was booked), it credits nothing and fails `E_BALANCE_PENDING`: report again.
+  `E_IN_FLIGHT` while a transfer out is pending. A repeated report finds no surplus and credits `"0"` (idempotent).
+  **Residual trust:** the reporter can credit at most the surplus really observed on the unit in two consecutive reads,
+  and never more than it attests; a dishonest reporter could still book a surplus that isn't a finished plain transfer
+  (a pending `ft_transfer_call` spanning both reads that is later refunded), so the role must be a Plote-controlled
+  account. It cannot create money that never reached the unit.
+- **`sync`** (and `unit.sync_deposits`, which calls it) is a public check only.
+
+Server call after a 1Click `SUCCESS`: the relayer signs `report_deposit` on the **estate** account (not the unit):
+`{ "unit_id": "<first label of the recipient>", "amount": "<swapDetails.amountOut>" }`, 0 deposit, 100 Tgas; on a failed
+transaction retry later.
+
+A reservation refund the reserver can't receive (e.g. not registered on USDC) moves to the estate's own USDC account and
+is credited to `owed_of(reserver)` (`withdraw_owed`); the reservation still ends (`reservation_ended` with `"owed": true`).
 
 `ProposalKind` (serde externally tagged):
 
@@ -132,7 +193,8 @@ Plus NEP-171/177/178/181: `nft_transfer`, `nft_transfer_call`, `nft_approve`, `n
 | `verification_budget` | — | `U128` (yoctoNEAR) |
 | `owed_of` | `{ account_id }` | `U128` |
 | `check_input` | `{ evidence_id: U64 }` | `String \| null` — the exact worker stdin (HTTPS fallback) |
-| `votes_available` | `{ proposal_id: U64, account_id }` | `u32` |
+| `votes_available` | `{ proposal_id: U64, account_id }` | `u32` (tokens that can still vote) |
+| `vote_weight_available` | `{ proposal_id: U64, account_id }` | `u32` (the weight `vote` would cast now, ≤ 50 tokens) |
 | `nft_token`, `nft_tokens`, `nft_tokens_for_owner`, `nft_supply_for_owner`, `nft_total_supply`, `nft_metadata` | standard | standard; `metadata.media` = live SVG data URI |
 
 ```ts
@@ -150,6 +212,7 @@ type EstateView = {
   totals: { paid: string; released: string; refunded: string; in_escrow: string };
   stats: DevStats;
   verification_budget: string;
+  refunds_open: boolean;                // a missed deadline + grace, or a Freeze with refunds
   now: string;                          // block timestamp at view time
 };
 
@@ -157,18 +220,19 @@ type UnitStatus = "Available" | "Reserved" | "Allocated" | "InDefault" | "Handed
 
 type UnitView = {
   id: string; account: string; label: string; price: string; status: UnitStatus;
+  ready: boolean;            // account created and registered on USDC (else reserve/pay are refused; see retry_unit_setup)
   holder: string | null; allocated_at: string | null;
   reservation: { by: string; expires_at: string } | null;
   last_reservation: { by: string; expires_at: string } | null;
   plan: { due_at: string; cumulative: string }[];
   paid: string; unattributed: string; released: string; refunded_out: string; in_flight: string;
-  listing: { ask: string; kind: "Voluntary" | "Default"; since: string } | null;
+  listing: { ask: string; kind: "Voluntary" | "Default"; since: string } | null;  // Default: ask = current paid
   beneficiary: string | null; guardians: string[];
   recovery: { new_owner: string; approvals: string[]; ready_at: string | null } | null;
   lien: { lender: string; cap: string } | null;
   // computed
   refundable_now: string;    // what refund() would pay right now ("0" if refunds aren't open)
-  releasable_now: string;    // what claim_release would move right now
+  releasable_now: string;    // what claim_release would move right now ("0" while frozen or refunds are open)
   excess_now: string;        // what withdraw_excess would pay
   refunds_open: boolean;
   next_due: { due_at: string; cumulative: string; shortfall: string } | null;
@@ -186,7 +250,9 @@ type MilestoneStatus = "Open" | "Checking" | "Verified" | "Approved" | "Vetoed" 
 type MilestoneView = {
   index: number; key: string; title: string; bps: number; deadline: string;
   status: MilestoneStatus;              // Missed is computed at view time
-  evidence_ids: string[]; verified_at: string | null; signed_at: string | null;
+  late: boolean;                        // deadline + grace passed without a timely sign-off (refunds open)
+  evidence_ids: string[];               // the newest 32 (older evidence stays in list_evidence)
+  verified_at: string | null; signed_at: string | null;
   veto_until: string | null; veto_passed: boolean;   // Approved and veto window over
   refunds_open_at: string;             // deadline + grace
 };
@@ -215,8 +281,11 @@ type EvidenceView = {
 
 type ProposalView = {
   id: string; kind: unknown /* ProposalKind */; proposer: string;
-  created_at: string; expires_at: string; electorate: number; yes: number; no: number;
-  voted: string[]; status: "Open" | "Executed" | "Rejected" | "Expired";
+  created_at: string; expires_at: string;
+  electorate: number; yes: number; no: number;   // weighted: whole USDC of min(paid, price); else token counts
+  voted: string[];                               // unit ids that voted
+  weighted: boolean;
+  status: "Open" | "Executed" | "Rejected" | "Expired";
 };
 
 type DevStats = {
@@ -228,19 +297,21 @@ type DevStats = {
 
 ### 1.4 Events (`standard: "plote"`, `version: "1.0.0"`)
 
-`unit_added {unit_id, account, price}` · `reserved {unit_id, by, expires_at}` · `reservation_ended {unit_id, by, refunded}` ·
-`deposit_synced {unit_id, new_money, paid, unattributed}` · `allocated {unit_id, holder}` ·
+`unit_added {unit_id, account, price}` · `reserved {unit_id, by, expires_at}` · `reservation_ended {unit_id, by, refunded, owed?}` ·
+`deposit_synced {unit_id, new_money, paid, unattributed, source: "ft_transfer_call" | "report"}` ·
+`balance_checked {unit_id, balance, expected}` (`sync`, books nothing) · `allocated {unit_id, holder}` ·
 `capture_opened {milestone, by, expires_at}` · `evidence_submitted {evidence_id, milestone, sha256}` ·
 `verdict {evidence_id, pass, reasons}` · `qs_signed {milestone, by, veto_until}` · `released {unit_id, amount, to}` ·
 `refunded {unit_id, amount, to}` · `excess_withdrawn {unit_id, amount, to}` · `unattributed_swept {unit_id, amount, to}` ·
 `defaulted {unit_id, ask}` · `listed {unit_id, ask, kind}` · `sold {unit_id, from, to, price}` ·
 `frozen {reason, refunds_open}` · `unfrozen {}` · `surveyor_changed {old, new}` · `handed_over {unit_id}` ·
-`proposal_created {proposal_id, kind, proposer, expires_at}` · `voted {proposal_id, voter, approve, tokens}` ·
+`proposal_created {proposal_id, kind, proposer, expires_at}` · `voted {proposal_id, voter, approve, tokens, weight}` ·
 `proposal_executed {proposal_id}` · `proposal_rejected {proposal_id}` · `payout_redirected {old, new}` (executed `StepIn`) ·
-`playground_reset {}`.
+`playground_reset {}` · `app_url_changed {old, new}`.
 
-`verdict.reasons` in the `verdict` event is `["worker_error"]` when OutLayer failed or the output was unparsable, and
-`["worker_commit_mismatch"]` when the verdict came from another build than the pinned commit.
+`verdict.reasons` in the `verdict` event is `["worker_error"]` when OutLayer failed or the output was unparsable,
+`["worker_commit_mismatch"]` when the verdict came from another build than the pinned commit, and `["check_timeout"]`
+when `reopen_stale_check` reopened the milestone.
 
 ### 1.5 Error codes
 
@@ -250,16 +321,24 @@ E_MILESTONE_STATE E_NOT_VERIFIED E_VETO_WINDOW E_FROZEN E_NO_REFUND_YET E_NOTHIN
 E_UNDERPAID E_IN_FLIGHT E_BUDGET E_BAD_TOKEN E_BPS_SUM E_DEADLINES E_NO_CHALLENGE E_CHALLENGE_EXPIRED
 E_NOTHING_TO_SWEEP E_NO_EXCESS E_NOT_ELIGIBLE E_ALREADY_VOTED E_PROPOSAL_STATE E_PROPOSAL_OPEN E_PLAYGROUND_ONLY
 E_NOT_DUE E_HANDOVER E_RECOVERY E_TOO_MANY E_BAD_ARGS E_NOT_UNIT E_ALREADY_SOLD E_VERIFY_MODE E_NOT_ESTATE E_STORAGE
-E_QUORUM E_STEP_IN E_LATE_CLAIM`
+E_QUORUM E_STEP_IN E_LATE_CLAIM E_REFUNDS_OPEN E_TOO_MANY_APPROVALS E_CAPTURE_ACTIVE E_CHECK_PENDING`
 
 `E_VERIFY_MODE`: `submit_verdict` on an estate whose `verify_mode` isn't `"https"`. `E_NOT_ESTATE` (plote-unit): a
 caller other than the estate tried to initialise the unit or move its funds. `E_STORAGE` (plote-musdc): the receiver
 isn't registered on the token and no storage deposit was attached.
 
-`E_QUORUM`: a `StepIn`, `ReplaceSurveyor` or `Freeze` proposal while fewer than 3 tokens, or fewer than a quarter of
-all units, are allocated. `E_STEP_IN`: `StepIn` proposed (or passing) while the estate isn't frozen and no milestone
+`E_QUORUM`: a proposal of any kind but `Veto` (`StepIn`, `ReplaceSurveyor`, `Freeze`, `Unfreeze`, `ExtendDeadline`)
+while fewer than 3 tokens, or fewer than a quarter of all units, are allocated (not on the playground). `E_STEP_IN`: `StepIn` proposed (or passing) while the estate isn't frozen and no milestone
 deadline + grace has been missed. `E_LATE_CLAIM`: `reserve` by another account within `late_claim_ns` of the last
 reservation ending (a late payment may still land for that reserver).
+
+`E_REFUNDS_OPEN`: `claim_release` while refunds are open (until an executed `ExtendDeadline` or the end of the freeze
+closes them). `E_TOO_MANY_APPROVALS`: `nft_approve` for a 17th account. `E_CAPTURE_ACTIVE`: on the playground,
+`open_capture` while another account's capture for that milestone is unexpired. `E_CHECK_PENDING`: `reopen_stale_check`
+less than 1 h after the latest evidence was submitted. `E_ALREADY_VOTED`: every eligible token of the caller already
+voted (`E_NOT_ELIGIBLE` means none was allocated before the proposal opened). `E_BALANCE_PENDING` also means a
+`report_deposit` saw the unit's books change between its balance reads (nothing credited; report again).
+`E_NOT_RELAYER` also covers `report_deposit` from anyone but the deposit reporter.
 
 ---
 
@@ -267,9 +346,9 @@ reservation ending (a late payment may still land for that reserver).
 
 ```
 new({ estate_id, usdc_id, unit_id })
-ft_on_transfer({ sender_id, amount, msg }) -> U128     // non-USDC → "amount" (bounce); USDC → estate.on_unit_deposit
+ft_on_transfer({ sender_id, amount, msg }) -> U128     // non-USDC → "amount" (bounce); USDC → estate.on_unit_deposit (books `amount` if accepted)
 transfer_out({ receiver_id, amount, memo })            // predecessor must be estate_id
-sync_deposits()                                        // anyone → estate.sync(unit_id)
+sync_deposits()                                        // anyone → estate.sync(unit_id): a check only, credits nothing
 get_info() -> [estate_id, usdc_id, unit_id]
 ```
 

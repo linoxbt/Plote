@@ -1,8 +1,10 @@
 //! Stretch safety features: next-of-kin beneficiary, 2-of-3 guardian recovery (C2) and lender liens (C3).
+//! Every method that changes who may take the token or its money needs 1 yoctoNEAR (a full-access key), so an app
+//! function-call key can't redirect a unit.
 
 use crate::*;
 use near_sdk::json_types::{U128, U64};
-use near_sdk::{env, near, AccountId};
+use near_sdk::{assert_one_yocto, env, near, AccountId};
 
 /// Recovery delay after two guardians agree: 72 h, or the grace period in demo mode.
 fn recovery_delay(p: &Params) -> u64 {
@@ -15,14 +17,18 @@ fn recovery_delay(p: &Params) -> u64 {
 
 #[near]
 impl Estate {
+    #[payable]
     pub fn set_beneficiary(&mut self, unit_id: String, beneficiary: Option<AccountId>) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         self.assert_holder(&unit);
         unit.beneficiary = beneficiary;
         self.save(unit);
     }
 
+    #[payable]
     pub fn set_guardians(&mut self, unit_id: String, guardians: Vec<AccountId>) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         let holder = self.assert_holder(&unit);
         ensure!(guardians.len() <= 3, "E_TOO_MANY", "at most 3 guardians");
@@ -40,7 +46,9 @@ impl Estate {
     }
 
     /// A guardian backs moving the token to `new_owner`. The second distinct guardian starts the delay.
+    #[payable]
     pub fn guardian_recover(&mut self, unit_id: String, new_owner: AccountId) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         let caller = env::predecessor_account_id();
         ensure!(unit.status.has_token(), "E_RECOVERY", "unit has no holder");
@@ -95,7 +103,9 @@ impl Estate {
         self.save(unit);
     }
 
+    #[payable]
     pub fn cancel_recovery(&mut self, unit_id: String) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         self.assert_holder(&unit);
         unit.recovery = None;
@@ -103,7 +113,9 @@ impl Estate {
     }
 
     /// A lien blocks transfer and listing; refunds go to the lender first, up to `cap`.
+    #[payable]
     pub fn set_lien(&mut self, unit_id: String, lender: AccountId, cap: U128) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         let holder = self.assert_holder(&unit);
         ensure!(
@@ -129,7 +141,9 @@ impl Estate {
         self.save(unit);
     }
 
+    #[payable]
     pub fn clear_lien(&mut self, unit_id: String) {
+        assert_one_yocto();
         let mut unit = self.unit(&unit_id);
         let lien = unit
             .lien

@@ -121,6 +121,10 @@ pub enum OutKind {
     Excess,
     ReservationRefund,
     Sweep,
+    /// A `ReservationRefund` the reserver couldn't receive (e.g. not registered on USDC): the money moves from the
+    /// unit to the estate's own USDC account and is credited to `owed` for the reserver (`withdraw_owed`).
+    /// Appended last so the borsh tags of the variants above are unchanged.
+    OwedEscrow,
 }
 
 #[near(serializers = [borsh])]
@@ -374,6 +378,6 @@ pub struct NewArgs {
     pub milestones: Vec<MilestoneInput>,
     pub params: Params,
     pub nft_metadata: near_contract_standards::non_fungible_token::metadata::NFTContractMetadata,
-    #[serde(default)]
-    pub app_url: Option<String>,
+    /// Required (no default): the app the NFT `reference` points at. `https://`, at most `MAX_APP_URL_LEN` chars.
+    pub app_url: String,
 }

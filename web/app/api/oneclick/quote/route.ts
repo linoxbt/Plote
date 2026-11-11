@@ -1,5 +1,8 @@
 // POST /api/oneclick/quote — proxy of 1Click POST /v0/quote. Adds the JWT server-side, forces the destination asset to
 // native USDC and the recipient to a real, USDC-registered unit account (so Plote can't be used as a free swap proxy).
+// 1Click only delivers on mainnet. On a testnet build the only allowed recipient is MAINNET_UNIT_ACCOUNT (the Mainnet
+// Lite unit, scripts/mainnet-lite.ts): a testnet unit account name isn't a mainnet account, so a quote for it would
+// send real USDC to an address nobody controls.
 
 import { z } from "zod";
 import { ESTATES, MAINNET_USDC_ASSET, NETWORK, TABLES, USDC_ID } from "@/lib/config";
@@ -37,7 +40,8 @@ async function isRealUnit(recipient: string): Promise<boolean> {
 }
 
 export async function POST(req: Request) {
-  if (NETWORK !== "mainnet" && !serverEnv.mainnetUnitAccount()) {
+  const lite = serverEnv.mainnetUnitAccount();
+  if (NETWORK !== "mainnet" && !lite) {
     return jsonError("ONECLICK_MAINNET_ONLY", "Cross-chain payments use NEAR Intents, which only runs on mainnet. Use the mainnet demo build.", 503);
   }
   const rl = await rateLimitShared(`quote:${clientIp(req)}`, 20, 60_000);
@@ -45,8 +49,11 @@ export async function POST(req: Request) {
   const p = await parseJson(req, Body);
   if (!p.ok) return p.res;
   const b = p.data;
+  if (NETWORK !== "mainnet" && b.recipient !== lite) {
+    return jsonError("ONECLICK_MAINNET_ONLY", "On the testnet build, cross-chain payments can only go to the Mainnet Lite demo unit. Testnet units can't receive mainnet USDC.", 400);
+  }
   try {
-    if (!(await isRealUnit(b.recipient))) return jsonError("E_UNIT_NOT_FOUND", "The recipient must be a Plote unit account.", 400);
+    if (NETWORK === "mainnet" && !(await isRealUnit(b.recipient))) return jsonError("E_UNIT_NOT_FOUND", "The recipient must be a Plote unit account.", 400);
     if (NETWORK === "mainnet" && !(await usdc.storageBalanceOf(b.recipient, USDC_ID))) {
       return jsonError("UNIT_NOT_REGISTERED", "That unit account isn't registered on USDC yet, so delivery would fail.", 400);
     }

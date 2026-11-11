@@ -5,16 +5,19 @@
 // proof page says "verdict via HTTPS". Only for estates whose verify_mode is "https": an OutLayer-mode estate
 // gets its verdict from OutLayer's yield/resume callback, and the contract rejects relayed ones (E_VERIFY_MODE).
 
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ESTATES } from "@/lib/config";
 import { estateAccount } from "@/lib/estates";
 import { fnCall, viewUncached } from "@/lib/near";
 import type { EstateView, EvidenceView } from "@/lib/types";
 import { clientIp, jsonError, notConfigured, ok, parseJson } from "@/lib/server/http";
-import { claimVerify, releaseVerify } from "@/lib/server/once";
+import { PloteError } from "@/lib/errors";
+import { claimOnce, claimVerify, releaseVerify } from "@/lib/server/once";
 import { rateLimitShared } from "@/lib/server/rate-limit";
 import { callAsRelayer, relayerCredentials } from "@/lib/server/relayer";
-import { extractVerdict, relayAllowed, toContractVerdict } from "@/lib/server/verify";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { extractVerdict, paidStore, relayAllowed, toContractVerdict, type PaidStore } from "@/lib/server/verify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -38,11 +41,18 @@ export async function POST(req: Request) {
   const rl = await rateLimitShared(`verify:${clientIp(req)}`, 6, 60_000);
   if (!rl.ok) return jsonError("RATE_LIMITED", `Try again in ${rl.retryAfterS}s.`, 429);
 
-  const [e, ev, input] = await Promise.all([
-    viewUncached<EstateView>(estate, "get_estate"),
-    viewUncached<EvidenceView | null>(estate, "get_evidence", { id }),
-    viewUncached<string | null>(estate, "check_input", { evidence_id: id }),
-  ]);
+  let e: EstateView, ev: EvidenceView | null, input: string | null;
+  try {
+    [e, ev, input] = await Promise.all([
+      viewUncached<EstateView>(estate, "get_estate"),
+      viewUncached<EvidenceView | null>(estate, "get_evidence", { id }),
+      viewUncached<string | null>(estate, "check_input", { evidence_id: id }),
+    ]);
+  } catch (err) {
+    const x = err instanceof PloteError ? err.code : "RPC_UNAVAILABLE";
+    if (x === "CONTRACT_NOT_DEPLOYED") return jsonError(x, `${estate} isn't deployed on this network.`, 404);
+    return jsonError("RPC_UNAVAILABLE", "Couldn't read the estate from NEAR. Try again in a moment.", 503);
+  }
   if (!relayAllowed(e.verify_mode)) {
     return jsonError(
       "E_VERIFY_MODE",
@@ -56,6 +66,17 @@ export async function POST(req: Request) {
     return jsonError("E_NOT_RELAYER", `This estate's verdict relayer is ${e.verdict_relayer ?? "unset"}, not ${creds.accountId}.`, 403);
   }
 
+  // A run that OutLayer was already paid for, whose submit_verdict failed: submit that verdict again, don't pay twice.
+  // Leased separately (60 s) so it doesn't use up one of the MAX_ATTEMPTS paid runs.
+  const paid = paidStore(supabaseAdmin());
+  const stored = await paid.load(estate, id).catch(() => null);
+  if (stored) {
+    if (!(await claimOnce("verify-submit", `${estate}:${id}`, 60_000))) {
+      return jsonError("VERIFY_IN_PROGRESS", "This photo's verdict is being submitted right now. Try again in a minute.", 409);
+    }
+    return submitVerdict(estate, id, stored.verdict, paid, true);
+  }
+
   // One run at a time per evidence (concurrent callers would each pay OutLayer), and a cap on re-runs of Error evidence.
   const claim = await claimVerify(estate, id, { leaseMs: 90_000, maxAttempts: MAX_ATTEMPTS });
   if (!claim.ok) {
@@ -64,13 +85,13 @@ export async function POST(req: Request) {
       : jsonError("VERIFY_IN_PROGRESS", "A check of this photo is already running. Try again in a minute.", 409);
   }
   try {
-    return await runWorker(url, key, estate, id, input);
+    return await runWorker(url, key, estate, id, input, paid);
   } finally {
     await releaseVerify(estate, id);
   }
 }
 
-async function runWorker(url: string, key: string, estate: string, id: string, input: string) {
+async function runWorker(url: string, key: string, estate: string, id: string, input: string, paid: PaidStore) {
   let raw: unknown;
   try {
     const r = await fetch(url, {
@@ -87,7 +108,36 @@ async function runWorker(url: string, key: string, estate: string, id: string, i
   }
   const found = extractVerdict(raw);
   if (!found) return jsonError("WORKER_FAILED", "Couldn't find a verdict in OutLayer's response.", 502);
-  const verdict = toContractVerdict(found.verdict, found.attestation);
-  const tx = await callAsRelayer(fnCall(estate, "submit_verdict", { evidence_id: id, verdict }, 50));
-  return ok({ pass: verdict.pass, reasons: verdict.reasons, tx });
+  return submitVerdict(estate, id, toContractVerdict(found.verdict, found.attestation), paid, false);
+}
+
+/**
+ * submit_verdict as the relayer. On a contract rejection (E_* panic: e.g. the evidence is no longer pending) the stored
+ * result is closed, since resubmitting can't help. On any other failure (RPC, gas) the paid verdict is stored and the
+ * caller gets 502 with details; the next POST resubmits it without another OutLayer run.
+ */
+async function submitVerdict(estate: string, id: string, verdict: Record<string, unknown>, paid: PaidStore, reused: boolean) {
+  try {
+    const tx = await callAsRelayer(fnCall(estate, "submit_verdict", { evidence_id: id, verdict }, 50));
+    await paid.submitted(estate, id, tx.hash || null).catch(() => undefined);
+    return ok({ pass: verdict.pass, reasons: verdict.reasons, tx, ...(reused ? { reused: true } : {}) });
+  } catch (err) {
+    const pe = err instanceof PloteError ? err : null;
+    const message = (pe ? (pe.code.startsWith("E_") ? pe.message : pe.raw) : err instanceof Error ? err.message : String(err)).slice(0, 300);
+    if (pe?.code.startsWith("E_")) {
+      await paid.submitted(estate, id, null).catch(() => undefined);
+      return jsonError(pe.code, `The estate rejected the verdict: ${message}`, 409);
+    }
+    const saved = await paid.save(estate, id, verdict, message).catch(() => false);
+    return NextResponse.json(
+      {
+        code: "VERDICT_SUBMIT_FAILED",
+        message: saved
+          ? "The photo was checked, but sending the verdict to the estate failed. Retry: the saved verdict is sent again without another paid check."
+          : "The photo was checked, but sending the verdict to the estate failed, and the verdict couldn't be saved.",
+        details: { error: message, saved, pass: verdict.pass, reasons: verdict.reasons },
+      },
+      { status: 502 },
+    );
+  }
 }

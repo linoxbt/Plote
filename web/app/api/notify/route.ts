@@ -3,8 +3,7 @@
 //  GET ?c=<token> / ?u=<token> show a confirm / unsubscribe button (so mail scanners that follow links change nothing);
 //  POST ?c=<token> stores the subscription, POST ?u=<token> deletes it.
 
-import { CONFIRM_TTL_MS, confirmToken, readToken, sendEmail } from "@/lib/server/notify";
-import { serverEnv } from "@/lib/server/env";
+import { CONFIRM_TTL_MS, confirmToken, notifyConfigured, readToken, sendEmail } from "@/lib/server/notify";
 import { z } from "zod";
 import { APP_URL, ESTATES, TABLES } from "@/lib/config";
 import { estate as E } from "@/lib/estate";
@@ -34,7 +33,7 @@ export async function POST(req: Request) {
   const q = new URL(req.url).searchParams;
   if (q.has("c")) return confirm(sb, q.get("c") ?? "");
   if (q.has("u")) return unsubscribe(sb, q.get("u") ?? "");
-  if (!serverEnv.resendApiKey()) return notConfigured("Notification emails", ["RESEND_API_KEY"]);
+  if (!notifyConfigured()) return notConfigured("Notification emails", ["RESEND_API_KEY", "RESEND_FROM", "NOTIFY_SECRET"]);
   const p = await parseJson(req, Body);
   if (!p.ok) return p.res;
   const b = p.data;
@@ -69,7 +68,7 @@ export async function GET(req: Request) {
   const q = new URL(req.url).searchParams;
   const kind = q.has("c") ? "c" : q.has("u") ? "u" : null;
   const t = kind ? (q.get(kind) ?? "") : "";
-  const tok = kind ? readToken(t) : null;
+  const tok = kind ? readToken(t, kind === "u" ? "unsubscribe" : "any") : null;
   if (!kind || !tok) return page("That link isn't valid.", null, 400);
   return kind === "c"
     ? page("Confirm milestone emails for this address?", { action: `/api/notify?c=${encodeURIComponent(t)}`, label: "Confirm" })
@@ -89,7 +88,7 @@ async function confirm(sb: Admin, t: string) {
 }
 
 async function unsubscribe(sb: Admin, t: string) {
-  const tok = readToken(t);
+  const tok = readToken(t, "unsubscribe");
   if (!tok || tok.length !== 3) return page("That unsubscribe link isn't valid.", null, 400);
   const [account, estate, unit] = tok as string[];
   await sb.from(TABLES.notifySubscriptions).delete().match({ account, estate, unit });

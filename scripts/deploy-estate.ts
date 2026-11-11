@@ -1,5 +1,8 @@
 // Creates the estate account, deploys the estate contract, initialises it from a config, registers it
 // (and the payout account) on USDC, and funds the verification budget.
+// Re-running it on an estate that is already initialised changes nothing that matters: it doesn't redeploy the code
+// (use upgrade-estate-code.ts, which checks the WASM hash), doesn't call `new` and doesn't re-fund verification
+// (use the estate's fund_verification); it only fills in missing USDC registrations.
 // Usage: pnpm tsx scripts/deploy-estate.ts config/harmattan-court.testnet.json [--allow-unpinned]
 //
 // Verifier pinning (SPEC 5.6, "the code that checks it is public, and its fingerprint is on-chain"): the config's
@@ -29,8 +32,9 @@ const hash = dep.unit_code_hash ?? usage("publish the global unit code first (de
 const root = account(ROOT_ACCOUNT);
 const id = estateId(cfg);
 await ensureSubAccount(root, id, "7"); // ~5.7 NEAR of contract storage + state headroom
-const estate = account(id);
-await estate.deployContract(wasm("plote_estate"));
+const initialised = await isInitialised(id);
+if (initialised) log(`= ${id} is already initialised: code not redeployed (use upgrade-estate-code.ts --expected-hash …)`);
+else await account(id).deployContract(wasm("plote_estate"));
 
 const args = {
   developer_id: resolveAccount(cfg.developer),
@@ -54,15 +58,17 @@ const args = {
     symbol: "PLOTE",
     icon: null, base_uri: null, reference: null, reference_hash: null,
   },
-  app_url: process.env.NEXT_PUBLIC_APP_URL ?? "https://plote.vercel.app",
+  app_url: process.env.NEXT_PUBLIC_APP_URL || (initialised ? "" : usage("set NEXT_PUBLIC_APP_URL (https app URL for the NFT reference; `new` requires it)")),
 };
-try {
-  await call(estate, id, "new", { args }, { gas: 50n * TGAS });
-  log(`✓ ${id} initialised`);
-} catch (e) {
-  const msg = (e as Error).message;
-  if (!/already initialized|AlreadyInitialized/i.test(msg)) throw e;
-  log(`= ${id} already initialised`);
+if (!initialised) {
+  try {
+    await call(account(id), id, "new", { args }, { gas: 50n * TGAS });
+    log(`✓ ${id} initialised`);
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (!/already initialized|AlreadyInitialized/i.test(msg)) throw e;
+    log(`= ${id} already initialised`);
+  }
 }
 
 // USDC registration for the estate (resale escrow) and the payout account.
@@ -73,12 +79,28 @@ for (const who of [id, args.payout_id, args.recovery_id]) {
     log(`+ registered ${who} on ${usdc}`);
   }
 }
-const fund = cfg.fund_verification_near ?? "5";
-await call(root, id, "fund_verification", {}, { deposit: near(fund), gas: 10n * TGAS });
-log(`✓ verification budget +${fund} NEAR`);
+if (initialised) {
+  log(`= verification budget not re-funded (call fund_verification on ${id} to top it up)`);
+} else {
+  const fund = cfg.fund_verification_near ?? "5";
+  await call(root, id, "fund_verification", {}, { deposit: near(fund), gas: 10n * TGAS });
+  log(`✓ verification budget +${fund} NEAR`);
+}
 record(`estate:${cfg.account}`, id);
 log(`next: pnpm tsx scripts/add-units.ts ${path}`);
 void NEAR;
+
+/** True when the account runs an initialised estate (get_estate answers). False if there's no code or `new` wasn't called. */
+async function isInitialised(accountId: string): Promise<boolean> {
+  try {
+    const v = await view<Record<string, unknown> | null>(accountId, "get_estate", {});
+    return !!v && typeof v === "object";
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    if (/not initiali[sz]ed|CodeDoesNotExist|does not exist|no contract code|NO_CONTRACT_CODE|MethodNotFound/i.test(msg)) return false;
+    throw e;
+  }
+}
 
 /** Real money: refuse every configuration that only makes sense for a demo (docs/LAUNCH.md §3). */
 function assertMainnetSafe() {

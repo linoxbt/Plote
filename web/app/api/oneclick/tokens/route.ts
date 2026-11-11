@@ -1,7 +1,8 @@
-// GET /api/oneclick/tokens — proxy + 10-min cache of 1Click GET /v0/tokens, filtered to stablecoins.
+// GET /api/oneclick/tokens — proxy + 10-min cache of 1Click GET /v0/tokens, filtered to stablecoins. Mainnet builds only.
 
 import { jsonError, ok } from "@/lib/server/http";
-import { oneclickFetch } from "@/lib/server/oneclick-server";
+import { IS_MAINNET } from "@/lib/config";
+import { oneclickFetch, oneclickMainnetOnly } from "@/lib/server/oneclick-server";
 import { STABLE_SYMBOLS, type OneClickToken } from "@/lib/oneclick";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ let cache: { at: number; tokens: OneClickToken[] } | null = null;
 const TTL = 10 * 60_000;
 
 export async function GET() {
+  if (!IS_MAINNET) return oneclickMainnetOnly();
   if (cache && Date.now() - cache.at < TTL) return ok({ tokens: cache.tokens, cached: true }, { headers: { "cache-control": "public, max-age=600" } });
   try {
     const r = await oneclickFetch("/tokens", {}, 8000);

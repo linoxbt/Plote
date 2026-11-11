@@ -57,15 +57,44 @@ pub const MIN_ELECTORATE: u32 = 3;
 /// ...and at least 1/`MIN_ELECTORATE_SHARE` of all units (25%), so a majority always represents > 12.5% of the estate.
 pub const MIN_ELECTORATE_SHARE: u32 = 4;
 
+/// NEP-178 approvals kept per token (each lives in the unit record every callback reads; bounded so a holder can't
+/// grow a unit past what `on_out` and the views can afford).
+pub const MAX_APPROVALS: usize = 16;
+/// Units per estate: every O(units) path (`propose`, `get_estate`, `nft_total_supply`) stays far inside the gas limit.
+pub const MAX_UNITS: u32 = 500;
+/// Instalments per unit plan (the plan lives in the unit record).
+pub const MAX_PLAN_LEN: usize = 24;
+/// Evidence ids kept on a milestone (the milestones live in the root state, read by every call). Older evidence stays
+/// in the `evidence` map and in `list_evidence`; only the per-milestone index is trimmed to the newest ones.
+pub const MAX_EVIDENCE_IDS: usize = 32;
+/// `reopen_stale_check`: a milestone stuck in Checking this long after its latest evidence can be reopened by anyone.
+pub const STALE_CHECK_NS: u64 = ONE_HOUR_NS;
+pub const MAX_APP_URL_LEN: usize = 200;
+/// Tokens counted per `vote` call (bounds `voted.contains` and the unit reads); a holder with more calls again.
+pub const MAX_VOTE_TOKENS_PER_CALL: usize = 50;
+/// A vote's weight is the token's `min(paid, price)` in whole USDC (rounded up), so `electorate`/`yes`/`no` (u32)
+/// hold up to ~4.29 billion USDC.
+pub const VOTE_WEIGHT_UNIT: u128 = 1_000_000;
+
 pub const GAS_UNIT_INIT: Gas = Gas::from_tgas(5);
 pub const GAS_USDC_REGISTER: Gas = Gas::from_tgas(5);
 pub const GAS_ON_UNIT_CREATED: Gas = Gas::from_tgas(5);
 pub const GAS_FT_BALANCE: Gas = Gas::from_tgas(5);
-pub const GAS_ON_BALANCE: Gas = Gas::from_tgas(15);
+pub const GAS_ON_BALANCE: Gas = Gas::from_tgas(10);
+/// `on_report_first` reads the unit and schedules the second balance read and `on_report_second`.
+pub const GAS_ON_REPORT_FIRST: Gas = Gas::from_tgas(35);
+/// `on_report_second` credits (may mint the NFT, cure a default, update open proposals' electorates).
+pub const GAS_ON_REPORT_SECOND: Gas = Gas::from_tgas(20);
 pub const GAS_TRANSFER_OUT: Gas = Gas::from_tgas(25);
+/// `on_out` for releases, excess and sweeps (read + write one bounded unit record and the root state).
 pub const GAS_ON_OUT: Gas = Gas::from_tgas(15);
+/// `on_out` for a refund, which may burn the token and return the storage deposit.
+pub const GAS_ON_OUT_REFUND: Gas = Gas::from_tgas(20);
+/// `on_out` for a reservation refund: if the reserver can't receive it, it schedules the transfer to the estate's
+/// own account (`GAS_TRANSFER_OUT` + `GAS_ON_OUT`) and must carry that gas.
+pub const GAS_ON_OUT_RESERVATION: Gas = Gas::from_tgas(60);
 pub const GAS_OUTLAYER: Gas = Gas::from_tgas(100);
-pub const GAS_ON_VERDICT: Gas = Gas::from_tgas(30);
+pub const GAS_ON_VERDICT: Gas = Gas::from_tgas(40);
 pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(15);
 pub const GAS_ON_PAYOUT: Gas = Gas::from_tgas(5);
 pub const GAS_NFT_ON_TRANSFER: Gas = Gas::from_tgas(25);
@@ -197,6 +226,8 @@ impl Estate {
         );
         nft_metadata.assert_valid();
         assert_safe_checks(&params, &geofence, &verifier);
+        assert_safe_params(&params);
+        assert_app_url(&app_url);
 
         Self {
             developer_id,
@@ -213,7 +244,7 @@ impl Estate {
             name,
             location,
             geofence,
-            app_url: app_url.unwrap_or_else(|| "https://plote.vercel.app".to_string()),
+            app_url,
             milestones: milestones
                 .into_iter()
                 .map(|m| Milestone {
@@ -287,6 +318,63 @@ pub(crate) fn assert_safe_checks(params: &Params, geofence: &Geofence, verifier:
         !verifier.commit.trim().is_empty(),
         "E_BAD_ARGS",
         "the verifier must be pinned (non-empty commit / version key) outside the playground"
+    );
+}
+
+/// Outside the playground and testnet, a new estate's timing and money parameters must give holders real protection
+/// (audit finding 9): no demo shortcuts, at least a day to veto a sign-off and to react to a missed deadline or
+/// instalment, a dust threshold of at most 1 USDC and a capture code that lives between 5 minutes and a day. Estates on
+/// a `.testnet` account are exempt, so the demo estates (Harmattan Court, Baobab Heights: `demo_mode`, minute-long
+/// windows) still deploy fresh; any other account (mainnet) is checked. Only `new` applies this; no `set_*` path
+/// re-checks it, so an in-place upgrade can't brick a live estate either.
+pub(crate) fn assert_safe_params(params: &Params) {
+    if params.playground || is_testnet_account(&env::current_account_id()) {
+        return;
+    }
+    ensure!(
+        !params.demo_mode,
+        "E_BAD_ARGS",
+        "demo_mode is only allowed on the playground"
+    );
+    ensure!(
+        params.veto_window_ns.0 >= ONE_DAY_NS,
+        "E_BAD_ARGS",
+        "veto_window_ns must be at least 24 h outside the playground"
+    );
+    ensure!(
+        params.grace_ns.0 >= ONE_DAY_NS && params.default_grace_ns.0 >= ONE_DAY_NS,
+        "E_BAD_ARGS",
+        "grace_ns and default_grace_ns must be at least 24 h outside the playground"
+    );
+    ensure!(
+        params.dust_threshold.0 <= 1_000_000,
+        "E_BAD_ARGS",
+        "dust_threshold must be at most 1 USDC (1000000) outside the playground"
+    );
+    ensure!(
+        (5 * 60_000_000_000..=ONE_DAY_NS).contains(&params.capture_ttl_ns.0),
+        "E_BAD_ARGS",
+        "capture_ttl_ns must be 5 minutes to 24 h outside the playground"
+    );
+}
+
+/// Demo-only values are allowed on testnet estates (`<name>.testnet` and its sub-accounts) and nowhere else.
+pub(crate) fn is_testnet_account(account: &AccountId) -> bool {
+    account.as_str().ends_with(".testnet")
+}
+
+/// The app URL the NFT `reference` points at: https, bounded, no spaces or quotes.
+pub(crate) fn assert_app_url(url: &str) {
+    ensure!(
+        url.starts_with("https://")
+            && url.len() > "https://".len()
+            && url.len() <= MAX_APP_URL_LEN
+            && !url.chars().any(|c| c.is_whitespace()
+                || c.is_control()
+                || matches!(c, '"' | '\'' | '<' | '>')),
+        "E_BAD_ARGS",
+        "app_url must be an https:// URL of at most {} characters",
+        MAX_APP_URL_LEN
     );
 }
 
@@ -421,7 +509,14 @@ impl Estate {
             .saturating_sub(unit.excess_out)
     }
 
+    /// O(units), bounded by `MAX_UNITS`. (`stats.units_sold - stats.units_refunded` tracks the same number, but
+    /// estates deployed before every burn path counted refunds would drift; the scan is exact.)
     pub(crate) fn allocated_count(&self) -> u32 {
         self.units.values().filter(|u| u.status.has_token()).count() as u32
+    }
+
+    /// The USDC the unit account should hold by the estate's books.
+    pub(crate) fn expected_balance(unit: &Unit) -> u128 {
+        (unit.paid + unit.unattributed).saturating_sub(unit.released + unit.refunded_out)
     }
 }

@@ -32,6 +32,12 @@ veto and release windows don't overlap; Freeze blocks claims, reservations, evid
 
 ## Verifier (`verifier/`)
 
+> **Correction (11 Nov):** "Fixed" in this table means fixed in the verifier source, with tests. It is **not live**:
+> all three testnet estates (`harmattan-court`, `baobab-heights`, `playground`) are still pinned on-chain to the
+> pre-hardening OutLayer build `31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8`, so their photo checks
+> run without these fixes until they are re-pinned. `set_verifier` only works before an estate's first sale and all
+> three have sales, so re-pinning needs fresh (or reset) estates. Checked with `get_estate` → `verifier.commit`.
+
 | # | Sev | Finding | Status |
 |---|---|---|---|
 | V-H1 | High | Location and time are whatever the submitter says (device GPS is an argument; EXIF can be rewritten) | **Mitigated** — `gps_mismatch` when EXIF and device GPS disagree > 100 m; `gps_device_only` warning. Full fix needs device-attested capture (C2PA / platform attestation). The surveyor's signature and replaceability remain the backstop |
@@ -43,8 +49,8 @@ veto and release windows don't overlap; Freeze blocks claims, reservations, evid
 | V-L2 | Low | No HTTP timeouts; huge images could crash the worker; photo URL host unrestricted | **Fixed** timeouts and `image_too_large`; URL host allowlist **Open** (belongs in `submit_evidence`) |
 | V-L3 | Low | Verdict not bound to bytes | **Fixed** — worker echoes `sha256`; contract checks it |
 
-Note: a live estate's verifier can't change after its first sale (by design), so verifier fixes protect estates
-deployed from now on, including mainnet.
+Note: a live estate's verifier can't change after its first sale (by design), so verifier fixes protect only estates
+deployed (or pinned) after the fixed build is published, including mainnet. None of the live testnet estates has them.
 
 ## Web server, relayer and database (`web/`, `supabase/`)
 
@@ -64,5 +70,30 @@ user-controlled outbound URLs; NFT images can't run script.
 
 ## Live verification after the fixes
 
-All three testnet estates were upgraded in place to the fixed contract (state checked identical before and after).
+All three testnet estates were upgraded in place to the fixed **contract** (state checked identical before and after);
+their **verifier** pin was not changed (still `31c7225`, see the correction above), and the deployed estate code is a
+local build, not the reproducible artifact (README → Reproducible build).
 Contract 60 tests, 5/5 integration flows on real WASM, verifier 78, web 77 unit + 14 end-to-end, clippy and fmt clean.
+
+## Audit 2 (11 Nov)
+
+A second review of the server, CI and deploy tooling. Status key as above; "Fixed (pending deploy)" means the code and
+tests are in the repository but need migration `0004_audit2.sql` and a Vercel deploy to be live.
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| A2-1 | High | The event poller listed transactions signed by or sent to the estate, so it missed relayed meta-transactions (outer receiver = the surveyor), USDC `ft_transfer_call` payments (receiver = USDC) and OutLayer callbacks; refetched event-less transactions every run; no cursor. Milestone emails depended on it | **Fixed (pending deploy)** — indexes every receipt the estate executes (NearBlocks receipt listing + RPC outcomes, successful receipts only), records processed receipt ids in `poll_receipts` with or without events, keeps a block cursor in `poll_cursor`, inserts events with `ON CONFLICT DO NOTHING` and emails only rows actually inserted. Verified read-only against testnet (relayed `open_capture`/`submit_evidence`, the OutLayer `verdict` callback and a USDC purchase now indexed; a second run reads nothing) |
+| A2-2 | Med | The poller answered 200 when every estate failed, so the scheduled job never failed | **Fixed (pending deploy)** — 502 when all estates fail; partial failures, unreadable transactions and cursor gaps go to `ALERT_WEBHOOK_URL` |
+| A2-3 | Med | `/api/health` reported NEAR AI "ok" from a key-less `GET /models`; 1Click "configured" on testnet; developer/payout gas unwatched | **Fixed (pending deploy)** — `photo_checks` is data-driven (fails when the latest verdicts all show `ai_unavailable`/`challenge_unverified`/`worker_error`; it reports failing on testnet today); 1Click "mainnet only" on testnet; developer and payout accounts (+ `MONITOR_ACCOUNTS`) below 0.5 NEAR flagged; public view stays flags only |
+| A2-4 | Med | Default email sender `notify@plote.app` is an unverified domain; unsubscribe/confirm HMAC keyed with `CRON_SECRET` (shared with GitHub Actions) | **Fixed (pending deploy)** — `RESEND_FROM` required, `GET /api/notify/status`; `NOTIFY_SECRET` signs links (falls back to `CRON_SECRET` while unset; old unsubscribe links still verify) |
+| A2-5 | Med | Gate passes were single-use only per guard device (in-memory nonce); `gate_nonces` unused | **Fixed server-side (pending deploy + client change)** — `POST /api/gate/verify` verifies the NEP-413 pass and claims its nonce once in Postgres (`claim_once`, 2 min). The guard page must call it (frontend) |
+| A2-6 | Low | Shared rate limits and single-use nonces fall back to per-instance memory silently | **Fixed** — logged as `plote:rate-limit-fallback` / `plote:once-fallback` (scope and reason only) |
+| A2-7 | Med | Playground (anyone is surveyor) had the same caps as real estates on uploads and relayed captures; upload URLs live 2 h, unbound to size; no cleanup | **Fixed (pending deploy)** — playground: 5 uploads/hour per account and 50/hour total, 10 relayed captures/hour per account; declared size and a 5-minute deadline recorded and enforced by the poller's storage check (Supabase can't shorten or bind its signed URLs); unreferenced playground files > 14 days deleted when `STORAGE_CLEANUP_DELETE=1` (report-only by default) |
+| A2-8 | Med | `/api/verify`: an RPC error escaped as a 500; if `submit_verdict` failed after OutLayer was paid, a retry paid again | **Fixed (pending deploy)** — 503 `RPC_UNAVAILABLE`; paid verdicts kept in `verify_results` and resubmitted on retry without a new OutLayer run; 502 `VERDICT_SUBMIT_FAILED` with details |
+| A2-9 | Low | `/api/chipin` unthrottled with a 16 s worst-case lookup; 1Click payers' wall name/note never reached `chipins` | **Fixed (pending deploy)** — 10/min per IP, 8 s deadline; copied once per deposit address on SUCCESS |
+| A2-10 | Low | `/api/meta` read views of any account; no edge caching | **Fixed** — configured estates only; `s-maxage` + `stale-while-revalidate` |
+| A2-11 | High | Testnet `/api/oneclick/quote` accepted testnet unit accounts as mainnet 1Click recipients when `MAINNET_UNIT_ACCOUNT` was set (USDC to an address nobody controls); tokens/status/submit proxied on testnet | **Fixed** — testnet quotes only to `MAINNET_UNIT_ACCOUNT`; tokens/submit answer `ONECLICK_MAINNET_ONLY`; status only for deposit addresses Plote quoted |
+| A2-12 | High | 1Click plain-transfer deposits credited by anyone's `sync_deposits` | **In progress (contracts)** — a permissioned, amount-attesting `report_deposit` by the estate's `verdict_relayer`; `/api/oneclick/status` already calls it, live once the new estate code is deployed |
+| A2-13 | Low | CI didn't lint the verifier (own workspace) or run the Playwright smoke tests | **Fixed** — verifier `fmt --check` + `clippy -D warnings` + tests; an e2e job builds, starts and runs Playwright (Chromium) |
+| A2-14 | Med | `upgrade-estate-code.ts` deployed any local WASM, on mainnet too; `deploy-estate.ts` redeployed code and re-funded verification on initialised estates | **Fixed** — `--expected-hash` required, mismatches refused, mainnet needs `--i-know`, deployed `code_hash` printed; deploy skips code, `new` and funding when initialised |
+| A2-15 | Med | Docs claimed verifier fixes and a reproducible deployment were live | **Fixed (docs)** — see the correction above and README → Reproducible build |
