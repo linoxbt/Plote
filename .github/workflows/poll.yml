@@ -8,8 +8,7 @@ on:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    if: ${{ vars.APP_URL != '' }}
     steps:
       # A block scalar: an unquoted `run:` value can't contain ": " (it made this file invalid YAML).
       - run: |
-          curl -fsS -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" "${{ vars.APP_URL }}/api/cron/poll"
+          curl -fsS -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" "${{ vars.APP_URL || 'https://plote-vert.vercel.app' }}/api/cron/poll"
