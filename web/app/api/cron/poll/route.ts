@@ -72,6 +72,12 @@ async function linkEvidenceIds(sb: Admin, estate: string): Promise<number> {
 export async function GET(req: Request) {
   if (!serverEnv.cronSecret()) return notConfigured("The poller", ["CRON_SECRET"]);
   if (!secretOk(req)) return jsonError("UNAUTHORIZED", "Missing or wrong x-cron-secret header.", 401);
+  // ?test_alert=1 checks the alert channel end to end without waiting for a real problem.
+  if (new URL(req.url).searchParams.get("test_alert") === "1") {
+    const configured = !!serverEnv.alertWebhookUrl();
+    const alerted = configured ? await alert(`Plote (${NETWORK}) test alert: this channel will get low-balance and poller warnings.`) : false;
+    return ok({ test: true, configured, alerted });
+  }
   const sb = supabaseAdmin();
   if (!sb) return notConfigured("The event cache", ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
 
