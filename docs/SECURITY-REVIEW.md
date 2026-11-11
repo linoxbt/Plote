@@ -118,11 +118,22 @@ was applied and everything below marked Fixed was deployed and re-verified live 
 | A2-W3 | High | No UI to cancel/expire reservations or sweep; a unit stuck Reserved | **Fixed (live)** — actions on unit and buy pages; Harmattan `a-2a` expired on-chain |
 | A2-W4 | Med | Wallet errors swallowed; menu focus; screen-reader numbers; amber token; /nft hard-coded; proof card missing; app keys in plain localStorage | **Fixed (live)** |
 
-### Still open after Audit 2
+### Audit 3: final independent review (11 Nov)
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| A3-1 | High | Flash-weight vote capture: one holder topped up to full price before voting, passed StepIn/ReplaceSurveyor/Freeze alone, then refunded the top-up (PoC) | **Fixed (live)** — every kind but Veto needs a paid-weighted majority **and** a strict majority of distinct eligible holders; electorate fixed at creation; PoC kept as a regression test. Estates upgraded to the reproducible build of `affdf57` (code_hash `J31YPbxD…`) |
+| A3-2 | High (mainnet) | Estate accounts still hold a full-access key | **Open by decision on testnet** (keeps the demo upgradable during judging; `/status` shows "not locked"); lock at mainnet launch (LAUNCH.md §3) |
+| A3-3 | Med | Plan dates not rebased for a later buyer of a refunded unit | **Fixed (live)** — rebased at every allocation |
+| A3-4 | Med | Deposit report retried after an uncertain timeout | **Fixed (live)** — retried only after a definite contract refusal; uncertain outcomes logged for an operator |
+| A3-5 | Low | Default ask ignored refunded money; `withdraw_excess` uncapped | **Fixed (live)** |
+| A3-6 | Med | A holder with ≥50% weight can stall a Veto by abstaining | **Open (documented)** — a safe fix needs releases to wait for open vetoes |
+| A3-7 | Med | CSP allows inline/eval script (wallet SDKs need it); `vote` is no-popup | **Open (documented)** — app keys are now non-extractable WebCrypto keys where supported |
+
+### Still open after Audit 3
 
 - **Photo checks cannot pass** until the NEAR AI API key has credits (owner action); health reports this honestly.
 - **Reporter trust (A2-12):** the relayer can credit at most the real observed surplus; a malicious relayer racing a
   pending `ft_transfer_call` across both reads could still book refunded money. Full fix needs a per-unit pending counter (state migration).
-- **Event schedule:** GitHub never fired `poll.yml`'s cron. `0005_poll_schedule.sql` moves it to Supabase pg_cron;
-  it needs `POLL_SECRET` in Vercel and the same value in Supabase Vault (owner action).
+- **Event schedule:** done — Supabase pg_cron calls the poller every 5 minutes (`0005_poll_schedule.sql`, `POLL_SECRET`), verified live.
 - **Independent audit, legal opinion, mainnet funds and a real-site pilot** (LAUNCH.md §1).

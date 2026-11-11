@@ -172,7 +172,7 @@ flowchart LR
 | Judge sandbox estate | [`playground.plote.testnet`](https://testnet.nearblocks.io/address/playground.plote.testnet), 60 units at $1,000 | ✅ Live |
 | Demo estate | [`harmattan-court.plote.testnet`](https://testnet.nearblocks.io/address/harmattan-court.plote.testnet), 6 units | ✅ Live |
 | Refund-demo estate | [`baobab-heights.plote.testnet`](https://testnet.nearblocks.io/address/baobab-heights.plote.testnet), 5 units, foundation deadline missed | ✅ Live (judge holds `b-2a`, `b-2b` with refunds open) |
-| Estate code (all three estates) | NEAR `code_hash` `4VzfEoLS7EzwDr9rRawLhHGg7sTkj6MRv2oENPof35zs` (sha256 `340084dc0986fb1f61d33e476f1e2e1a894b66c3df5f65a4df3a03d6c295141c`), the reproducible build of commit `95224ca` | ✅ Reproducible: see [Reproducible build](#reproducible-build) |
+| Estate code (all three estates) | NEAR `code_hash` `J31YPbxD3kVvoezwLtMkiMW4FE52r51rRPbamEg9beNX` (sha256 `fd1a7388b792149c6ea36d3b8b1bda3cef68553a434ac788de95f58fa3885484`), the reproducible build of commit `affdf57` | ✅ Reproducible: see [Reproducible build](#reproducible-build) |
 | Unit code (global, by hash) | `75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9` (105,621 B) | ✅ Published |
 | Test USDC | [`musdc.plote.testnet`](https://testnet.nearblocks.io/address/musdc.plote.testnet) | ✅ Live |
 | Verifier project | `plote.testnet/plote-verifier` on `outlayer.testnet` | ✅ Published |
@@ -334,12 +334,12 @@ Every variable has a testnet default, so the app builds and renders with no env 
 builds the estate and unit contracts in a Docker image pinned by digest, so anyone can rebuild them and compare the
 hash with what is deployed (`view_account` → `code_hash`).
 
-**The live testnet estates run the reproducible artifact.** Commit `95224ca` was built by the
-[`reproducible-build` workflow](https://github.com/linoxbt/Plote/actions/runs/42978149895) and, independently, with the
-same pinned image; both produced estate sha256 `340084dc0986fb1f61d33e476f1e2e1a894b66c3df5f65a4df3a03d6c295141c`.
+**The live testnet estates run the reproducible artifact.** Commit `affdf57` was built by the
+[`reproducible-build` workflow](https://github.com/linoxbt/Plote/actions/runs/43017121213) and, independently, with the
+same pinned image; both produced estate sha256 `fd1a7388b792149c6ea36d3b8b1bda3cef68553a434ac788de95f58fa3885484`.
 That file was deployed with `scripts/upgrade-estate-code.ts --expected-hash …`, and all three estates report:
 
-Deployed code hash: `4VzfEoLS7EzwDr9rRawLhHGg7sTkj6MRv2oENPof35zs` (playground, harmattan-court, baobab-heights)
+Deployed code hash: `J31YPbxD3kVvoezwLtMkiMW4FE52r51rRPbamEg9beNX` (playground, harmattan-court, baobab-heights)
 
 The unit contract is a global contract published by hash before the build was reproducible (`75ddgBuG…`); its source
 is unchanged apart from comments, and its reproducible build is sha256 `339e8f07…` (`4UW2KPsm…`). Republishing it burns
