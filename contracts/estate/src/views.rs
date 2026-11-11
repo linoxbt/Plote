@@ -153,6 +153,12 @@ pub struct ProposalView {
     /// true: `electorate`/`yes`/`no` are vote weights in whole USDC (`min(paid, price)` per token); false: a proposal
     /// opened before weighted voting, counted per token.
     pub weighted: bool,
+    /// Distinct current holders of the tokens eligible for this proposal, and those of them whose tokens voted yes /
+    /// no. Every kind but `Veto` (on a weighted proposal) needs `holders_yes × 2 > holders_eligible` as well as the
+    /// weight majority. Computed at view time.
+    pub holders_eligible: u32,
+    pub holders_yes: u32,
+    pub holders_no: u32,
     pub status: ProposalStatus,
 }
 
@@ -331,12 +337,15 @@ impl Estate {
 
     pub fn get_proposal(&self, id: U64) -> Option<ProposalView> {
         let now = Self::now();
-        self.proposals.get(&id.0).map(|p| proposal_view(p, now))
+        self.proposals
+            .get(&id.0)
+            .map(|p| proposal_view(p, now, self.holder_tally(p)))
     }
 
     /// Newest first. Proposal ids are sequential from 1 and never removed, so this reads only the page asked for.
     pub fn list_proposals(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<ProposalView> {
         let now = Self::now();
+        let tokens = self.token_index();
         let from = from_index.unwrap_or(0) as u64;
         let limit = limit.unwrap_or(50).min(100) as u64;
         let newest = self.next_proposal_id.saturating_sub(1);
@@ -344,7 +353,7 @@ impl Estate {
         (0..limit)
             .map_while(|k| top.checked_sub(k).filter(|id| *id >= 1))
             .filter_map(|id| self.proposals.get(&id))
-            .map(|p| proposal_view(p, now))
+            .map(|p| proposal_view(p, now, crate::votes::tally(p, &tokens)))
             .collect()
     }
 
@@ -435,7 +444,7 @@ fn evidence_view(e: &Evidence) -> EvidenceView {
 
 /// An Open proposal past `expires_at` is reported as Expired (storage may still say Open: `propose` only expires
 /// recent ones, `expire_proposal` any one).
-fn proposal_view(p: &Proposal, now: u64) -> ProposalView {
+fn proposal_view(p: &Proposal, now: u64, t: crate::votes::HolderTally) -> ProposalView {
     ProposalView {
         id: U64(p.id),
         kind: p.kind.clone(),
@@ -448,10 +457,12 @@ fn proposal_view(p: &Proposal, now: u64) -> ProposalView {
         voted: p
             .voted
             .iter()
-            .filter(|v| v.as_str() != crate::votes::WEIGHTED_MARK)
-            .cloned()
+            .filter_map(|v| crate::votes::voted_entry(v).map(|(id, _)| id.to_string()))
             .collect(),
         weighted: crate::votes::is_weighted(p),
+        holders_eligible: t.eligible as u32,
+        holders_yes: t.yes as u32,
+        holders_no: t.no as u32,
         status: if p.status == ProposalStatus::Open && now >= p.expires_at {
             ProposalStatus::Expired
         } else {
@@ -508,7 +519,7 @@ impl Estate {
             } else {
                 self.releasable(u, now)
             }),
-            excess_now: U128(self.excess(u)),
+            excess_now: U128(self.excess(u).min(self.refundable(u))),
             refunds_open,
             next_due,
             progress_bps: bps,

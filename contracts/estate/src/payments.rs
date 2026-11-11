@@ -2,7 +2,6 @@
 //! deposit report confirmed by two balance reads (see "deposits" below); a raw balance read never credits anything.
 
 use crate::events::emit;
-use crate::votes::vote_weight;
 use crate::*;
 use near_contract_standards::non_fungible_token::events::{NftBurn, NftMint};
 use near_sdk::json_types::{U128, U64};
@@ -401,7 +400,8 @@ impl Estate {
             "a transfer out of {} is pending",
             unit_id
         );
-        let amount = self.excess(&unit);
+        // Never more than is still in the unit for the holder (a lender-first refund may have taken part of it).
+        let amount = self.excess(&unit).min(self.refundable(&unit));
         ensure!(amount > 0, "E_NO_EXCESS", "nothing paid above the price");
         self.send_from_unit(&mut unit, OutKind::Excess, holder, amount)
     }
@@ -657,14 +657,9 @@ impl Estate {
     }
 
     /// Book `amount` of new money that is known to be on the unit account: to `paid` if the unit takes payments,
-    /// else to `unattributed` (sweepable). Then allocate the token or cure a default, and keep open proposals'
-    /// electorates in step with the new vote weight.
+    /// else to `unattributed` (sweepable). Then allocate the token or cure a default. (Open proposals' electorates are
+    /// fixed at creation: growing them with top-ups helped a flash-weight capture; see votes.rs.)
     pub(crate) fn credit(&mut self, unit: &mut Unit, amount: u128, now: u64, source: &str) {
-        let old_weight = if unit.status.has_token() {
-            vote_weight(unit)
-        } else {
-            0
-        };
         if Self::takes_payments(unit, now) {
             unit.paid += amount;
             self.total_paid_in += amount;
@@ -681,7 +676,6 @@ impl Estate {
             unit.status = UnitStatus::Allocated;
             unit.listing = None;
         }
-        self.track_weight_change(unit, old_weight, now);
     }
 
     pub(crate) fn send_from_unit(
@@ -798,6 +792,14 @@ impl Estate {
         unit.holder = Some(r.by.clone());
         unit.status = UnitStatus::Allocated;
         unit.allocated_at = Some(now);
+        // Plan dates are absolute. A unit allocated after some instalments fell due (a late first buyer, or a unit
+        // re-sold after a full refund) would be in default at once: every unmet instalment already due moves to now, so
+        // the new holder gets a full `default_grace_ns` (as for a default sale). Met and future ones keep their dates.
+        for inst in unit.plan.iter_mut() {
+            if inst.due_at.0 < now && unit.paid < inst.cumulative.0 {
+                inst.due_at = U64(now);
+            }
+        }
         unit.reservation = None;
         unit.last_reservation = None;
         self.add_token(&r.by, &unit.id);

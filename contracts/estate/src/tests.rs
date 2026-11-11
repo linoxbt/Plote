@@ -3281,12 +3281,13 @@ fn vote_weighted_by_money_at_stake() {
         "two small deposits aren't a majority"
     );
     assert!(get_logs().iter().any(|l| l.contains("\"weight\":8500")));
-    // alice pays more meanwhile: her weight and the electorate grow together
+    // alice pays more meanwhile: the electorate stays fixed at creation (no flash-weight growth)
     e.wallet_pay("a-4b", "alice.testnet", 20_000 * USDC);
     assert_eq!(
         e.c.get_proposal(pid).unwrap().electorate,
-        28_500 + 8_500 + 85_000
+        8_500 + 8_500 + 85_000
     );
+
     e.as_("alice.testnet");
     panics(
         "E_ALREADY_VOTED",
@@ -3844,4 +3845,281 @@ fn units_and_plans_are_bounded() {
             }])
         }),
     );
+}
+
+// ---------------------------------------------------------------- final review: flash weight, plans, asks, excess
+
+/// Final review (High), ported PoC: one holder tops her unit up to the full price, then tries to pass a StepIn to
+/// herself alone and refund the top-up. The distinct-holder majority stops it.
+#[test]
+fn flash_weight_single_holder_cannot_step_in() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "mallory.testnet", 10_000 * USDC);
+    e.buy("a-1a", "bob.testnet", 10_000 * USDC);
+    e.buy("b-2a", "carol.testnet", 10_000 * USDC);
+    e.approve_milestone(0);
+    e.advance(3 * MIN);
+    e.as_("anyone.testnet");
+    e.c.claim_release(vec!["a-1a".into(), "b-2a".into()]);
+    e.finish_out(
+        "a-1a",
+        OutKind::Release,
+        "payout.testnet",
+        2_000 * USDC,
+        true,
+    );
+    e.finish_out(
+        "b-2a",
+        OutKind::Release,
+        "payout.testnet",
+        2_000 * USDC,
+        true,
+    );
+    e.now = T0 + 123 * MIN; // roofing missed → refunds open, step-in allowed
+    assert!(e.unit("a-4b").refunds_open);
+    assert_eq!(e.wallet_pay("a-4b", "mallory.testnet", 75_000 * USDC), 0);
+    let pid = e.propose(
+        "mallory.testnet",
+        ProposalKind::StepIn {
+            new_payout_id: acc("mallory.testnet"),
+        },
+    );
+    e.as_("mallory.testnet");
+    e.c.vote(pid, true);
+    let p = e.c.get_proposal(pid).unwrap();
+    assert!(
+        p.yes as u64 * 2 > p.electorate as u64,
+        "she has the weight majority..."
+    );
+    assert_eq!(
+        (p.holders_eligible, p.holders_yes),
+        (3, 1),
+        "...but not the holders"
+    );
+    assert_eq!(p.status, ProposalStatus::Open);
+    assert_eq!(
+        p.voted,
+        vec!["a-4b".to_string()],
+        "entries are shown as unit ids"
+    );
+    assert!(e.c.get_estate().payout_redirect.is_none());
+    // she takes the top-up back; the vote still can't pass without another holder
+    e.as_1y("mallory.testnet");
+    let _ = e.c.refund("a-4b".into());
+    e.finish_out(
+        "a-4b",
+        OutKind::Refund,
+        "mallory.testnet",
+        85_000 * USDC,
+        true,
+    );
+    assert_eq!(e.unit("a-4b").status, UnitStatus::Available);
+    let p = e.c.get_proposal(pid).unwrap();
+    assert_eq!(
+        (p.holders_eligible, p.holders_yes),
+        (2, 0),
+        "a burned token's vote has no holder"
+    );
+    assert!(e.c.get_estate().payout_redirect.is_none());
+    // the honest holders reject it (2 of 2 remaining holders)
+    e.as_("bob.testnet");
+    e.c.vote(pid, false);
+    assert_eq!(
+        e.c.get_proposal(pid).unwrap().status,
+        ProposalStatus::Rejected
+    );
+    assert!(e.c.get_estate().payout_redirect.is_none());
+}
+
+/// Final review: two distinct holders out of three pass a non-Veto vote, even against more weight abstaining; a
+/// majority of holders voting no rejects it even when one big holder voted yes; quorum still applies.
+#[test]
+fn vote_needs_a_majority_of_distinct_holders() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", 8_500 * USDC);
+    e.buy("a-1a", "bob.testnet", 8_500 * USDC);
+    e.buy("b-2a", "carol.testnet", PRICE);
+    // carol (most of the weight) alone can't freeze...
+    let f = e.propose(
+        "carol.testnet",
+        ProposalKind::Freeze {
+            reason: "no work".into(),
+            refunds_open: false,
+        },
+    );
+    e.as_("carol.testnet");
+    e.c.vote(f, true);
+    assert_eq!(e.c.get_proposal(f).unwrap().status, ProposalStatus::Open);
+    // ...and two of three holders voting no reject it
+    for who in ["alice.testnet", "bob.testnet"] {
+        e.as_(who);
+        e.c.vote(f, false);
+    }
+    let p = e.c.get_proposal(f).unwrap();
+    assert_eq!((p.holders_yes, p.holders_no), (1, 2));
+    assert_eq!(p.status, ProposalStatus::Rejected);
+    assert!(e.c.get_estate().frozen.is_none());
+    // carol + alice (2 of 3 holders, and the weight) pass one
+    e.advance(11 * MIN);
+    let f2 = e.propose(
+        "alice.testnet",
+        ProposalKind::Freeze {
+            reason: "no work".into(),
+            refunds_open: false,
+        },
+    );
+    for who in ["alice.testnet", "carol.testnet"] {
+        e.as_(who);
+        e.c.vote(f2, true);
+    }
+    assert_eq!(
+        e.c.get_proposal(f2).unwrap().status,
+        ProposalStatus::Executed
+    );
+    assert!(e.c.get_estate().frozen.is_some());
+    // the token quorum still applies on top (1 of 3 units allocated)
+    let mut q = Env::standard();
+    q.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    q.now = T0 + 63 * MIN; // a missed deadline, so StepIn itself is allowed
+    q.as_dep("alice.testnet", PROPOSAL_DEPOSIT);
+    panics(
+        "E_QUORUM",
+        std::panic::AssertUnwindSafe(|| {
+            q.c.propose(ProposalKind::StepIn {
+                new_payout_id: acc("alice.testnet"),
+            });
+        }),
+    );
+}
+
+/// Final review: Veto stays fast and weight-only — one holder with the weight majority vetoes alone in the window.
+#[test]
+fn veto_stays_weight_only_and_fast() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", 8_500 * USDC);
+    e.buy("a-1a", "bob.testnet", 8_500 * USDC);
+    e.buy("b-2a", "carol.testnet", PRICE);
+    e.approve_milestone(0);
+    let pid = e.propose("carol.testnet", ProposalKind::Veto { milestone: 0 });
+    e.as_("carol.testnet");
+    e.c.vote(pid, true);
+    let p = e.c.get_proposal(pid).unwrap();
+    assert_eq!(p.status, ProposalStatus::Executed);
+    assert_eq!(p.holders_yes, 1);
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Vetoed);
+}
+
+/// Final review (a): a unit allocated after an instalment fell due — first buyer or re-sold after a full refund — has
+/// its overdue instalments moved to the allocation time, so the new holder isn't in default at once.
+#[test]
+fn plan_rebased_at_allocation() {
+    let d = [
+        T0 + 60 * MIN,
+        T0 + 700 * MIN,
+        T0 + 800 * MIN,
+        T0 + 900 * MIN,
+    ];
+    let plan = vec![
+        Instalment {
+            due_at: U64(T0 + 10 * MIN),
+            cumulative: U128(30_000 * USDC),
+        },
+        Instalment {
+            due_at: U64(T0 + 500 * MIN),
+            cumulative: U128(60_000 * USDC),
+        },
+    ];
+    let mut e = Env::new_with(
+        params(false),
+        d,
+        &[("a-4b", PRICE, plan.clone()), ("a-1a", PRICE, plan)],
+    );
+    // a late first buyer
+    e.now = T0 + 20 * MIN;
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    let u = e.unit("a-4b");
+    assert_eq!(u.plan[0].due_at.0, T0 + 20 * MIN, "rebased to allocation");
+    assert_eq!(u.plan[1].due_at.0, T0 + 500 * MIN, "future dates kept");
+    e.advance(MIN);
+    e.as_("anyone.testnet");
+    panics(
+        "E_NOT_DUE",
+        std::panic::AssertUnwindSafe(|| e.c.declare_default("a-4b".into())),
+    );
+    e.advance(2 * MIN); // default_grace_ns after allocation
+    e.as_("anyone.testnet");
+    e.c.declare_default("a-4b".into());
+    // an on-time buyer keeps the developer's dates; a re-sale after a full refund is rebased
+    e.now = T0;
+    let mut f = Env::new_with(
+        params(false),
+        d,
+        &[(
+            "a-1a",
+            PRICE,
+            vec![Instalment {
+                due_at: U64(T0 + 10 * MIN),
+                cumulative: U128(30_000 * USDC),
+            }],
+        )],
+    );
+    f.buy("a-1a", "bob.testnet", 10_000 * USDC);
+    assert_eq!(f.unit("a-1a").plan[0].due_at.0, T0 + 10 * MIN);
+    f.now = T0 + 63 * MIN; // foundation missed → refunds open
+    f.as_1y("bob.testnet");
+    let _ = f.c.refund("a-1a".into());
+    f.finish_out("a-1a", OutKind::Refund, "bob.testnet", 10_000 * USDC, true);
+    assert_eq!(f.unit("a-1a").status, UnitStatus::Available);
+    f.buy("a-1a", "carol.testnet", 10_000 * USDC);
+    assert_eq!(f.unit("a-1a").plan[0].due_at.0, T0 + 63 * MIN);
+    f.advance(MIN);
+    f.as_("anyone.testnet");
+    panics(
+        "E_NOT_DUE",
+        std::panic::AssertUnwindSafe(|| f.c.declare_default("a-1a".into())),
+    );
+    f.check_conservation();
+}
+
+/// Final review (b): a default listing costs what the holder put in and didn't take back (`paid − refunded_out`).
+#[test]
+fn default_ask_excludes_refunded_out() {
+    let mut e = defaulted_unit();
+    let mut u = e.c.units.get("a-4b").cloned().unwrap();
+    u.refunded_out = 4_000 * USDC; // e.g. a lender-first refund earlier
+    e.c.units.insert("a-4b".into(), u);
+    *e.bal.get_mut("a-4b").unwrap() -= 4_000 * USDC;
+    assert_eq!(e.unit("a-4b").listing.unwrap().ask.0, 6_000 * USDC);
+    buy_listing(&mut e, "a-4b", "bob.testnet", 6_000 * USDC);
+    let penalty = 6_000 * USDC * 500 / 10_000;
+    assert!(ft_transfers()
+        .iter()
+        .any(|(_, to, a)| to == &acc("alice.testnet") && *a == 6_000 * USDC - penalty));
+    assert!(ft_transfers()
+        .iter()
+        .any(|(_, to, a)| to == &acc("payout.testnet") && *a == penalty));
+    assert_eq!(e.unit("a-4b").holder, Some(acc("bob.testnet")));
+    e.check_conservation();
+}
+
+/// Final review (c): withdraw_excess never pays more than is still refundable on the unit.
+#[test]
+fn withdraw_excess_capped_at_refundable() {
+    let mut e = Env::standard();
+    e.buy("a-4b", "alice.testnet", PRICE + 5_000 * USDC);
+    assert_eq!(e.unit("a-4b").excess_now.0, 5_000 * USDC);
+    let mut u = e.c.units.get("a-4b").cloned().unwrap();
+    u.refunded_out = 88_000 * USDC; // a lender was refunded most of it
+    e.c.units.insert("a-4b".into(), u);
+    *e.bal.get_mut("a-4b").unwrap() -= 88_000 * USDC;
+    assert_eq!(e.unit("a-4b").excess_now.0, 2_000 * USDC, "the view agrees");
+    e.as_1y("alice.testnet");
+    let _ = e.c.withdraw_excess("a-4b".into());
+    assert_eq!(
+        transfer_outs(),
+        vec![(unit_acc("a-4b"), acc("alice.testnet"), 2_000 * USDC)]
+    );
+    e.finish_out("a-4b", OutKind::Excess, "alice.testnet", 2_000 * USDC, true);
+    e.check_conservation();
+    assert_eq!(e.unit("a-4b").refundable_now.0, 0);
 }

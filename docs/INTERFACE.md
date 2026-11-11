@@ -61,6 +61,10 @@ new({ "args": {
 } })
 ```
 
+Instalment plans (`add_units`): dates are absolute, but when a unit is allocated (first buyer, or a re-sale after a full
+refund), every unmet instalment already due moves to the allocation time, so the new holder gets a full
+`default_grace_ns` before `declare_default`. A default sale rebases the same way.
+
 Rules: `sum(milestones.bps) + mobilisation_bps == 10000`, `mobilisation_bps <= 1000`, deadlines strictly increasing,
 1–8 milestones (demo estates use exactly 4).
 
@@ -91,11 +95,11 @@ these; no `set_*` method re-checks them, so code upgrades never brick a live est
 | `report_deposit` | `{ unit_id, amount: U128 }` | only the estate's `verdict_relayer` (its **deposit reporter**, `E_NOT_RELAYER`); no deposit; ~100 Tgas. Books a plain-transfer (1Click) delivery, see §1.2.1 | Promise (`U128` credited) |
 | `on_unit_deposit` | `{ unit_id, sender_id, amount: U128, msg }` | only the unit's own account. Books exactly `amount` and returns `"0"` when the unit takes payments (holder, or active reservation, and no transfer out pending); otherwise returns `amount` (USDC refunds it) | `U128` (unused amount) |
 | `refund` | `{ unit_id }` | holder; attach 1 yocto | Promise |
-| `withdraw_excess` | `{ unit_id }` | holder; attach 1 yocto | Promise |
+| `withdraw_excess` | `{ unit_id }` | holder; attach 1 yocto; pays `min(paid − price − excess already out, refundable)` | Promise |
 | `sweep_unattributed` | `{ unit_id }` | anyone | Promise |
 | `list_for_sale` | `{ unit_id, ask: U128 }` | holder, no lien; attach 1 yocto | — |
 | `cancel_listing` | `{ unit_id }` | holder (Voluntary only); attach 1 yocto | — |
-| `ft_on_transfer` | NEP-141 (`msg = {"buy":"a-4b"}`) | only from `usdc_id`. A Default listing costs the holder's `paid` **at purchase time** (later payments raise it) | `U128` |
+| `ft_on_transfer` | NEP-141 (`msg = {"buy":"a-4b"}`) | only from `usdc_id`. A Default listing costs the holder's `paid − refunded_out` **at purchase time** (later payments raise it); the default penalty is `penalty_bps` of that | `U128` |
 | `declare_default` | `{ unit_id }` | anyone | — |
 | `handover` | `{ unit_id }` | holder, handover milestone Approved and veto passed; attach 1 yocto | — |
 | `set_beneficiary` | `{ unit_id, beneficiary: AccountId \| null }` | holder; attach 1 yocto | — |
@@ -122,15 +126,37 @@ Plus NEP-171/177/178/181: `nft_transfer`, `nft_transfer_call`, `nft_approve`, `n
 per token (`E_TOO_MANY_APPROVALS`; re-approving an approved account is allowed). `nft_revoke` / `nft_revoke_all`: holder,
 1 yocto.
 
-Votes (SPEC §8, audit round 2): each token allocated before the proposal opened votes once, weighted by
-`min(paid, price)` **at vote time** in whole USDC (rounded up). `electorate` is the weight of those tokens and grows as
-they are paid up; a proposal executes when `yes × 2 > electorate`, is rejected when `no × 2 ≥ electorate`. A proposal
-opened before this rule (`ProposalView.weighted == false`) keeps counting one vote per token until it expires. Quorum
-(all kinds except `Veto`): ≥ 3 allocated tokens and ≥ a quarter of all units allocated (the playground is exempt).
-`Unfreeze` is rejected if the estate is no longer frozen.
+Votes (SPEC §8, audit round 2 + final review): each token allocated at or before the proposal opened votes once,
+weighted by `min(paid, price)` **at vote time** in whole USDC (rounded up). `electorate` is the weight of those tokens
+**fixed when the proposal opens** (later top-ups don't grow it).
+
+- `Veto`: executes when `yes × 2 > electorate` (weight only, so it stays fast inside the veto window); rejected when
+  `no × 2 ≥ electorate`.
+- Every other kind needs **both** `yes × 2 > electorate` **and** a strict majority of distinct holders:
+  `holders_yes × 2 > holders_eligible`, where `holders_eligible` counts the distinct current holders of the eligible
+  tokens and `holders_yes` / `holders_no` those of them holding a token that voted yes / no. It is rejected when
+  `no × 2 ≥ electorate` **or** `holders_no × 2 ≥ holders_eligible`.
+
+Why both: there is no per-token weight snapshot in state, so a holder could top a unit up right before voting and refund
+it afterwards (flash weight). The distinct-holder majority is the binding safeguard: one account can't pass a
+`StepIn`, `ReplaceSurveyor`, `Freeze`, `Unfreeze` or `ExtendDeadline` alone while other accounts hold eligible tokens.
+Splitting tokens across sybil accounts takes as many real purchases. No vote lock is applied: a lock could only last
+until the proposal resolves, and it couldn't stop a refund after execution.
+
+On weighted proposals `voted` is stored as `"+<unit_id>"` / `"-<unit_id>"`. Views show bare unit ids, plus the
+`holders_*` counts computed at view time. A proposal opened before weighted voting (`ProposalView.weighted == false`)
+keeps counting one vote per token, with no holder rule, until it expires.
+
+Quorum (all kinds except `Veto`): ≥ 3 allocated tokens and ≥ a quarter of all units allocated (the playground is
+exempt). `Unfreeze` is rejected if the estate is no longer frozen.
+
+Not changed (final review, Medium): a holder with ≥ 50% of the weight can still stall a `Veto` by abstaining, because
+passing needs `yes × 2 > electorate`. Settling a Veto at its expiry by a simple majority of votes cast would happen at
+or after `veto_until`, when `claim_release` can already have moved the stage's money. A safe version needs releases to
+wait for open Veto proposals, or a settlement margin before `veto_until` with a keeper to call it, so it is left out.
 
 Recovery after a missed deadline: `ExtendDeadline` may be proposed and executed while refunds are open. With the quorum
-and a paid-weighted majority it moves the milestone's deadline (`new_deadline` must be in the future and between its
+and both majorities (weight and distinct holders) it moves the milestone's deadline (`new_deadline` must be in the future and between its
 neighbours' deadlines), which closes refunds for that milestone, so `claim_release` (`E_REFUNDS_OPEN` meanwhile) works
 again. Holders who want out vote no and refund before it passes.
 
@@ -226,14 +252,14 @@ type UnitView = {
   last_reservation: { by: string; expires_at: string } | null;
   plan: { due_at: string; cumulative: string }[];
   paid: string; unattributed: string; released: string; refunded_out: string; in_flight: string;
-  listing: { ask: string; kind: "Voluntary" | "Default"; since: string } | null;  // Default: ask = current paid
+  listing: { ask: string; kind: "Voluntary" | "Default"; since: string } | null;  // Default: ask = paid − refunded_out now
   beneficiary: string | null; guardians: string[];
   recovery: { new_owner: string; approvals: string[]; ready_at: string | null } | null;
   lien: { lender: string; cap: string } | null;
   // computed
   refundable_now: string;    // what refund() would pay right now ("0" if refunds aren't open)
   releasable_now: string;    // what claim_release would move right now ("0" while frozen or refunds are open)
-  excess_now: string;        // what withdraw_excess would pay
+  excess_now: string;        // what withdraw_excess would pay (capped at what is still refundable)
   refunds_open: boolean;
   next_due: { due_at: string; cumulative: string; shortfall: string } | null;
   progress_bps: number;      // approved (veto passed) bps incl. mobilisation
@@ -285,6 +311,7 @@ type ProposalView = {
   electorate: number; yes: number; no: number;   // weighted: whole USDC of min(paid, price); else token counts
   voted: string[];                               // unit ids that voted
   weighted: boolean;
+  holders_eligible: number; holders_yes: number; holders_no: number;   // distinct holders (non-Veto majority rule)
   status: "Open" | "Executed" | "Rejected" | "Expired";
 };
 

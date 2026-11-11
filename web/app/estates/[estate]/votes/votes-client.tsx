@@ -97,6 +97,8 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
   const fmt = (n: number) => n.toLocaleString("en-US");
   const expired = p.status === "Open" && nsToMs(p.expires_at) < now;
   const need = Math.floor(p.electorate / 2) + 1;
+  const isVeto = !!p.kind && typeof p.kind === "object" && "Veto" in (p.kind as Record<string, unknown>);
+  const holdersRule = !isVeto && typeof p.holders_eligible === "number" && p.holders_eligible > 0;
   const vote = async (approve: boolean) => {
     if (!accountId) return connect();
     const r = await run(`Vote ${approve ? "yes" : "no"} on #${p.id}`, () => callNoPopup(accountId, E.vote(estate, p.id, approve)), {
@@ -128,7 +130,15 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
             <Bar value={p.electorate ? (p.no / p.electorate) * 100 : 0} tone="red" label={`${p.no} no of ${p.electorate} ${unitWord}`} />
           </div>
         </div>
-        <p className="mono text-xs text-muted">{p.weighted ? "USDC-weighted: each token counts the whole USDC paid into its unit (up to the price)." : "One vote per token (opened before weighted votes)."}</p>
+        {holdersRule ? (
+          <p className="mono text-sm">
+            Holders yes {fmt(p.holders_yes ?? 0)} / {fmt(p.holders_eligible ?? 0)} <span className="text-muted">(needs {fmt(Math.floor((p.holders_eligible ?? 0) / 2) + 1)} distinct holders)</span>
+          </p>
+        ) : null}
+        <p className="mono text-xs text-muted">
+          {p.weighted ? "USDC-weighted: each token counts the whole USDC paid into its unit (up to the price)." : "One vote per token (opened before weighted votes)."}
+          {holdersRule ? " It also needs a majority of distinct holders, so one large holder can't pass it alone." : ""}
+        </p>
         <details className="text-xs text-muted">
           <summary className="min-h-9 cursor-pointer">Exact proposal</summary>
           <pre className="mono overflow-auto bg-bg p-2">{JSON.stringify(p.kind, null, 2)}</pre>

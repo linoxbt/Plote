@@ -1,17 +1,52 @@
 //! Holder votes (SPEC §8): each allocation token votes once, recorded per token, weighted by the money it has at stake
-//! (`min(paid, price)` at vote time, in whole USDC); a proposal executes on a majority of the weight of the tokens
-//! allocated when it opened (`electorate`, kept in step as those tokens are paid up).
+//! (`min(paid, price)` at vote time, in whole USDC). A proposal executes on a majority of `electorate`, the weight of
+//! the tokens allocated when it opened (fixed at creation), and — for every kind but `Veto` — also on a strict majority
+//! of the distinct holders of those tokens (final review: flash-weight capture).
+//!
+//! Why both: there is no per-token weight snapshot in state, so a holder can top a unit up right before voting (and
+//! refund it after). The weight majority alone would let one such holder pass a `StepIn` / `ReplaceSurveyor` /
+//! `Freeze` against everyone else. The distinct-holder majority is the binding safeguard: one account can never pass
+//! a money-moving or estate-stopping vote alone while others hold eligible tokens; it would need tokens in other
+//! hands (each one a real purchase). `Veto` stays fast and weight-only: it fits inside the veto window and only sends a
+//! milestone back for new evidence.
 
 use crate::events::emit;
 use crate::*;
 use near_sdk::json_types::U64;
 use near_sdk::serde_json::json;
 use near_sdk::{env, near, AccountId, Promise};
+use std::collections::{HashMap, HashSet};
 
-/// Marks a proposal created by this code: its `yes`/`no`/`electorate` are vote weights (whole USDC). Stored as the
-/// first entry of `voted` (a unit id can never contain `~`), so proposals opened before weighted voting, whose numbers
-/// are token counts, keep being counted per token until they expire. Hidden by the views.
+/// Marks a proposal created by this code: its `yes`/`no`/`electorate` are vote weights (whole USDC) and every later
+/// `voted` entry is `"+<unit_id>"` (voted yes) or `"-<unit_id>"` (voted no). Stored as the first entry of `voted` (a unit
+/// id can never contain `~`, `+` or `-` at its start), so proposals opened before this rule, whose numbers are token
+/// counts and whose entries are bare unit ids, keep being counted per token until they expire. Hidden by the views.
 pub(crate) const WEIGHTED_MARK: &str = "~weighted";
+
+/// Kinds that also need a strict majority of distinct eligible holders (everything but the time-critical `Veto`).
+fn needs_holder_majority(kind: &ProposalKind) -> bool {
+    !matches!(kind, ProposalKind::Veto { .. })
+}
+
+/// The unit id of a `voted` entry and its direction (`Some(true)` yes, `Some(false)` no, `None` legacy / unknown).
+/// `None` for the marker.
+pub(crate) fn voted_entry(v: &str) -> Option<(&str, Option<bool>)> {
+    if v == WEIGHTED_MARK {
+        return None;
+    }
+    Some(match v.as_bytes().first() {
+        Some(b'+') => (&v[1..], Some(true)),
+        Some(b'-') => (&v[1..], Some(false)),
+        _ => (v, None),
+    })
+}
+
+/// Has unit `id` voted on `p`?
+pub(crate) fn has_voted(p: &Proposal, id: &str) -> bool {
+    p.voted
+        .iter()
+        .any(|v| voted_entry(v).map(|(u, _)| u == id).unwrap_or(false))
+}
 
 /// Votes that move money, stop or restart the estate, or move a deadline need a minimum electorate
 /// (`MIN_ELECTORATE` tokens and a quarter of all units). Only `Veto` stays fast: it must fit inside the veto window.
@@ -23,6 +58,44 @@ fn needs_quorum(kind: &ProposalKind) -> bool {
 pub(crate) fn vote_weight(unit: &Unit) -> u32 {
     let at_stake = unit.paid.min(unit.price);
     at_stake.div_ceil(VOTE_WEIGHT_UNIT).min(u32::MAX as u128) as u32
+}
+
+/// Distinct holders: eligible for a proposal, and among them those whose tokens voted yes / no.
+pub(crate) struct HolderTally {
+    pub eligible: u64,
+    pub yes: u64,
+    pub no: u64,
+}
+
+/// `holder_tally` against a prebuilt `token_index` (views build it once for a page of proposals).
+pub(crate) fn tally(p: &Proposal, tokens: &HashMap<&str, (&AccountId, u64)>) -> HolderTally {
+    let eligible: HashSet<&AccountId> = tokens
+        .values()
+        .filter(|(_, at)| *at <= p.created_at)
+        .map(|(h, _)| *h)
+        .collect();
+    let (mut yes, mut no): (HashSet<&AccountId>, HashSet<&AccountId>) = Default::default();
+    for v in &p.voted {
+        let Some((id, Some(dir))) = voted_entry(v) else {
+            continue;
+        };
+        let Some((h, _)) = tokens.get(id) else {
+            continue;
+        };
+        if !eligible.contains(h) {
+            continue;
+        }
+        if dir {
+            yes.insert(h);
+        } else {
+            no.insert(h);
+        }
+    }
+    HolderTally {
+        eligible: eligible.len() as u64,
+        yes: yes.len() as u64,
+        no: no.len() as u64,
+    }
 }
 
 pub(crate) fn is_weighted(p: &Proposal) -> bool {
@@ -214,7 +287,8 @@ impl Estate {
         }
         eligible.truncate(MAX_VOTE_TOKENS_PER_CALL);
         let n = eligible.len() as u32;
-        let weight = if is_weighted(&p) {
+        let weighted = is_weighted(&p);
+        let weight = if weighted {
             eligible
                 .iter()
                 .filter_map(|id| self.units.get(id))
@@ -222,7 +296,13 @@ impl Estate {
         } else {
             n // a proposal opened before weighted voting keeps counting tokens
         };
-        p.voted.extend(eligible);
+        if weighted {
+            let sign = if approve { '+' } else { '-' };
+            p.voted
+                .extend(eligible.into_iter().map(|id| format!("{sign}{id}")));
+        } else {
+            p.voted.extend(eligible);
+        }
         if approve {
             p.yes = p.yes.saturating_add(weight);
         } else {
@@ -233,19 +313,25 @@ impl Estate {
             json!({ "proposal_id": proposal_id, "voter": caller, "approve": approve, "tokens": n, "weight": weight }),
         );
         let (yes, no, electorate) = (p.yes as u64, p.no as u64, p.electorate as u64);
-        if yes * 2 > electorate && !self.still_executable(&p.kind, now) {
+        let (mut passes, mut fails) = (yes * 2 > electorate, no * 2 >= electorate);
+        if weighted && needs_holder_majority(&p.kind) {
+            let t = self.holder_tally(&p);
+            passes = passes && t.yes * 2 > t.eligible;
+            fails = fails || t.no * 2 >= t.eligible;
+        }
+        if passes && !self.still_executable(&p.kind, now) {
             // Passed, but its precondition lapsed meanwhile (e.g. an unfreeze before a step-in passed).
             env::log_str("proposal passed but its precondition no longer holds; rejected");
             p.status = ProposalStatus::Rejected;
             self.proposals.insert(p.id, p);
             emit("proposal_rejected", json!({ "proposal_id": proposal_id }));
-        } else if yes * 2 > electorate {
+        } else if passes {
             p.status = ProposalStatus::Executed;
             let kind = p.kind.clone();
             self.proposals.insert(p.id, p);
             self.execute(kind, now);
             emit("proposal_executed", json!({ "proposal_id": proposal_id }));
-        } else if no * 2 >= electorate {
+        } else if fails {
             p.status = ProposalStatus::Rejected;
             self.proposals.insert(p.id, p);
             emit("proposal_rejected", json!({ "proposal_id": proposal_id }));
@@ -275,7 +361,7 @@ impl Estate {
     pub(crate) fn eligible_tokens(&self, p: &Proposal, account: &AccountId) -> Vec<UnitId> {
         self.snapshot_tokens(p, account)
             .into_iter()
-            .filter(|id| !p.voted.contains(id))
+            .filter(|id| !has_voted(p, id))
             .collect()
     }
 
@@ -331,43 +417,20 @@ impl Estate {
         }
     }
 
-    /// A token's vote weight changed from `old_weight` (its money at stake grew, or it was just allocated): every open
-    /// weighted proposal it can vote on counts the difference in its electorate, so a majority stays a majority of what
-    /// the eligible tokens weigh now, not when the proposal opened. Bounded like `check_recent_proposals`: only
-    /// proposals opened within the last `proposal_period_ns` can still be open.
-    pub(crate) fn track_weight_change(&mut self, unit: &Unit, old_weight: u32, now: u64) {
-        if !unit.status.has_token() {
-            return;
-        }
-        let new_weight = vote_weight(unit);
-        if new_weight <= old_weight {
-            return;
-        }
-        let Some(allocated_at) = unit.allocated_at else {
-            return;
-        };
-        let delta = new_weight - old_weight;
-        let period = self.params.proposal_period_ns.0;
-        let mut id = self.next_proposal_id;
-        while id > 1 {
-            id -= 1;
-            let Some(p) = self.proposals.get(&id) else {
-                continue;
-            };
-            if p.created_at.saturating_add(period) <= now {
-                break;
-            }
-            if p.status != ProposalStatus::Open
-                || now >= p.expires_at
-                || !is_weighted(p)
-                || allocated_at > p.created_at
-            {
-                continue;
-            }
-            let mut p = p.clone();
-            p.electorate = p.electorate.saturating_add(delta);
-            self.proposals.insert(id, p);
-        }
+    /// Every allocated token: unit id → (holder, allocated_at). One pass over the units (≤ `MAX_UNITS`).
+    pub(crate) fn token_index(&self) -> HashMap<&str, (&AccountId, u64)> {
+        self.units
+            .values()
+            .filter(|u| u.status.has_token())
+            .filter_map(|u| Some((u.id.as_str(), (u.holder.as_ref()?, u.allocated_at?))))
+            .collect()
+    }
+
+    /// Distinct current holders of the tokens eligible for `p` (allocated at or before it opened), and how many of them
+    /// hold a token that voted yes / no. A holder counts once however many tokens they hold; one who voted some tokens
+    /// yes and others no counts on both sides.
+    pub(crate) fn holder_tally(&self, p: &Proposal) -> HolderTally {
+        tally(p, &self.token_index())
     }
 
     /// `StepIn` redirects every future release, so it is only for a project in trouble: releases frozen by a

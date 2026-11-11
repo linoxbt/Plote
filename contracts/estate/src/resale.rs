@@ -68,8 +68,8 @@ impl Estate {
         self.save(unit);
     }
 
-    /// Anyone: an instalment is overdue past `default_grace_ns` → the unit is listed at what the holder paid. The ask
-    /// tracks later payments: a purchase pays the holder's `paid` at that moment (see `listing_ask`).
+    /// Anyone: an instalment is overdue past `default_grace_ns` → the unit is listed at what the holder paid and didn't
+    /// take back. The ask tracks later payments and refunds: a purchase pays `paid − refunded_out` at that moment.
     pub fn declare_default(&mut self, unit_id: String) {
         let mut unit = self.unit(&unit_id);
         ensure!(
@@ -84,7 +84,7 @@ impl Estate {
             "no instalment is overdue past the grace period"
         );
         unit.status = UnitStatus::InDefault;
-        let ask = U128(unit.paid);
+        let ask = U128(Self::default_ask(&unit));
         unit.listing = Some(Listing {
             ask,
             kind: ListingKind::Default,
@@ -132,8 +132,14 @@ impl Estate {
     pub(crate) fn listing_ask(unit: &Unit, listing: &Listing) -> u128 {
         match listing.kind {
             ListingKind::Voluntary => listing.ask.0,
-            ListingKind::Default => unit.paid.max(1),
+            ListingKind::Default => Self::default_ask(unit),
         }
+    }
+
+    /// A default listing's price: what the holder has put in and not taken back (`paid − refunded_out`, i.e. their
+    /// equity in the unit, incl. what was released to the developer for proven work), at least 1.
+    pub(crate) fn default_ask(unit: &Unit) -> u128 {
+        unit.paid.saturating_sub(unit.refunded_out).max(1)
     }
 
     fn try_buy(&mut self, buyer: &AccountId, amount: u128, msg: &str) -> Result<u128, String> {
@@ -163,7 +169,7 @@ impl Estate {
             return Err("E_BAD_ARGS: buyer is the seller".into());
         }
         let penalty = if listing.kind == ListingKind::Default {
-            (unit.paid.saturating_mul(self.params.penalty_bps as u128) / BPS).min(ask)
+            (ask.saturating_mul(self.params.penalty_bps as u128) / BPS).min(ask)
         } else {
             0
         };

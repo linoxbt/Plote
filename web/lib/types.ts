@@ -112,6 +112,8 @@ export type ProposalView = {
   electorate: number; yes: number; no: number;
   voted: string[]; status: ProposalStatus;
   weighted?: boolean;
+  /** Every kind but Veto also needs a strict majority of distinct eligible holders (audit 3): holders_yes * 2 > holders_eligible. */
+  holders_eligible?: number; holders_yes?: number; holders_no?: number;
 };
 
 export type DevStats = {
