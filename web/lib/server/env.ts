@@ -26,6 +26,8 @@ export const serverEnv = {
   /** Required with RESEND_API_KEY: a sender on a domain verified in Resend. No default (an unverified sender fails). */
   resendFrom: () => v("RESEND_FROM"),
   cronSecret: () => v("CRON_SECRET"),
+  /** Second poll secret for the Supabase pg_cron scheduler (supabase/migrations/0005_poll_schedule.sql). */
+  pollSecret: () => v("POLL_SECRET"),
   /** HMAC key for confirm/unsubscribe links. Falls back to CRON_SECRET (so links sent before it existed keep working). */
   notifySecret: () => v("NOTIFY_SECRET"),
   /** Extra accounts the health check and poller watch for low NEAR (comma-separated), besides each estate's developer/payout. */

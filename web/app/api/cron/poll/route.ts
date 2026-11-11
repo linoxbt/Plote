@@ -28,18 +28,19 @@ import { cleanupEstateStorage, type CleanupReport } from "@/lib/server/storage-c
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+/** CRON_SECRET (GitHub Actions) or POLL_SECRET (the Supabase pg_cron scheduler) — compared in constant time. */
 function secretOk(req: Request): boolean {
-  const want = serverEnv.cronSecret() ?? "";
-  const got = req.headers.get("x-cron-secret") ?? "";
-  const a = Buffer.from(want);
-  const b = Buffer.from(got);
-  return a.length > 0 && a.length === b.length && timingSafeEqual(a, b);
+  const got = Buffer.from(req.headers.get("x-cron-secret") ?? "");
+  return [serverEnv.cronSecret(), serverEnv.pollSecret()].some((w) => {
+    const want = Buffer.from(w ?? "");
+    return want.length > 0 && want.length === got.length && timingSafeEqual(want, got);
+  });
 }
 
 type EstateReport = Partial<EstatePollReport> & { emails: number; evidenceLinked: number; storage?: CleanupReport | { error: string }; error?: string };
 
 export async function GET(req: Request) {
-  if (!serverEnv.cronSecret()) return notConfigured("The poller", ["CRON_SECRET"]);
+  if (!serverEnv.cronSecret() && !serverEnv.pollSecret()) return notConfigured("The poller", ["CRON_SECRET"]);
   if (!secretOk(req)) return jsonError("UNAUTHORIZED", "Missing or wrong x-cron-secret header.", 401);
   const q = new URL(req.url).searchParams;
   // ?test_alert=1 checks the alert channel end to end without waiting for a real problem.

@@ -224,14 +224,28 @@ export function parseTxReceipts(raw: RpcOutcome): OutcomeReceipt[] {
  * fastnear and rpc.testnet.near.org), so the estate is passed, with the receipt's predecessor as a retry.
  */
 export async function rpcTxReceipts(txHash: string, sender: string, altSender?: string): Promise<OutcomeReceipt[]> {
-  const call = (s: string) => rpc<RpcOutcome>("EXPERIMENTAL_tx_status", { tx_hash: txHash, sender_account_id: s, wait_until: "NONE" });
+  const call = (s: string, urls?: string[]) =>
+    rpc<RpcOutcome>("EXPERIMENTAL_tx_status", { tx_hash: txHash, sender_account_id: s, wait_until: "NONE" }, urls ? { urls } : {});
   try {
     return parseTxReceipts(await call(sender));
   } catch (e) {
-    if (!altSender || altSender === sender) throw e;
-    return parseTxReceipts(await call(altSender));
+    if (altSender && altSender !== sender) {
+      try {
+        return parseTxReceipts(await call(altSender));
+      } catch {
+        /* fall through to the archival node */
+      }
+    }
+    // Regular RPC nodes keep only recent epochs; older transactions are served by the archival node.
+    try {
+      return parseTxReceipts(await call(sender, [ARCHIVAL_RPC_URL]));
+    } catch {
+      throw e;
+    }
   }
 }
+
+const ARCHIVAL_RPC_URL = NETWORK === "mainnet" ? "https://archival-rpc.mainnet.near.org" : "https://archival-rpc.testnet.near.org";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Supabase store (tables `events`, `poll_receipts`, `poll_cursor`; migrations 0001 + 0004).
