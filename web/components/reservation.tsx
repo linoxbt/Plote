@@ -32,7 +32,15 @@ export function ReservationActions({ estate, e, u, className }: { estate: string
     if (!accountId) return connect();
     // expire/sweep are on the login key's method list (no popup when it's set up); cancel always asks the wallet.
     const r = await run(title, () => (viaKey ? callNoPopup(accountId, spec) : sendTx(spec)), { success });
-    if (r) qc.invalidateQueries();
+    if (r) {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["unit", estate, u.id] }),
+        qc.invalidateQueries({ queryKey: ["units", estate] }),
+        qc.invalidateQueries({ queryKey: ["estate", estate] }),
+        qc.invalidateQueries({ queryKey: ["usdc-bal"] }),
+        qc.invalidateQueries({ queryKey: ["my-positions"] }),
+      ]);
+    }
   };
 
   return (
@@ -48,7 +56,7 @@ export function ReservationActions({ estate, e, u, className }: { estate: string
             onClick={() => {
               const msg = `Cancel your reservation of ${unitDisplay(u.id)}?${paid > 0n ? `\n\n${formatUsd(u.paid)} goes back to ${accountId}.` : ""}\nThe unit goes back on sale.`;
               if (!window.confirm(msg)) return;
-              void go(`Cancel reservation of ${unitDisplay(u.id)}`, E.cancelReservation(estate, u.id), paid > 0n ? `Cancelled. ${formatUsd(u.paid)} and 0.05 NEAR are on their way back to you.` : "Cancelled. Your 0.05 NEAR is on its way back.", false);
+              return go(`Cancel reservation of ${unitDisplay(u.id)}`, E.cancelReservation(estate, u.id), paid > 0n ? `Cancelled. ${formatUsd(u.paid)} and 0.05 NEAR are on their way back to you.` : "Cancelled. Your 0.05 NEAR is on its way back.", false);
             }}
           >
             <Undo2 className="h-4 w-4" aria-hidden /> Cancel reservation
@@ -64,7 +72,7 @@ export function ReservationActions({ estate, e, u, className }: { estate: string
             {paid > 0n ? <> before the first payment reached the minimum</> : null}. Anyone can release it: the unit goes back on sale and
             {paid > 0n ? <> the <MonoAmount value={u.paid} naira={false} /> paid so far plus</> : null} the 0.05 NEAR deposit go back to the reserver. Nobody else receives anything.
           </p>
-          <Button variant="primary" onClick={() => void go(`Release expired reservation of ${unitDisplay(u.id)}`, E.expireReservation(estate, u.id), `Released. ${unitDisplay(u.id)} is available again.`, true)}>
+          <Button variant="primary" onClick={() => go(`Release expired reservation of ${unitDisplay(u.id)}`, E.expireReservation(estate, u.id), `Released. ${unitDisplay(u.id)} is available again.`, true)}>
             <RotateCcw className="h-4 w-4" aria-hidden /> {accountId ? "Release the reservation" : "Connect wallet to release it"}
           </Button>
         </div>
@@ -79,7 +87,7 @@ export function ReservationActions({ estate, e, u, className }: { estate: string
             {u.last_reservation ? <> (<AccountChip account={u.last_reservation.by} />)</> : null} if their reservation ended less than{" "}
             {formatDuration(nsToMs(e.params.late_claim_ns))} ago — a late cross-chain payment — otherwise to Plote&apos;s recovery account, which returns it on request.
           </p>
-          <Button onClick={() => void go(`Return unattributed USDC on ${unitDisplay(u.id)}`, E.sweepUnattributed(estate, u.id), `Sent ${formatUsd(u.unattributed)} back.`, true)}>
+          <Button onClick={() => go(`Return unattributed USDC on ${unitDisplay(u.id)}`, E.sweepUnattributed(estate, u.id), `Sent ${formatUsd(u.unattributed)} back.`, true)}>
             {accountId ? `Send ${formatUsd(u.unattributed)} back` : "Connect wallet to send it back"}
           </Button>
         </div>

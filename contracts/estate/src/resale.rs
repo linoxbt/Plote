@@ -204,7 +204,8 @@ impl Estate {
             // Lender first, up to its cap; the lien ends with the sale (the buyer takes the token free of it).
             let to_lender = proceeds.min(l.cap.0);
             if to_lender > 0 {
-                self.pay_from_estate(l.lender.clone(), to_lender, "lien").detach();
+                self.pay_from_estate(l.lender.clone(), to_lender, "lien")
+                    .detach();
                 proceeds -= to_lender;
             }
             emit(

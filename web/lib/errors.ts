@@ -35,7 +35,7 @@ export const ERROR_MESSAGES = {
   E_CHALLENGE_EXPIRED: "The challenge code expired. Open a new capture and photograph the new code.",
   E_NOTHING_TO_SWEEP: "There's no unclaimed payment above the dust threshold on this unit.",
   E_NO_EXCESS: "You haven't paid more than the price, so there's no excess to withdraw.",
-  E_NOT_ELIGIBLE: "None of your tokens can vote on this proposal (they were allocated after it opened, or already voted).",
+  E_NOT_ELIGIBLE: "None of your tokens can vote on this proposal (they were allocated after it opened).",
   E_ALREADY_VOTED: "Your tokens have already voted on this proposal.",
   E_PROPOSAL_STATE: "This proposal is no longer open.",
   E_PROPOSAL_OPEN: "You already have an open proposal. Wait for it to finish first.",
@@ -57,6 +57,11 @@ export const ERROR_MESSAGES = {
   E_CAPTURE_ACTIVE: "Someone else has an open capture for this milestone. Wait until their code expires.",
   E_CHECK_PENDING: "This photo check can still finish. A stuck check can be reopened an hour after the photo was submitted.",
   E_LATE_CLAIM: "This unit's last reservation ended moments ago and a late payment may still arrive for that buyer. Try again a little later.",
+  E_VERDICT_MISMATCH: "This verdict doesn't name the photo it checked (evidence ID and SHA-256 must match the submitted photo).",
+  E_TIMELOCK: "This step is time-locked. Try again once the waiting period has passed.",
+  E_RATE_LIMIT: "Too many tries in a short time. Wait a while and try again.",
+  E_NFT_PENDING: "This unit's token is in the middle of a transfer. Try again in a few seconds.",
+  E_NOTHING_OWED: "Nothing is owed to this account.",
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;

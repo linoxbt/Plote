@@ -4,7 +4,7 @@
 // otherwise the connected wallet (always the case in the Playground, where any wallet can be the surveyor).
 
 import { useEffect, useState } from "react";
-import { getWallet, sendTx, type TxResult, type TxSpec } from "@/lib/near";
+import { callNoPopup, getWallet, sendTx, type TxResult, type TxSpec } from "@/lib/near";
 import { listPhoneKeys, needsUnlock, phoneSignNep413, relayWithPhoneKey, unlockPhoneKey } from "@/lib/phone-key";
 import type { Nep413Payload } from "@/lib/nep413";
 import { bytesToBase64 } from "@/lib/near";
@@ -46,7 +46,9 @@ export function useSurveyorSigner(): SurveyorSigner {
       if (phone) await unlockPhoneKey(phone.accountId, pin);
       setTick((t) => t + 1);
     },
-    call: (spec) => (phoneMode ? relayWithPhoneKey(phone!.accountId, spec) : sendTx(spec)),
+    // Wallet mode: the login key signs without a popup when it covers the method (open_capture, submit_evidence,
+    // qs_sign, reopen_stale_check); otherwise the wallet asks.
+    call: (spec) => (phoneMode ? relayWithPhoneKey(phone!.accountId, spec) : walletAccount ? callNoPopup(walletAccount, spec) : sendTx(spec)),
     signNep413: async (p) => {
       if (phoneMode) return phoneSignNep413(phone!.accountId, p);
       const w = await getWallet();

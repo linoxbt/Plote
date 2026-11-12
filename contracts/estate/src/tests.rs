@@ -3683,7 +3683,10 @@ fn init_refuses_unsafe_params_outside_playground_and_testnet() {
     let msg = init_on("playground.plote.near", new_args(params(true), d))
         .err()
         .unwrap();
-    assert!(msg.contains("E_BAD_ARGS") && msg.contains("testnet"), "{msg}");
+    assert!(
+        msg.contains("E_BAD_ARGS") && msg.contains("testnet"),
+        "{msg}"
+    );
     // a live demo estate isn't bricked: set_verifier before the first sale still works
     let mut e = Env::standard();
     assert!(e.c.params.demo_mode && e.c.params.grace_ns.0 < ONE_DAY_NS);
@@ -4176,4 +4179,1095 @@ fn withdraw_excess_capped_at_refundable() {
     e.finish_out("a-4b", OutKind::Excess, "alice.testnet", 2_000 * USDC, true);
     e.check_conservation();
     assert_eq!(e.unit("a-4b").refundable_now.0, 0);
+}
+
+// ---------------------------------------------------------------- audit round 4
+
+fn three_holders() -> Env {
+    let mut e = Env::standard();
+    e.buy("a-1a", "alice.testnet", 10_000 * USDC);
+    e.buy("a-4b", "bob.testnet", 10_000 * USDC);
+    e.buy("b-2a", "carol.testnet", 10_000 * USDC);
+    e
+}
+
+fn logs_contain(s: &str) -> bool {
+    get_logs().iter().any(|l| l.contains(s))
+}
+
+/// Finding 1: stages go in order. Milestone i takes captures, evidence and sign-off only once i − 1 is Approved, and
+/// releases count only an in-order prefix of approved stages.
+#[test]
+fn r4_stage_order_enforced() {
+    let mut e = three_holders();
+    e.as_("qs.testnet");
+    for m in 1..4u8 {
+        panics(
+            "E_MILESTONE_STATE",
+            std::panic::AssertUnwindSafe(|| {
+                e.c.open_capture(m);
+            }),
+        );
+    }
+    e.approve_milestone(0);
+    // roofing can now be captured, checked and signed
+    let ev = e.submit(1, "qs.testnet");
+    assert!(e.verdict(ev, true, &[]));
+    // a later veto of foundation (state forced here) blocks roofing's sign-off and evidence for finishing
+    e.c.milestones[0].status = MilestoneStatus::Vetoed;
+    e.as_("qs.testnet");
+    panics(
+        "E_MILESTONE_STATE",
+        std::panic::AssertUnwindSafe(|| e.c.qs_sign(1)),
+    );
+    e.c.milestones[0].status = MilestoneStatus::Approved;
+    e.c.qs_sign(1);
+    e.advance(3 * MIN);
+    assert_eq!(e.c.approved_bps(e.now), 5_000);
+    // legacy state with a later stage approved before an earlier one unlocks nothing past the gap
+    e.c.milestones[0].status = MilestoneStatus::Vetoed;
+    assert_eq!(e.c.approved_bps(e.now), 0);
+    assert_eq!(e.unit("a-1a").releasable_now.0, 0);
+}
+
+/// Finding 15: handover needs every milestone approved, not only the last one.
+#[test]
+fn r4_handover_needs_every_milestone() {
+    let mut e = three_holders();
+    for m in 0..4u8 {
+        e.approve_milestone(m);
+    }
+    e.advance(3 * MIN);
+    e.c.milestones[1].status = MilestoneStatus::Vetoed; // e.g. vetoed after the next stage was signed
+    e.as_1y("alice.testnet");
+    panics(
+        "E_HANDOVER",
+        std::panic::AssertUnwindSafe(|| e.c.handover("a-1a".into())),
+    );
+    e.c.milestones[1].status = MilestoneStatus::Approved;
+    e.as_1y("alice.testnet");
+    e.c.handover("a-1a".into());
+    assert_eq!(e.unit("a-1a").status, UnitStatus::HandedOver);
+}
+
+/// Finding 2a + 2c + 5: a lien needs the lender's acceptance; a lien-first refund lowers the token's vote weight at
+/// once (net equity), and the views/NFT show net equity.
+#[test]
+fn r4_partial_lien_refund_drops_weight_and_shows_net() {
+    let mut e = three_holders();
+    e.c.frozen = Some(Freeze {
+        reason: "test".into(),
+        since: U64(e.now),
+        refunds_open: true,
+    });
+    let pid = e.propose(
+        "bob.testnet",
+        ProposalKind::ReplaceSurveyor {
+            account: acc("qs2.testnet"),
+        },
+    );
+    e.as_("viewer.testnet");
+    assert_eq!(e.c.vote_weight_available(pid, acc("alice.testnet")), 10_000);
+    // alice pledges to her own alt account; nothing happens until the "lender" accepts
+    e.as_1y("alice.testnet");
+    e.c.set_lien("a-1a".into(), acc("alice-alt.testnet"), U128(9_999 * USDC));
+    assert!(e.unit("a-1a").lien.is_none());
+    let p = e.c.get_pending_lien("a-1a".into()).unwrap();
+    assert_eq!(
+        (p.lender.as_str(), p.cap.0),
+        ("alice-alt.testnet", 9_999 * USDC)
+    );
+    e.as_1y("mallory.testnet");
+    panics(
+        "E_NOT_LENDER",
+        std::panic::AssertUnwindSafe(|| e.c.accept_lien("a-1a".into())),
+    );
+    e.as_1y("alice-alt.testnet");
+    e.c.accept_lien("a-1a".into());
+    assert!(e.c.get_pending_lien("a-1a".into()).is_none());
+    assert_eq!(e.unit("a-1a").lien.unwrap().cap.0, 9_999 * USDC);
+    e.as_1y("alice.testnet");
+    let _ = e.c.refund("a-1a".into());
+    assert!(e.finish_out(
+        "a-1a",
+        OutKind::Refund,
+        "alice-alt.testnet",
+        9_999 * USDC,
+        true
+    ));
+    let u = e.unit("a-1a");
+    assert_eq!(
+        u.status,
+        UnitStatus::Allocated,
+        "the token survives a partial refund"
+    );
+    // weight now = 1 USDC, not 10 000
+    e.as_("viewer.testnet");
+    assert_eq!(e.c.vote_weight_available(pid, acc("alice.testnet")), 1);
+    e.as_("alice.testnet");
+    e.c.vote(pid, true);
+    let pv = e.c.get_proposal(pid).unwrap();
+    assert_eq!(pv.yes, 1);
+    assert_eq!(pv.status, ProposalStatus::Open);
+    // views and NFT show net equity
+    assert_eq!(e.c.is_taken("a-1a".into()).paid.0, USDC);
+    let t = e.c.nft_token("a-1a".into()).unwrap();
+    let extra: serde_json::Value =
+        serde_json::from_str(&t.metadata.unwrap().extra.unwrap()).unwrap();
+    assert_eq!(extra["paid"], (USDC).to_string());
+    e.check_conservation();
+}
+
+/// Finding 5: after a lien-first refund a release never asks for more than the unit holds by the books, so
+/// `claim_release` can't fail forever (old cap: min(paid, price) × bps − released, far above the balance).
+#[test]
+fn r4_release_capped_by_books_after_partial_refund() {
+    let mut e = three_holders();
+    e.approve_milestone(0);
+    e.advance(3 * MIN);
+    e.as_("anyone.testnet");
+    assert_eq!(e.c.claim_release(vec!["a-1a".into()]), 1);
+    e.finish_out(
+        "a-1a",
+        OutKind::Release,
+        "payout.testnet",
+        2_000 * USDC,
+        true,
+    );
+    // lien-first refund of 7 500 of the 8 000 left
+    e.as_1y("alice.testnet");
+    e.c.set_lien("a-1a".into(), acc("bank.testnet"), U128(7_500 * USDC));
+    e.as_1y("bank.testnet");
+    e.c.accept_lien("a-1a".into());
+    e.c.frozen = Some(Freeze {
+        reason: "t".into(),
+        since: U64(e.now),
+        refunds_open: true,
+    });
+    e.as_1y("alice.testnet");
+    let _ = e.c.refund("a-1a".into());
+    e.finish_out("a-1a", OutKind::Refund, "bank.testnet", 7_500 * USDC, true);
+    e.c.frozen = None;
+    for m in 1..4u8 {
+        e.approve_milestone(m);
+    }
+    e.advance(3 * MIN);
+    let u = e.unit("a-1a");
+    assert_eq!(u.refundable_now.0, 0);
+    // net 2 500 × 100% − 2 000 released = 500 = exactly what is left on the unit
+    assert_eq!(u.releasable_now.0, 500 * USDC);
+    e.as_("anyone.testnet");
+    assert_eq!(e.c.claim_release(vec!["a-1a".into()]), 1);
+    assert_eq!(transfer_outs()[0].2, 500 * USDC);
+    e.finish_out("a-1a", OutKind::Release, "payout.testnet", 500 * USDC, true);
+    e.check_conservation();
+}
+
+/// Finding 2b: a minority holder can't pass a Veto by topping up after the proposal opened.
+#[test]
+fn r4_veto_top_up_adds_no_weight() {
+    let mut e = Env::standard();
+    e.buy("a-1a", "alice.testnet", 8_500 * USDC);
+    e.buy("a-4b", "bob.testnet", PRICE);
+    e.approve_milestone(0);
+    let pid = e.propose("alice.testnet", ProposalKind::Veto { milestone: 0 });
+    assert_eq!(e.c.get_proposal(pid).unwrap().electorate, 8_500 + 85_000);
+    // alice tops up to the full price: her live weight would be 85 000 > half the electorate
+    assert_eq!(
+        e.wallet_pay("a-1a", "alice.testnet", PRICE - 8_500 * USDC),
+        0
+    );
+    e.as_("viewer.testnet");
+    assert_eq!(e.c.vote_weight_available(pid, acc("alice.testnet")), 8_500);
+    e.as_("alice.testnet");
+    e.c.vote(pid, true);
+    let p = e.c.get_proposal(pid).unwrap();
+    assert_eq!(p.yes, 8_500);
+    assert_eq!(p.status, ProposalStatus::Open);
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Approved);
+    // a proposal opened after the top-up counts it
+    e.advance(3 * MIN);
+    assert_eq!(vote_weight(&e.c.unit("a-1a")), 85_000);
+}
+
+use crate::votes::vote_weight;
+
+/// Finding 2: splitting cheap tokens across sybil accounts satisfies the distinct-holder count but not the weight
+/// majority, and new estates can't make tokens cheap (min_initial_bps ≥ 1000 outside the playground).
+#[test]
+fn r4_sybil_split_cannot_capture() {
+    let d = [
+        T0 + 60 * MIN,
+        T0 + 120 * MIN,
+        T0 + 180 * MIN,
+        T0 + 240 * MIN,
+    ];
+    let ids = ["s-1", "s-2", "s-3", "h-1", "h-2"];
+    let units: Vec<(&str, u128, Vec<Instalment>)> =
+        ids.iter().map(|i| (*i, PRICE, vec![])).collect();
+    let mut e = Env::new_with(params(false), d, &units);
+    for (i, s) in ["sybil1.testnet", "sybil2.testnet", "sybil3.testnet"]
+        .iter()
+        .enumerate()
+    {
+        e.buy(ids[i], s, 8_500 * USDC); // the 10% minimum each
+    }
+    e.buy("h-1", "honest1.testnet", PRICE);
+    e.buy("h-2", "honest2.testnet", PRICE);
+    e.c.frozen = Some(Freeze {
+        reason: "t".into(),
+        since: U64(e.now),
+        refunds_open: false,
+    });
+    let pid = e.propose(
+        "sybil1.testnet",
+        ProposalKind::StepIn {
+            new_payout_id: acc("attacker.testnet"),
+        },
+    );
+    for s in ["sybil1.testnet", "sybil2.testnet", "sybil3.testnet"] {
+        e.as_(s);
+        e.c.vote(pid, true);
+    }
+    let p = e.c.get_proposal(pid).unwrap();
+    assert_eq!(
+        (p.holders_yes, p.holders_eligible),
+        (3, 5),
+        "the head count is theirs"
+    );
+    assert_eq!(p.status, ProposalStatus::Open, "but not the money");
+    assert!(e.c.payout_redirect.is_none());
+    // a new estate can't sell 1-base-unit tokens
+    let mut p = protective(&params(false));
+    p.min_initial_bps = 999;
+    let msg = init_on("x.plote.near", new_args(p, d)).err().unwrap();
+    assert!(msg.contains("min_initial_bps"), "{msg}");
+    let mut p = protective(&params(false));
+    p.penalty_bps = 299;
+    let msg = init_on("x.plote.near", new_args(p, d)).err().unwrap();
+    assert!(msg.contains("penalty_bps"), "{msg}");
+    // the playground keeps its own values
+    let mut p = params(true);
+    p.min_initial_bps = 0;
+    assert!(init_on("playground.plote.testnet", new_args(p, d)).is_ok());
+}
+
+/// Finding 2c: a pending lien is void once the token changes hands; the new holder's lender isn't bound by it.
+#[test]
+fn r4_pending_lien_void_after_transfer() {
+    let mut e = three_holders();
+    e.as_1y("alice.testnet");
+    e.c.set_lien("a-1a".into(), acc("bank.testnet"), U128(USDC));
+    e.as_1y("alice.testnet");
+    e.c.nft_transfer(acc("dora.testnet"), "a-1a".into(), None, None);
+    assert!(e.c.get_pending_lien("a-1a".into()).is_none());
+    e.as_1y("bank.testnet");
+    panics(
+        "E_LIEN",
+        std::panic::AssertUnwindSafe(|| e.c.accept_lien("a-1a".into())),
+    );
+    assert!(e.unit("a-1a").lien.is_none());
+    // a 1-yocto method: no function-call key
+    e.as_("bank.testnet");
+    panics(
+        "exactly 1 yoctoNEAR",
+        std::panic::AssertUnwindSafe(|| e.c.accept_lien("a-1a".into())),
+    );
+}
+
+/// Finding 3: outlayer_id is pinned to the real OutLayer outside the playground; the playground exists only on
+/// testnet; `mock*` warnings fail; a verdict must say which evidence and bytes it checked.
+#[test]
+fn r4_trust_anchors() {
+    let d = [T0 + 1, T0 + 2, T0 + 3, T0 + 4];
+    let safe = protective(&params(false));
+    let mut a = new_args(safe.clone(), d);
+    a.outlayer_id = acc("outlayer-mock.plote.testnet");
+    let msg = init_on("x.plote.testnet", a).err().unwrap();
+    assert!(msg.contains("outlayer.testnet"), "{msg}");
+    let mut a = new_args(safe.clone(), d);
+    a.outlayer_id = acc("outlayer.near");
+    assert!(init_on("x.near", a).is_ok());
+    let mut a = new_args(safe, d);
+    a.outlayer_id = acc("outlayer.near");
+    assert!(init_on("x.plote.testnet", a).is_err());
+    assert!(init_on("x.plote.near", new_args(params(true), d)).is_err());
+
+    // a mock verifier's verdict never passes
+    let mut e = Env::standard();
+    let ev = e.submit(0, "qs.testnet");
+    let mut v = Env::verdict_json(ev, true, &[], "abc");
+    v["warnings"] = json!(["mock_verifier"]);
+    assert!(!e.resume(ev, &v));
+    let got = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(got.status, EvidenceStatus::Fail);
+    assert!(got
+        .verdict
+        .unwrap()
+        .reasons
+        .contains(&"mock_verifier".to_string()));
+    // a verdict that omits sha256 or evidence_id can't pass (outlayer mode)
+    for field in ["sha256", "evidence_id"] {
+        let ev = e.submit(0, "qs.testnet");
+        let mut v = Env::verdict_json(ev, true, &[], "abc");
+        v.as_object_mut().unwrap().remove(field);
+        assert!(!e.resume(ev, &v), "{field}");
+        let got = e.c.get_evidence(U64(ev)).unwrap();
+        assert_eq!(got.status, EvidenceStatus::Fail);
+        assert!(got
+            .verdict
+            .unwrap()
+            .reasons
+            .contains(&"verdict_unbound".to_string()));
+    }
+    // unknown extra fields and the new ai_model are fine; ai_model is kept in its own map
+    let ev = e.submit(0, "qs.testnet");
+    let mut v = Env::verdict_json(ev, true, &[], "abc");
+    v["ai_model"] = json!("gpt-x");
+    v["some_future_field"] = json!({ "a": 1 });
+    v["warnings"] = json!(["gps_exif_only", "captured_at_mismatch", "ai_model_mismatch"]);
+    assert!(e.resume(ev, &v));
+    assert_eq!(
+        e.c.get_evidence(U64(ev)).unwrap().ai_model.as_deref(),
+        Some("gpt-x")
+    );
+
+    // https mode: submit_verdict must echo the evidence id and the committed hash
+    let mut e = Env::standard();
+    e.c.verify_mode = "https".into();
+    let ev = e.submit(0, "qs.testnet");
+    e.as_("relayer.testnet");
+    let v = verdict_of(Env::verdict_json(ev, true, &[], "abc"));
+    let mut arg = bound(v.clone(), ev);
+    arg.evidence_id = None;
+    panics(
+        "E_VERDICT_MISMATCH",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.submit_verdict(U64(ev), arg);
+        }),
+    );
+    let mut arg = bound(v.clone(), ev);
+    arg.evidence_id = Some(json!(ev + 1));
+    panics(
+        "E_VERDICT_MISMATCH",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.submit_verdict(U64(ev), arg);
+        }),
+    );
+    let mut arg = bound(v.clone(), ev);
+    arg.sha256 = Some("b".repeat(64));
+    panics(
+        "E_VERDICT_MISMATCH",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.submit_verdict(U64(ev), arg);
+        }),
+    );
+    // the relayer's JSON (worker stdout, flattened) deserializes, unknown fields included
+    let arg: VerdictArg = serde_json::from_value(json!({
+        "evidence_id": ev, "pass": true, "reasons": [], "warnings": [], "phash": PHASH, "worker_commit": "abc",
+        "sha256": "A".repeat(64), "ai_model": "m-1", "exif_time": "1793739420000000000", "extra": [1, 2]
+    }))
+    .unwrap();
+    let mut arg = arg;
+    arg.verdict.reasons.clear();
+    assert!(e.c.submit_verdict(U64(ev), arg));
+    assert_eq!(
+        e.c.get_evidence(U64(ev)).unwrap().ai_model.as_deref(),
+        Some("m-1")
+    );
+}
+
+/// Finding 4: `repin_verifier` only from the estate account itself (its own full-access key), 1 yocto, pinned, never
+/// back to the legacy build.
+#[test]
+fn r4_repin_verifier() {
+    let mut e = three_holders(); // sold: set_verifier is closed
+    let v = |c: &str| VerifierSource {
+        repo: "project:plote.testnet/plote-verifier".into(),
+        commit: c.into(),
+        build_target: "wasm32-wasip2".into(),
+    };
+    let hardened = "07cf962632350d40bcdc4318d382af8f31aa49aab264b7b725add86dd415df6b";
+    e.as_1y("dev.testnet");
+    panics(
+        "E_ALREADY_SOLD",
+        std::panic::AssertUnwindSafe(|| e.c.set_verifier(v(hardened))),
+    );
+    panics(
+        "E_NOT_ESTATE",
+        std::panic::AssertUnwindSafe(|| e.c.repin_verifier(v(hardened))),
+    );
+    e.ctx(&estate_id(), NearToken::from_yoctonear(0), vec![]);
+    panics(
+        "exactly 1 yoctoNEAR",
+        std::panic::AssertUnwindSafe(|| e.c.repin_verifier(v(hardened))),
+    );
+    e.ctx(&estate_id(), NearToken::from_yoctonear(1), vec![]);
+    panics(
+        "E_BAD_ARGS",
+        std::panic::AssertUnwindSafe(|| e.c.repin_verifier(v(" "))),
+    );
+    panics(
+        "E_BAD_ARGS",
+        std::panic::AssertUnwindSafe(|| e.c.repin_verifier(v(LEGACY_VERIFIER))),
+    );
+    e.c.repin_verifier(v(hardened));
+    assert!(logs_contain("verifier_changed"));
+    assert_eq!(e.c.get_estate().verifier.commit, hardened);
+}
+
+/// Finding 6: a lien set before a default no longer blocks the default sale: the lender is paid first from the
+/// proceeds (up to its cap), the seller gets the rest and the buyer takes the token free of the lien.
+#[test]
+fn r4_lien_before_default_paid_first() {
+    let d = [
+        T0 + 600 * MIN,
+        T0 + 700 * MIN,
+        T0 + 800 * MIN,
+        T0 + 900 * MIN,
+    ];
+    let plan = vec![Instalment {
+        due_at: U64(T0 + 10 * MIN),
+        cumulative: U128(30_000 * USDC),
+    }];
+    let mut e = Env::new_with(params(false), d, &[("a-4b", PRICE, plan)]);
+    e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    e.as_1y("alice.testnet");
+    e.c.set_lien("a-4b".into(), acc("bank.testnet"), U128(6_000 * USDC));
+    e.as_1y("bank.testnet");
+    e.c.accept_lien("a-4b".into());
+    e.advance(13 * MIN);
+    e.as_("anyone.testnet");
+    e.c.declare_default("a-4b".into());
+    let ask = e.unit("a-4b").listing.unwrap().ask.0;
+    assert_eq!(ask, 10_000 * USDC);
+    buy_listing(&mut e, "a-4b", "bob.testnet", ask);
+    let pays = ft_transfers();
+    let penalty = ask * 500 / BPS;
+    assert!(
+        pays.contains(&("ft_transfer".into(), acc("bank.testnet"), 6_000 * USDC)),
+        "{pays:?}"
+    );
+    assert!(pays.contains(&(
+        "ft_transfer".into(),
+        acc("alice.testnet"),
+        ask - penalty - 6_000 * USDC
+    )));
+    assert!(pays.contains(&("ft_transfer".into(), acc("payout.testnet"), penalty)));
+    let u = e.unit("a-4b");
+    assert_eq!(u.holder, Some(acc("bob.testnet")));
+    assert!(u.lien.is_none());
+    assert_eq!(u.status, UnitStatus::Allocated);
+}
+
+/// Finding 7: unbooked USDC on a unit can be booked as unattributed by the developer / recovery account, only after a
+/// 7-day request → finalize delay, only up to the surplus seen at both ends, never touching booked funds.
+#[test]
+fn r4_unbooked_surplus_recovery() {
+    let mut e = three_holders();
+    e.land("a-1a", 500 * USDC); // a plain transfer nobody reported
+    e.as_("mallory.testnet");
+    panics(
+        "E_NOT_DEVELOPER",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.request_surplus_booking("a-1a".into());
+        }),
+    );
+    let expected = U128(10_000 * USDC);
+    e.as_("plote.testnet"); // recovery_id
+    let _ = e.c.request_surplus_booking("a-1a".into());
+    e.cb(vec![balance_bytes(e.bal["a-1a"])]);
+    assert_eq!(
+        e.c.on_surplus_request("a-1a".into(), expected).0,
+        500 * USDC
+    );
+    let req = e.c.get_surplus_request("a-1a".into()).unwrap();
+    assert_eq!(req.amount.0, 500 * USDC);
+    e.land("a-1a", 300 * USDC); // more arrives after the request: not part of it
+    e.as_("dev.testnet");
+    panics(
+        "E_TIMELOCK",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.finalize_surplus_booking("a-1a".into());
+        }),
+    );
+    e.advance(SURPLUS_DELAY_NS);
+    e.as_("dev.testnet");
+    let _ = e.c.finalize_surplus_booking("a-1a".into());
+    let b = e.bal["a-1a"];
+    e.cb(vec![balance_bytes(b)]);
+    assert!(matches!(
+        e.c.on_report_first("a-1a".into(), U128(500 * USDC), expected, Some(true)),
+        PromiseOrValue::Promise(_)
+    ));
+    e.cb(vec![balance_bytes(b)]);
+    let booked = e.c.on_report_second(
+        "a-1a".into(),
+        U128(500 * USDC),
+        expected,
+        U128(b),
+        Some(true),
+    );
+    assert_eq!(booked.0, 500 * USDC);
+    let u = e.unit("a-1a");
+    assert_eq!((u.paid.0, u.unattributed.0), (10_000 * USDC, 500 * USDC));
+    assert!(e.c.get_surplus_request("a-1a".into()).is_none());
+    // a unit with nothing above its books can't be requested
+    e.as_("dev.testnet");
+    let _ = e.c.request_surplus_booking("a-4b".into());
+    e.cb(vec![balance_bytes(e.bal["a-4b"])]);
+    panics(
+        "E_NOTHING_TO_SWEEP",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.on_surplus_request("a-4b".into(), U128(10_000 * USDC));
+        }),
+    );
+}
+
+/// Finding 8: an ExtendDeadline is re-validated when it executes (concurrent extensions, the clock) and can never
+/// shorten a deadline.
+#[test]
+fn r4_extend_deadline_revalidated_at_execution() {
+    let mut e = three_holders();
+    let m0 = e.c.milestones[0].deadline;
+    // shortening is refused at propose
+    e.as_dep("dev.testnet", PROPOSAL_DEPOSIT);
+    panics(
+        "E_DEADLINES",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.propose(ProposalKind::ExtendDeadline {
+                milestone: 0,
+                new_deadline: U64(m0 - MIN),
+            });
+        }),
+    );
+    let p1 = e.propose(
+        "alice.testnet",
+        ProposalKind::ExtendDeadline {
+            milestone: 0,
+            new_deadline: U64(m0 + 50 * MIN),
+        },
+    );
+    let p2 = e.propose(
+        "bob.testnet",
+        ProposalKind::ExtendDeadline {
+            milestone: 0,
+            new_deadline: U64(m0 + 20 * MIN),
+        },
+    );
+    for who in ["alice.testnet", "bob.testnet"] {
+        e.as_(who);
+        e.c.vote(p1, true);
+    }
+    assert_eq!(e.c.milestones[0].deadline, m0 + 50 * MIN);
+    // p2 passes but would now shorten the deadline: rejected, deadline unchanged
+    for who in ["alice.testnet", "bob.testnet"] {
+        e.as_(who);
+        e.c.vote(p2, true);
+    }
+    assert_eq!(
+        e.c.get_proposal(p2).unwrap().status,
+        ProposalStatus::Rejected
+    );
+    assert_eq!(e.c.milestones[0].deadline, m0 + 50 * MIN);
+    // a new deadline the clock overtook before execution is rejected too
+    let m1 = e.c.milestones[1].deadline;
+    e.now = m1 + MIN;
+    let p3 = e.propose(
+        "carol.testnet",
+        ProposalKind::ExtendDeadline {
+            milestone: 1,
+            new_deadline: U64(m1 + 3 * MIN),
+        },
+    );
+    e.advance(3 * MIN);
+    for who in ["alice.testnet", "carol.testnet"] {
+        e.as_(who);
+        e.c.vote(p3, true);
+    }
+    assert_eq!(
+        e.c.get_proposal(p3).unwrap().status,
+        ProposalStatus::Rejected
+    );
+    assert_eq!(e.c.milestones[1].deadline, m1);
+}
+
+fn playground() -> Env {
+    let d = [
+        T0 + 60 * MIN,
+        T0 + 120 * MIN,
+        T0 + 180 * MIN,
+        T0 + 240 * MIN,
+    ];
+    Env::new_with(params(true), d, &[("p-01", 1_000 * USDC, vec![])])
+}
+
+/// Finding 9: playground evidence is rate-limited per account (the surveyor exempt), and `playground_reset` can't be
+/// used to wipe someone else's run.
+#[test]
+fn r4_playground_rate_limit_and_reset_rules() {
+    let mut e = playground();
+    for _ in 0..PLAYGROUND_SUBMITS_PER_HOUR {
+        let ev = e.submit(0, "judge.testnet");
+        e.verdict(ev, false, &["exif_stale"]);
+    }
+    e.as_("judge.testnet");
+    e.c.open_capture(0);
+    panics(
+        "E_RATE_LIMIT",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.submit_evidence(0, "https://x/1.jpg".into(), "a".repeat(64), U64(0), None);
+        }),
+    );
+    // the surveyor isn't limited; an hour later the judge may submit again
+    let ev = e.submit(0, "qs.testnet");
+    e.verdict(ev, false, &["exif_stale"]);
+    e.advance(ONE_HOUR_NS);
+    let ev = e.submit(0, "judge.testnet");
+    // a reset by another judge while a check runs, or while someone's capture is live, is refused
+    e.as_("judge2.testnet");
+    panics(
+        "E_CHECK_PENDING",
+        std::panic::AssertUnwindSafe(|| e.c.playground_reset()),
+    );
+    e.verdict(ev, false, &["exif_stale"]);
+    e.as_("judge.testnet");
+    e.c.open_capture(0);
+    e.as_("judge2.testnet");
+    panics(
+        "E_CAPTURE_ACTIVE",
+        std::panic::AssertUnwindSafe(|| e.c.playground_reset()),
+    );
+    e.advance(31 * MIN);
+    e.as_("judge2.testnet");
+    e.c.playground_reset();
+    e.as_("judge2.testnet");
+    panics(
+        "E_RATE_LIMIT",
+        std::panic::AssertUnwindSafe(|| e.c.playground_reset()),
+    );
+    // the developer may always reset
+    e.as_("dev.testnet");
+    e.c.playground_reset();
+}
+
+/// Finding 10: a check that fails only because the AI / worker was down is an Error: the milestone reopens and the
+/// budget gets its 0.05 NEAR back (and the playground slot). A real failure keeps costing.
+#[test]
+fn r4_infra_failure_refunds_budget() {
+    let mut e = Env::standard();
+    let start = e.c.verification_budget;
+    let ev = e.submit(0, "qs.testnet");
+    assert_eq!(
+        e.c.verification_budget,
+        start - VERIFY_DEPOSIT.as_yoctonear()
+    );
+    assert!(!e.verdict(ev, false, &["ai_unavailable"]));
+    let got = e.c.get_evidence(U64(ev)).unwrap();
+    assert_eq!(got.status, EvidenceStatus::Error);
+    assert!(got.verdict.is_some(), "kept for the record");
+    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Open);
+    assert_eq!(e.c.verification_budget, start);
+    // demo mode: ai_unavailable is a warning and the challenge can't be read
+    let ev = e.submit(0, "qs.testnet");
+    let mut v = Env::verdict_json(ev, false, &["challenge_unverified"], "abc");
+    v["warnings"] = json!(["ai_unavailable"]);
+    assert!(!e.resume(ev, &v));
+    assert_eq!(
+        e.c.get_evidence(U64(ev)).unwrap().status,
+        EvidenceStatus::Error
+    );
+    assert_eq!(e.c.verification_budget, start);
+    // the OutLayer call itself failed: the deposit came back, so does the budget
+    let ev = e.submit(0, "qs.testnet");
+    e.cb(vec![PromiseResult::Failed]);
+    assert!(!e.c.on_verdict(ev));
+    assert_eq!(e.c.verification_budget, start);
+    // a real failure (or the challenge unread for another reason) is a Fail and keeps its cost
+    let ev = e.submit(0, "qs.testnet");
+    assert!(!e.verdict(ev, false, &["challenge_unverified"]));
+    assert_eq!(
+        e.c.get_evidence(U64(ev)).unwrap().status,
+        EvidenceStatus::Fail
+    );
+    let ev = e.submit(0, "qs.testnet");
+    assert!(!e.verdict(ev, false, &["ai_unavailable", "exif_stale"]));
+    assert_eq!(
+        e.c.verification_budget,
+        start - 2 * VERIFY_DEPOSIT.as_yoctonear()
+    );
+    // the playground slot comes back too
+    let mut p = playground();
+    for _ in 0..PLAYGROUND_SUBMITS_PER_HOUR + 2 {
+        let ev = p.submit(0, "judge.testnet");
+        p.verdict(ev, false, &["ai_unavailable"]);
+    }
+}
+
+/// Finding 11: a state version marker outside the root state, and an in-place `migrate`.
+#[test]
+fn r4_state_version_and_migrate() {
+    let mut e = Env::standard();
+    assert_eq!(e.c.state_version(), crate::ext::STATE_VERSION);
+    // an estate deployed before the marker reads as version 1
+    crate::ext::del(crate::ext::K_VERSION);
+    crate::ext::del(crate::ext::K_PROPOSAL_HORIZON);
+    assert_eq!(e.c.state_version(), 1);
+    // (`#[private]`: the wasm entry point refuses any caller but the estate; called here as the estate)
+    e.cb(vec![]);
+    assert_eq!(e.c.migrate(), 2);
+    assert_eq!(e.c.state_version(), 2);
+    assert_eq!(e.c.migrate(), 2, "idempotent");
+}
+
+/// Finding 12: while an nft_transfer_call is pending, the receiver can't refund, withdraw excess, hand over, list,
+/// vote or accept a lien with the token; the resolve callback lifts the block.
+#[test]
+fn r4_nft_transfer_call_blocks_side_effects() {
+    let mut e = three_holders();
+    e.c.frozen = Some(Freeze {
+        reason: "t".into(),
+        since: U64(e.now),
+        refunds_open: true,
+    });
+    let pid = e.propose(
+        "bob.testnet",
+        ProposalKind::ReplaceSurveyor {
+            account: acc("qs2.testnet"),
+        },
+    );
+    e.as_1y("alice.testnet");
+    let _ = e.c.nft_transfer_call(
+        acc("market.testnet"),
+        "a-1a".into(),
+        None,
+        None,
+        String::new(),
+    );
+    e.as_1y("market.testnet");
+    panics(
+        "E_NFT_PENDING",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.refund("a-1a".into());
+        }),
+    );
+    panics(
+        "E_NFT_PENDING",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.withdraw_excess("a-1a".into());
+        }),
+    );
+    panics(
+        "E_NFT_PENDING",
+        std::panic::AssertUnwindSafe(|| e.c.handover("a-1a".into())),
+    );
+    panics(
+        "E_NFT_PENDING",
+        std::panic::AssertUnwindSafe(|| e.c.list_for_sale("a-1a".into(), U128(1))),
+    );
+    panics(
+        "E_NFT_PENDING",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.nft_transfer(acc("x.testnet"), "a-1a".into(), None, None)
+        }),
+    );
+    e.as_("market.testnet");
+    panics(
+        "E_NFT_PENDING",
+        std::panic::AssertUnwindSafe(|| e.c.vote(pid, true)),
+    );
+    e.as_("viewer.testnet");
+    assert_eq!(e.c.vote_weight_available(pid, acc("market.testnet")), 0);
+    // the receiver returns it; the block lifts and alice can act again
+    e.cb(vec![PromiseResult::Successful(b"true".to_vec())]);
+    assert!(!e.c.nft_resolve_transfer(
+        acc("alice.testnet"),
+        acc("market.testnet"),
+        "a-1a".into(),
+        None,
+        None
+    ));
+    assert_eq!(e.unit("a-1a").holder, Some(acc("alice.testnet")));
+    e.as_("alice.testnet");
+    e.c.vote(pid, true);
+    e.as_1y("alice.testnet");
+    let _ = e.c.refund("a-1a".into());
+    // a resolve that never runs can't lock a token for good
+    e.finish_out(
+        "a-1a",
+        OutKind::Refund,
+        "alice.testnet",
+        10_000 * USDC,
+        true,
+    );
+    e.as_1y("bob.testnet");
+    let _ = e.c.nft_transfer_call(
+        acc("market.testnet"),
+        "a-4b".into(),
+        None,
+        None,
+        String::new(),
+    );
+    e.advance(NFT_PENDING_MAX_NS);
+    e.as_1y("market.testnet");
+    let _ = e.c.refund("a-4b".into());
+}
+
+/// Finding 13: add_units returns what was attached above 0.035 NEAR per unit.
+#[test]
+fn r4_add_units_refunds_excess_deposit() {
+    let mut e = Env::standard();
+    e.as_dep("dev.testnet", NearToken::from_near(1));
+    e.c.add_units(vec![UnitInput {
+        id: "z-9".into(),
+        label: "Z".into(),
+        price: U128(PRICE),
+        plan: vec![],
+    }]);
+    let refund = NearToken::from_near(1).saturating_sub(ADD_UNIT_DEPOSIT);
+    let found = get_created_receipts().iter().any(|r| {
+        r.receiver_id == acc("dev.testnet")
+            && r.actions
+                .iter()
+                .any(|a| matches!(a, MockAction::Transfer { deposit, .. } if *deposit == refund))
+    });
+    assert!(found, "the excess goes back to the developer");
+}
+
+/// Finding 14: an ft_transfer_call whose `on_unit_deposit` lands after a report's second read (e.g. a retried report
+/// that booked that very money) is accepted but not booked twice; the reporter books it later from the balance.
+#[test]
+fn r4_on_unit_deposit_after_report_second_read() {
+    let mut e = three_holders();
+    // a wallet payment is credited by USDC, but its on_unit_deposit hasn't run yet...
+    e.land("a-1a", 2_000 * USDC);
+    // ...when a (retried) report attests 2 000 and both reads see it
+    assert_eq!(e.report("a-1a", 2_000 * USDC), 2_000 * USDC);
+    // now on_unit_deposit arrives: booking it again would put the books 2 000 above the balance
+    e.ctx(&unit_acc("a-1a"), NearToken::from_yoctonear(0), vec![]);
+    let unused =
+        e.c.on_unit_deposit(
+            "a-1a".into(),
+            acc("alice.testnet"),
+            U128(2_000 * USDC),
+            String::new(),
+        )
+        .0;
+    assert_eq!(unused, 0);
+    assert!(logs_contain("deposit_deferred"));
+    assert_eq!(e.unit("a-1a").paid.0, 12_000 * USDC);
+    e.check_conservation();
+    // a deposit within what the last report saw and left unbooked is booked normally
+    e.land("a-1a", 700 * USDC); // seen by the next report, not attested
+    e.land("a-1a", 100 * USDC);
+    assert_eq!(e.report("a-1a", 100 * USDC), 100 * USDC);
+    // (the 700 is from a pending ft_transfer_call whose on_unit_deposit lands now)
+    e.ctx(&unit_acc("a-1a"), NearToken::from_yoctonear(0), vec![]);
+    e.c.on_unit_deposit(
+        "a-1a".into(),
+        acc("alice.testnet"),
+        U128(700 * USDC),
+        String::new(),
+    );
+    assert!(!logs_contain("deposit_deferred"));
+    assert_eq!(e.unit("a-1a").paid.0, 12_800 * USDC);
+    e.check_conservation();
+    // after the settle window deposits book as usual
+    e.advance(REPORT_SETTLE_NS);
+    assert_eq!(e.wallet_pay("a-1a", "alice.testnet", 50 * USDC), 0);
+    assert_eq!(e.unit("a-1a").paid.0, 12_850 * USDC);
+    e.check_conservation();
+}
+
+/// Finding 15: withdraw_owed with nothing owed has its own code.
+#[test]
+fn r4_withdraw_owed_nothing_owed() {
+    let mut e = Env::standard();
+    e.as_("nobody.testnet");
+    panics(
+        "E_NOTHING_OWED",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.withdraw_owed();
+        }),
+    );
+}
+
+/// Finding 16: list_evidence (newest first, milestone filter, paging) and nft_metadata.
+#[test]
+fn r4_list_evidence_and_nft_metadata() {
+    let mut e = Env::standard();
+    let a = e.submit(0, "qs.testnet");
+    e.verdict(a, false, &["exif_stale"]);
+    let b = e.submit(0, "qs.testnet");
+    e.verdict(b, true, &[]);
+    e.as_("qs.testnet");
+    e.c.qs_sign(0);
+    let c = e.submit(1, "qs.testnet");
+    let all = e.c.list_evidence(None, None, None);
+    assert_eq!(
+        all.iter().map(|v| v.id.0).collect::<Vec<_>>(),
+        vec![c, b, a]
+    );
+    let m0 = e.c.list_evidence(Some(0), None, None);
+    assert_eq!(m0.iter().map(|v| v.id.0).collect::<Vec<_>>(), vec![b, a]);
+    let page = e.c.list_evidence(None, Some(1), Some(1));
+    assert_eq!(page.iter().map(|v| v.id.0).collect::<Vec<_>>(), vec![b]);
+    assert_eq!(page[0].status, EvidenceStatus::Pass);
+    assert!(e.c.list_evidence(Some(3), None, None).is_empty());
+    let md = e.c.nft_metadata();
+    assert_eq!(md.spec, NFT_METADATA_SPEC);
+    assert_eq!(md.name, "Harmattan Court allocations");
+    assert_eq!(md.symbol, "PLOTE");
+}
+
+/// Layout guard: the borsh layout of every type stored in state is what the live estates (affdf57) wrote. These
+/// mirrors are verbatim copies of the deployed definitions; bytes written by the current types must read back with
+/// them and re-serialize identically (and vice versa). Changing a stored type breaks this test, as it should.
+mod layout {
+    use super::*;
+    use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+
+    #[derive(BorshSerialize, BorshDeserialize)]
+    #[borsh(crate = "near_sdk::borsh")]
+    struct OldUnit {
+        id: String,
+        account: AccountId,
+        label: String,
+        price: u128,
+        status: u8,
+        ready: bool,
+        holder: Option<AccountId>,
+        allocated_at: Option<u64>,
+        deposit_owner: Option<AccountId>,
+        reservation: Option<(AccountId, u64)>,
+        last_reservation: Option<(AccountId, u64)>,
+        plan: Vec<(u64, u128)>,
+        paid: u128,
+        unattributed: u128,
+        released: u128,
+        refunded_out: u128,
+        excess_out: u128,
+        in_flight: u128,
+        listing: Option<(u128, u8, u64)>,
+        beneficiary: Option<AccountId>,
+        guardians: Vec<AccountId>,
+        recovery: Option<(AccountId, Vec<AccountId>, Option<u64>)>,
+        lien: Option<(AccountId, u128)>,
+        approvals: HashMap<AccountId, u64>,
+        next_approval_id: u64,
+    }
+
+    #[derive(BorshSerialize, BorshDeserialize)]
+    #[borsh(crate = "near_sdk::borsh")]
+    struct OldMilestone {
+        key: String,
+        title: String,
+        bps: u16,
+        deadline: u64,
+        status: u8,
+        evidence_ids: Vec<u64>,
+        verified_at: Option<u64>,
+        signed_at: Option<u64>,
+        veto_until: Option<u64>,
+    }
+
+    #[derive(BorshSerialize, BorshDeserialize)]
+    #[borsh(crate = "near_sdk::borsh")]
+    struct OldProposal {
+        id: u64,
+        kind_tag: u8,
+        kind_account: AccountId, // ReplaceSurveyor { account }
+        proposer: AccountId,
+        created_at: u64,
+        expires_at: u64,
+        electorate: u32,
+        yes: u32,
+        no: u32,
+        voted: Vec<String>,
+        status: u8,
+    }
+
+    fn round_trip<
+        New: BorshSerialize + BorshDeserialize + PartialEq + std::fmt::Debug,
+        Old: BorshSerialize + BorshDeserialize,
+    >(
+        v: &New,
+    ) {
+        let bytes = borsh::to_vec(v).unwrap();
+        let old: Old = borsh::from_slice(&bytes).expect("old layout reads new bytes");
+        let again = borsh::to_vec(&old).unwrap();
+        assert_eq!(bytes, again, "byte-identical");
+        let back: New = borsh::from_slice(&again).unwrap();
+        assert_eq!(&back, v);
+    }
+
+    #[test]
+    fn r4_stored_layout_unchanged() {
+        let mut e = three_holders();
+        e.as_1y("alice.testnet");
+        e.c.set_guardians("a-1a".into(), vec![acc("g1.testnet")]);
+        e.as_1y("alice.testnet");
+        e.c.set_lien("a-1a".into(), acc("bank.testnet"), U128(5));
+        e.as_1y("bank.testnet");
+        e.c.accept_lien("a-1a".into());
+        let mut u = e.c.unit("a-1a");
+        u.listing = Some(Listing {
+            ask: U128(7),
+            kind: ListingKind::Default,
+            since: U64(9),
+        });
+        u.reservation = Some(Reservation {
+            by: acc("r.testnet"),
+            expires_at: U64(3),
+        });
+        u.recovery = Some(Recovery {
+            new_owner: acc("n.testnet"),
+            approvals: vec![acc("g1.testnet")],
+            ready_at: Some(U64(1)),
+        });
+        u.approvals.insert(acc("ap.testnet"), 4);
+        u.plan = vec![Instalment {
+            due_at: U64(1),
+            cumulative: U128(2),
+        }];
+        u.status = UnitStatus::HandedOver;
+        round_trip::<Unit, OldUnit>(&u);
+        e.approve_milestone(0);
+        round_trip::<Milestone, OldMilestone>(&e.c.milestones[0]);
+        let pid = e.propose(
+            "bob.testnet",
+            ProposalKind::ReplaceSurveyor {
+                account: acc("qs2.testnet"),
+            },
+        );
+        let p = e.c.proposals.get(&pid.0).unwrap().clone();
+        round_trip::<Proposal, OldProposal>(&p);
+        // enum tags (appending a variant at the end is the only allowed change)
+        let tag = |b: Vec<u8>| b[0];
+        assert_eq!(tag(borsh::to_vec(&UnitStatus::HandedOver).unwrap()), 4);
+        assert_eq!(tag(borsh::to_vec(&OutKind::OwedEscrow).unwrap()), 5);
+        assert_eq!(tag(borsh::to_vec(&MilestoneStatus::Missed).unwrap()), 5);
+        assert_eq!(tag(borsh::to_vec(&EvidenceStatus::Error).unwrap()), 3);
+        assert_eq!(tag(borsh::to_vec(&ProposalStatus::Expired).unwrap()), 3);
+        assert_eq!(
+            tag(borsh::to_vec(&ProposalKind::StepIn {
+                new_payout_id: acc("a.testnet")
+            })
+            .unwrap()),
+            5
+        );
+        assert_eq!(tag(borsh::to_vec(&ListingKind::Default).unwrap()), 1);
+        // the root struct: the same 37 fields in the same order (re-serializing the state loads it back unchanged)
+        let root = borsh::to_vec(&e.c).unwrap();
+        let back: Estate = borsh::from_slice(&root).unwrap();
+        assert_eq!(borsh::to_vec(&back).unwrap(), root);
+        // new state never lives under the root's keys
+        for k in [
+            crate::ext::K_VERSION,
+            crate::ext::P_WEIGHT_HISTORY,
+            crate::ext::P_PENDING_LIEN,
+        ] {
+            assert_eq!(k[0], b'z');
+        }
+    }
 }

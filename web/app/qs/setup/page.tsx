@@ -9,7 +9,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
   return (
     <Page narrow>
       <PageHeader eyebrow="SURVEYOR · PHONE KEY" title="Install your phone key">
-        Your phone should never hold a key that can move NEAR. This key can only call <span className="mono">open_capture</span>, <span className="mono">submit_evidence</span> and <span className="mono">qs_sign</span> on one estate, with a 0.25 NEAR gas allowance. The relayer pays gas.
+        Your phone should never hold a key that can move NEAR. This key can only call <span className="mono">open_capture</span>, <span className="mono">submit_evidence</span> and <span className="mono">qs_sign</span> on one estate, with a 0.25 NEAR gas allowance. Plote&apos;s relayer pays the gas for these calls.
       </PageHeader>
       <SetupClient account={typeof sp.account === "string" ? sp.account : ""} pk={typeof sp.pk === "string" ? sp.pk : ""} estate={typeof sp.estate === "string" ? sp.estate : ""} />
     </Page>

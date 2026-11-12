@@ -43,7 +43,7 @@ export default function HowItWorks() {
             <Box tone="accent" title="plote-verifier (TEE)" sub="hash · EXIF · GPS · pHash · challenge code" />
             <Box title="NEAR AI Cloud" sub="vision model: which stage is shown?" />
             <Box title="1Click / NEAR Intents" sub="any-chain USDC → the unit's account" />
-            <Box title="Supabase + relayer" sub="photo storage, event cache, gas for surveyor calls" />
+            <Box title="Supabase + relayer" sub="photo storage, event cache, gas for surveyor calls, 1Click deposit reports, HTTPS-mode verdict relay" />
           </div>
         </div>
       </section>

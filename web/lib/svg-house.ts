@@ -77,9 +77,9 @@ export function dollars(baseUnits: string): string {
   return `$${out}`;
 }
 
-/** How many of the 4 house parts are lit for `approved` of `total` milestones (svg.rs `stage`). `status` is ignored
- *  (kept for callers of the old signature): the contract draws progress only. */
-export function litParts(approved: number, total: number, _status?: string): number {
+/** How many of the 4 house parts are lit for `approved` of `total` milestones (svg.rs `stage`). The contract draws
+ *  progress only, whatever the unit's status. */
+export function litParts(approved: number, total: number): number {
   const a = u32(approved);
   const t = u32(total);
   if (t === 0) return 0;

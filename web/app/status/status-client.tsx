@@ -79,7 +79,7 @@ export function StatusClient() {
     rows.push(
       x.fullKeys === 0
         ? { name: `Code locked · ${x.name}`, level: "green", detail: `${x.e} has no full-access keys: nobody, including its deployer, can change its code.` }
-        : { name: `Code locked · ${x.name}`, level: "amber", detail: `${x.e} still has ${x.fullKeys} full-access key${x.fullKeys > 1 ? "s" : ""}, so its deployer can upgrade the code. Lock it (scripts/delete-estate-keys.ts) before it holds real money.` },
+        : { name: `Code upgradable · ${x.name}`, level: "amber", detail: `${x.e} still has ${x.fullKeys} full-access key${x.fullKeys > 1 ? "s" : ""}, so Plote can still upgrade its code. Testnet estates keep these keys for audit fixes; they will be deleted (scripts/delete-estate-keys.ts) before any estate holds real money.` },
     );
   });
   const lastVerdict = estates.data?.map((x) => (x.ok ? x.last : null)).filter(Boolean).sort().pop() ?? null;

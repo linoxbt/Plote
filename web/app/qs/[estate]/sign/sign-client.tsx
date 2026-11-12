@@ -49,6 +49,8 @@ export function SignClient({ slug }: { slug: string }) {
         <ul className="space-y-4">
           {verified.map((m) => {
             const ev = (evs.data ?? []).find((x) => x.milestone === m.index && x.status === "Pass");
+            const prev = ms.data?.find((x) => x.index === m.index - 1);
+            const outOfOrder = !!prev && prev.status !== "Approved";
             return (
               <li key={m.index}>
                 <BracketCard tone="orange" className="space-y-4">
@@ -64,7 +66,8 @@ export function SignClient({ slug }: { slug: string }) {
                     <input type="checkbox" className="h-5 w-5 accent-orange" checked={!!checked[m.index]} onChange={(x) => setChecked((c) => ({ ...c, [m.index]: x.target.checked }))} />
                     I inspected this site in person and the photo shows this stage.
                   </label>
-                  <Button variant="primary" className="min-h-14 w-full" disabled={!checked[m.index] || !allowed || signer.locked} onClick={async () => {
+                  {outOfOrder ? <p className="text-sm text-amber">{prev!.title} must be approved first: milestones are signed in order.</p> : null}
+                  <Button variant="primary" className="min-h-14 w-full" disabled={!checked[m.index] || !allowed || signer.locked || outOfOrder} onClick={async () => {
                     const r = await run(`Sign ${m.title}`, () => signer.call(E.qsSign(account, m.index)), { success: "Signed. The holder veto window has started." });
                     if (r) await Promise.all([qc.invalidateQueries({ queryKey: ["milestones", account] }), qc.invalidateQueries({ queryKey: ["estate", account] }), qc.invalidateQueries({ queryKey: ["units", account] })]);
                   }}><PenLine className="h-5 w-5" aria-hidden /> Sign</Button>

@@ -383,7 +383,9 @@ impl Estate {
         // Event `deposit_deferred`. A deposit within `spare` is booked and uses that much of it up.
         let lr_key = crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes());
         let last_report: Option<(u64, u128)> = crate::ext::get(&lr_key);
-        if let Some((t, spare)) = last_report.filter(|(t, _)| now < t.saturating_add(REPORT_SETTLE_NS)) {
+        if let Some((t, spare)) =
+            last_report.filter(|(t, _)| now < t.saturating_add(REPORT_SETTLE_NS))
+        {
             if amount.0 <= spare {
                 crate::ext::set(&lr_key, &(t, spare - amount.0));
                 self.credit(&mut unit, amount.0, now, "ft_transfer_call");
@@ -420,7 +422,12 @@ impl Estate {
     pub fn request_surplus_booking(&mut self, unit_id: String) -> Promise {
         self.assert_surplus_role();
         let unit = self.unit(&unit_id);
-        ensure!(unit.ready, "E_UNIT_NOT_FOUND", "unit {} is still being created", unit_id);
+        ensure!(
+            unit.ready,
+            "E_UNIT_NOT_FOUND",
+            "unit {} is still being created",
+            unit_id
+        );
         ensure!(
             unit.in_flight == 0,
             "E_IN_FLIGHT",
@@ -439,7 +446,10 @@ impl Estate {
     pub fn on_surplus_request(&mut self, unit_id: String, expected: U128) -> U128 {
         let _ = self.unchanged_unit(&unit_id, expected.0);
         let balance = read_balance_result().unwrap_or_else(|| {
-            errors::fail("E_BALANCE_PENDING", "the balance read failed; request again")
+            errors::fail(
+                "E_BALANCE_PENDING",
+                "the balance read failed; request again",
+            )
         });
         let amount = balance.saturating_sub(expected.0);
         ensure!(
@@ -465,11 +475,9 @@ impl Estate {
     pub fn finalize_surplus_booking(&mut self, unit_id: String) -> Promise {
         self.assert_surplus_role();
         let unit = self.unit(&unit_id);
-        let req: crate::ext::SurplusRequest = crate::ext::get(&crate::ext::key(
-            crate::ext::P_SURPLUS,
-            unit_id.as_bytes(),
-        ))
-        .unwrap_or_else(|| errors::fail("E_BAD_ARGS", "no surplus booking was requested"));
+        let req: crate::ext::SurplusRequest =
+            crate::ext::get(&crate::ext::key(crate::ext::P_SURPLUS, unit_id.as_bytes()))
+                .unwrap_or_else(|| errors::fail("E_BAD_ARGS", "no surplus booking was requested"));
         let ready_at = req.at.saturating_add(SURPLUS_DELAY_NS);
         ensure!(
             Self::now() >= ready_at,
@@ -1024,7 +1032,10 @@ impl Estate {
         unit.lien = None;
         unit.approvals.clear();
         self.clear_weight_history(&unit.id);
-        crate::ext::del(&crate::ext::key(crate::ext::P_PENDING_LIEN, unit.id.as_bytes()));
+        crate::ext::del(&crate::ext::key(
+            crate::ext::P_PENDING_LIEN,
+            unit.id.as_bytes(),
+        ));
     }
 }
 

@@ -460,7 +460,12 @@ impl Estate {
 
     /// An `ExtendDeadline` to `new_deadline` for milestone `i`: in the future, later than its current deadline (an
     /// extension never shortens), and strictly between its neighbours' deadlines.
-    pub(crate) fn extension_valid(&self, i: usize, new_deadline: u64, now: u64) -> Result<(), String> {
+    pub(crate) fn extension_valid(
+        &self,
+        i: usize,
+        new_deadline: u64,
+        now: u64,
+    ) -> Result<(), String> {
         if i >= self.milestones.len() {
             return Err("no such milestone".into());
         }

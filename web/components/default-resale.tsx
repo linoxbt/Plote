@@ -73,7 +73,7 @@ export function DeclareDefaultButton({ estate, e, u, size = "md" }: { estate: st
         );
         if (!ok) return;
         const r = await run(`Declare default on ${unitDisplay(u.id)}`, () => callNoPopup(accountId, E.declareDefault(estate, u.id)), { success: "Declared. The unit is now listed for resale." });
-        if (r) qc.invalidateQueries();
+        if (r) await Promise.all([qc.invalidateQueries({ queryKey: ["unit", estate, u.id] }), qc.invalidateQueries({ queryKey: ["units", estate] })]);
       }}
     >
       Declare default

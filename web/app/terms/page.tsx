@@ -19,7 +19,7 @@ export default function TermsPage() {
           <p>
             Plote is open-source software: a web app and a set of smart contracts on the NEAR blockchain. An estate contract gives each off-plan unit its own
             on-chain account, holds payments there, and releases them to the developer only when the contract&apos;s published rules are met. Plote&apos;s
-            operators run the website, a gas relayer and a database of photo uploads. They do not hold buyers&apos; money and cannot move it.
+            operators run the website, a relayer (it pays gas for surveyor calls, reports cross-chain deposits to the estate and, on HTTPS-mode estates, relays photo verdicts) and a database of photo uploads. They do not hold buyers&apos; money and cannot move it out of a unit. On testnet they can still upgrade the estate contracts.
           </p>
         </section>
         <section>

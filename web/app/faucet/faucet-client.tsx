@@ -25,7 +25,7 @@ export function FaucetClient() {
         <p className="text-sm text-muted">{reg.data === false ? "You're not registered on the token yet; the first mint registers you (0.00125 NEAR storage)." : reg.data ? "Registered on the token." : "Checking registration…"}</p>
         <Button variant="primary" onClick={async () => {
           const r = await run("Mint 5,000 test USDC", (): Promise<unknown> => (reg.data === false ? sendTxs([usdc.storageDeposit(accountId!), usdc.mint(FAUCET_AMOUNT, accountId!)]) : sendTx(usdc.mint(FAUCET_AMOUNT, accountId!))), { success: "5,000 test USDC is in your wallet." });
-          if (r) qc.invalidateQueries();
+          if (r) await Promise.all([qc.invalidateQueries({ queryKey: ["usdc-bal", accountId] }), qc.invalidateQueries({ queryKey: ["usdc-reg", accountId] })]);
         }}><Coins className="h-4 w-4" aria-hidden /> Get 5,000 test USDC</Button>
         <LinkButton href="/estates/playground">Buy a Playground unit →</LinkButton>
       </BracketCard>

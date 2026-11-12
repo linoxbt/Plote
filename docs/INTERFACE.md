@@ -72,6 +72,16 @@ Outside the playground (`params.playground == false`) `new` also refuses (`E_BAD
 50..=2000 m, `max_phash_distance` outside 6..=16, `min_ai_confidence` < 60, `max_exif_age_h` outside 1..=168 and an
 empty verifier commit, on every network.
 
+Trust anchors (audit round 4, `new` only — live estates were initialised before these rules and nothing re-checks
+them on upgrade), all `E_BAD_ARGS`:
+- `params.playground: true` is refused unless the estate account ends in `.testnet` (the judge sandbox never exists on
+  mainnet; on the playground `assert_safe_checks`/`assert_safe_params` are skipped and capture/evidence/sign-off are open
+  to anyone).
+- Outside the playground `outlayer_id` must be exactly `outlayer.testnet` on a `.testnet` estate and `outlayer.near` on
+  any other account (no mock OutLayer can be pinned).
+- Outside the playground `min_initial_bps >= 1000` (a token costs at least 10% of its price, so vote weight and the
+  distinct-holder rule can't be farmed with 1-base-unit tokens) and `penalty_bps >= 300`.
+
 Demo timings are refused only on estates whose account does **not** end in `.testnet` (i.e. mainnet), outside the
 playground: **`demo_mode: true`, `veto_window_ns` < 24 h, `grace_ns` or `default_grace_ns` < 24 h, `dust_threshold` >
 1 USDC (`"1000000"`), `capture_ttl_ns` outside 5 min..=24 h** (`E_BAD_ARGS`). Testnet estates (the demo estates
@@ -82,53 +92,66 @@ these; no `set_*` method re-checks them, so code upgrades never brick a live est
 
 | Method | Args | Access / deposit | Returns |
 |---|---|---|---|
-| `add_units` | `{ units: [{ id, label, price: U128, plan: [{ due_at: U64, cumulative: U128 }] }] }` | developer; attach ≥ 0.035 NEAR × n (unit funding + USDC registration + record); ≤ 8 per call, ≤ 500 units per estate, ≤ 24 instalments per plan (`E_TOO_MANY`) | Promise |
+| `add_units` | `{ units: [{ id, label, price: U128, plan: [{ due_at: U64, cumulative: U128 }] }] }` | developer; attach ≥ 0.035 NEAR × n (unit funding + USDC registration + record; anything above is returned to the developer); ≤ 8 per call, ≤ 500 units per estate, ≤ 24 instalments per plan (`E_TOO_MANY`) | — |
 | `retry_unit_setup` | `{ unit_id }` | developer; attach ≥ 0.00125 NEAR; only for a unit that isn't `ready` (else `E_BAD_ARGS`). Re-checks the unit account (`get_info`) and registers it on USDC again; never deletes the unit record (a failed `get_info` keeps it for another retry) | Promise (`bool` ready) |
 | `fund_verification` | `{}` | anyone, payable | — |
-| `set_verifier` | `{ verifier }` | developer, only before the first sale (`E_ALREADY_SOLD`); the playground may repoint it at any time, but only to a non-empty commit / version key | — |
+| `set_verifier` | `{ verifier }` | developer; **attach 1 yocto**; only before the first sale (`E_ALREADY_SOLD`); the playground may repoint it at any time, but only to a non-empty commit / version key. Emits `verifier_changed {old, new, by: "developer"}` | — |
+| `repin_verifier` | `{ verifier }` | **only the estate account itself** (`predecessor == current_account_id`, i.e. a transaction signed with the estate's own full-access key, which can already redeploy the code, so no new power) with 1 yocto (`E_NOT_ESTATE` otherwise). Works after the first sale; same checks as `set_verifier` plus a non-empty repo, and never back to the pre-hardening build `31c7225…` (`E_BAD_ARGS`). Emits `verifier_changed {old, new, by: "estate"}`. **It disappears with the estate's full-access key** when that is deleted at launch | — |
+| `migrate` | `{}` | `#[private]` (the estate account), after a code upgrade; idempotent. Brings the new storage keys up to `state_version` (see §1.6) | `u32` (version) |
 | `set_app_url` | `{ url }` | developer; attach 1 yocto; `https://`, ≤ 200 chars, no quotes/spaces (`E_BAD_ARGS`). Emits `app_url_changed {old, new}` | — |
-| `playground_reset` | `{}` | anyone, only if `params.playground` | — |
-| `reserve` | `{ unit_id }` | anyone, attach exactly 0.05 NEAR | — |
-| `cancel_reservation` | `{ unit_id }` | the reserver; attach 1 yocto | Promise (refund USDC) |
-| `expire_reservation` | `{ unit_id }` | anyone, after `expires_at` | Promise |
+| `playground_reset` | `{}` | only if `params.playground` (`E_PLAYGROUND_ONLY`). The developer and the surveyor any time; anyone else only while no milestone is `Checking` (`E_CHECK_PENDING`), no other account's capture is unexpired (`E_CAPTURE_ACTIVE`) and at most once per 10 min (`E_RATE_LIMIT`) | — |
+| `reserve` | `{ unit_id }` | anyone, attach **at least** 0.05 NEAR (`E_DEPOSIT` below); anything above 0.05 is returned at once | — |
+| `cancel_reservation` | `{ unit_id }` | the reserver; attach 1 yocto | Promise (USDC refund; resolves to `bool`), or `true` when nothing was paid |
+| `expire_reservation` | `{ unit_id }` | anyone, after `expires_at` | Promise (resolves to `bool`), or `true` when nothing was paid |
 | `sync` | `{ unit_id }` | anyone. **Check only**: reads the unit's USDC balance, logs/emits `balance_checked {unit_id, balance, expected}`, credits nothing | Promise (`U128` surplus seen) |
 | `report_deposit` | `{ unit_id, amount: U128 }` | only the estate's `verdict_relayer` (its **deposit reporter**, `E_NOT_RELAYER`); no deposit; ~100 Tgas. Books a plain-transfer (1Click) delivery, see §1.2.1 | Promise (`U128` credited) |
-| `on_unit_deposit` | `{ unit_id, sender_id, amount: U128, msg }` | only the unit's own account. Books exactly `amount` and returns `"0"` when the unit takes payments (holder, or active reservation, and no transfer out pending); otherwise returns `amount` (USDC refunds it) | `U128` (unused amount) |
-| `refund` | `{ unit_id }` | holder; attach 1 yocto | Promise |
-| `withdraw_excess` | `{ unit_id }` | holder; attach 1 yocto; pays `min(paid − price − excess already out, refundable)` | Promise |
+| `on_unit_deposit` | `{ unit_id, sender_id, amount: U128, msg }` | only the unit's own account. Books exactly `amount` and returns `"0"` when the unit takes payments (holder, or active reservation, and no transfer out pending); otherwise returns `amount` (USDC refunds it). **Deferred** (§1.2.1): within 5 min of a `report_deposit` that credited this unit, an amount above what that report saw and left unbooked is accepted (`"0"`) but not booked; event `deposit_deferred` | `U128` (unused amount) |
+| `refund` | `{ unit_id }` | holder; attach 1 yocto; `E_NFT_PENDING` during an `nft_transfer_call` of the token. A lien-first refund that leaves money on the unit keeps the token alive with less weight (net equity) | Promise |
+| `withdraw_excess` | `{ unit_id }` | holder; attach 1 yocto; `E_NFT_PENDING` as above; pays `min(paid − price − excess already out, refundable)` | Promise |
 | `sweep_unattributed` | `{ unit_id }` | anyone | Promise |
-| `list_for_sale` | `{ unit_id, ask: U128 }` | holder, no lien; attach 1 yocto | — |
+| `request_surplus_booking` | `{ unit_id }` | developer or `recovery_id` (`E_NOT_DEVELOPER`); no deposit. Reads the unit's USDC balance once and records the surplus over the books (`E_NOTHING_TO_SWEEP` if none; `E_BALANCE_PENDING` if the books changed meanwhile, `E_IN_FLIGHT`). A new request replaces the old one. Event `surplus_requested {unit_id, amount, ready_at}` | Promise (`U128` recorded) |
+| `finalize_surplus_booking` | `{ unit_id }` | developer or `recovery_id`; ≥ 7 days after the request (`E_TIMELOCK`; `E_BAD_ARGS` without one). Two chained balance reads like `report_deposit`; books `min(recorded, first − expected, second − expected)` as **`unattributed`** (never `paid`), then `sweep_unattributed` can move it. Event `surplus_booked {unit_id, amount, unattributed}` | Promise (`U128` booked) |
+| `list_for_sale` | `{ unit_id, ask: U128 }` | holder, no lien; attach 1 yocto; `E_NFT_PENDING` during an `nft_transfer_call` | — |
 | `cancel_listing` | `{ unit_id }` | holder (Voluntary only); attach 1 yocto | — |
-| `ft_on_transfer` | NEP-141 (`msg = {"buy":"a-4b"}`) | only from `usdc_id`. A Default listing costs the holder's `paid − refunded_out` **at purchase time** (later payments raise it); the default penalty is `penalty_bps` of that | `U128` |
+| `ft_on_transfer` | NEP-141 (`msg = {"buy":"a-4b"}`) | only from `usdc_id`. A Default listing costs the holder's `paid − refunded_out` **at purchase time** (later payments raise it); the default penalty is `penalty_bps` of that. A lien (set before the default) doesn't block a Default sale: the proceeds after the penalty go to the lender first, up to its `cap` (event `lien_settled {unit_id, lender, amount}`), the rest to the seller, and the buyer gets the token without the lien. A Voluntary listing can't coexist with a lien | `U128` |
 | `declare_default` | `{ unit_id }` | anyone | — |
-| `handover` | `{ unit_id }` | holder, handover milestone Approved and veto passed; attach 1 yocto | — |
+| `handover` | `{ unit_id }` | holder; attach 1 yocto; **every** milestone Approved and the last one's veto window passed (`E_HANDOVER`); `E_NFT_PENDING` during an `nft_transfer_call` | — |
 | `set_beneficiary` | `{ unit_id, beneficiary: AccountId \| null }` | holder; attach 1 yocto | — |
 | `set_guardians` | `{ unit_id, guardians: [AccountId] }` (≤ 3) | holder; attach 1 yocto | — |
 | `guardian_recover` | `{ unit_id, new_owner }` | a guardian; attach 1 yocto; 2 distinct guardians start a 72 h timer (demo: `grace_ns`) | — |
 | `finish_recovery` | `{ unit_id }` | anyone, after the timer | — |
 | `cancel_recovery` | `{ unit_id }` | holder; attach 1 yocto | — |
-| `set_lien` | `{ unit_id, lender, cap: U128 }` | holder; attach 1 yocto | — |
+| `set_lien` | `{ unit_id, lender, cap: U128 }` | holder; attach 1 yocto. Creates a **pending** lien (replaces any earlier offer; `get_pending_lien`); it has no effect until the lender accepts. Same checks as before (`E_BAD_ARGS` lender = holder, `E_LIEN` lien already active, `E_LISTING` in default). Event `lien_offered {unit_id, lender, cap}`. Liens active before this change stay active | — |
+| `accept_lien` | `{ unit_id }` | the lender named in the pending lien (`E_NOT_LENDER`); attach 1 yocto. `E_LIEN` if there is no pending lien or the token changed hands since the offer (the offer is void then); re-checks the `set_lien` rules. Activates the lien (closes a voluntary listing). Event `lien_accepted {unit_id, lender, cap}` | — |
 | `clear_lien` | `{ unit_id }` | the lender; attach 1 yocto | — |
-| `open_capture` | `{ milestone: u8 }` | surveyor (anyone if playground). On the playground, another account's unexpired capture for that milestone can't be replaced (`E_CAPTURE_ACTIVE`) except by the estate's `surveyor_id` | `String` (6-char code) |
-| `submit_evidence` | `{ milestone: u8, url, sha256, captured_at: U64, device_gps: [i32, i32] \| null }` | surveyor (anyone if playground) | `U64` evidence id |
-| `submit_verdict` | `{ evidence_id: U64, verdict: Verdict }` | only `verdict_relayer`, and only when `verify_mode == "https"` (else `E_VERIFY_MODE`) | `bool` (pass) |
+| `open_capture` | `{ milestone: u8 }` | surveyor (anyone if playground). **Stage order**: milestone `i > 0` only once milestone `i − 1` is `Approved` (`E_MILESTONE_STATE`; the playground too). On the playground, another account's unexpired capture for that milestone can't be replaced (`E_CAPTURE_ACTIVE`) except by the estate's `surveyor_id` | `String` (6-char code) |
+| `submit_evidence` | `{ milestone: u8, url, sha256, captured_at: U64, device_gps: [i32, i32] \| null }` | surveyor (anyone if playground); stage order as `open_capture`. On the playground every account but the surveyor may submit at most 5 per rolling hour (`E_RATE_LIMIT`; a check that fails only for infrastructure reasons gives the slot back) | `U64` evidence id |
+| `submit_verdict` | `{ evidence_id: U64, verdict: VerdictArg }` | only `verdict_relayer`, and only when `verify_mode == "https"` (else `E_VERIFY_MODE`). `VerdictArg` = the worker's stdout object as is: `Verdict` fields plus `evidence_id` (number or string), `sha256` and optional `ai_model`; unknown fields are ignored. It must echo this `evidence_id` and the evidence's committed `sha256` (case-insensitive), else `E_VERDICT_MISMATCH` | `bool` (pass) |
 | `reopen_stale_check` | `{ milestone: u8 }` | anyone; the milestone must be `Checking` (`E_MILESTONE_STATE`) and its latest evidence submitted ≥ 1 h ago (`E_CHECK_PENDING`). The evidence becomes `Error` (verdict event reason `check_timeout`), the milestone `Open`; a late verdict for it is still applied | — |
-| `qs_sign` | `{ milestone: u8 }` | surveyor (anyone if playground) | — |
+| `qs_sign` | `{ milestone: u8 }` | surveyor (anyone if playground); stage order: milestone `i − 1` must be `Approved` (`E_MILESTONE_STATE`) | — |
 | `claim_release` | `{ unit_ids: [String] }` (≤ 6, `E_TOO_MANY`; gas) | anyone (funds go to `payout_id` / `payout_redirect`); `E_FROZEN` while frozen, **`E_REFUNDS_OPEN` while refunds are open** (a missed deadline + grace, even if signed late, or a Freeze with refunds) | `u32` transfers started |
-| `withdraw_owed` | `{}` | anyone with an owed balance (failed resale payouts, failed reservation refunds) | Promise |
+| `withdraw_owed` | `{}` | anyone with an owed balance (failed resale payouts, failed reservation refunds); `E_NOTHING_OWED` if none | Promise |
 | `propose` | `{ kind: ProposalKind }` | holder (any kind) / developer (`ExtendDeadline`); attach **0.05 NEAR** (`PROPOSAL_DEPOSIT`, kept by the estate; any excess is returned). Every kind but `Veto` needs the quorum (`E_QUORUM`, playground exempt). `ExtendDeadline` is allowed after a miss too (the recovery path, below) | `U64` proposal id |
-| `vote` | `{ proposal_id: U64, approve: bool }` | holder with eligible tokens (`E_NOT_ELIGIBLE`: none allocated before the proposal; `E_ALREADY_VOTED`: all of them voted). Votes with ≤ 50 tokens per call | — |
+| `vote` | `{ proposal_id: U64, approve: bool }` | holder with eligible tokens (`E_NOT_ELIGIBLE`: none allocated before the proposal; `E_ALREADY_VOTED`: all of them voted; `E_NFT_PENDING`: the only eligible ones are in a pending `nft_transfer_call`). Votes with ≤ 50 tokens per call | — |
 | `expire_proposal` | `{ proposal_id: U64 }` | anyone, after `expires_at` | — |
 
 Plus NEP-171/177/178/181: `nft_transfer`, `nft_transfer_call`, `nft_approve`, `nft_revoke`, `nft_revoke_all`, `nft_is_approved`.
-`nft_transfer` panics `E_LIEN` while a lien is set and `E_LISTING` while a Default listing is open; a transfer moves `holder`.
+`nft_transfer` panics `E_LIEN` while a lien is set and `E_LISTING` while a Default listing is open; a transfer moves `holder`
+and voids a pending lien offer. While an `nft_transfer_call` of a token waits for `nft_resolve_transfer` (at most 10 min),
+`refund`, `withdraw_excess`, `handover`, `list_for_sale`, `accept_lien`, `nft_transfer(_call)` and votes with that token
+fail `E_NFT_PENDING`.
 `nft_approve` attaches ≥ 0.001 NEAR (kept for storage; the rest is returned to the holder); at most 16 approved accounts
 per token (`E_TOO_MANY_APPROVALS`; re-approving an approved account is allowed). `nft_revoke` / `nft_revoke_all`: holder,
 1 yocto.
 
-Votes (SPEC §8, audit round 2 + final review): each token allocated at or before the proposal opened votes once,
-weighted by `min(paid, price)` **at vote time** in whole USDC (rounded up). `electorate` is the weight of those tokens
-**fixed when the proposal opens** (later top-ups don't grow it).
+Votes (SPEC §8, audit round 2 + final review + audit round 4): each token allocated at or before the proposal opened
+votes once. Its weight is its **net equity** `min(paid − refunded_out, price)` in whole USDC (rounded up) — a refund
+(lien-first or partial) lowers it at once; an excess withdrawal doesn't (it only took money above the price) — and
+**never more than the token weighed when the proposal opened**: `min(weight now, weight at creation)`. (Copy-on-write
+snapshot: while any proposal may be open, a change of a unit's weight records `(time, weight before)` for that unit
+outside the root state; at most 8 entries per unit, older than one `proposal_period_ns` dropped.) So a top-up after a
+proposal opened adds nothing to it (no Veto capture by topping up), and `electorate`, the weight of the eligible tokens
+**fixed when the proposal opens**, bounds it.
 
 - `Veto`: executes when `yes × 2 > electorate` (weight only, so it stays fast inside the veto window); rejected when
   `no × 2 ≥ electorate`.
@@ -137,11 +160,13 @@ weighted by `min(paid, price)` **at vote time** in whole USDC (rounded up). `ele
   tokens and `holders_yes` / `holders_no` those of them holding a token that voted yes / no. It is rejected when
   `no × 2 ≥ electorate` **or** `holders_no × 2 ≥ holders_eligible`.
 
-Why both: there is no per-token weight snapshot in state, so a holder could top a unit up right before voting and refund
-it afterwards (flash weight). The distinct-holder majority is the binding safeguard: one account can't pass a
-`StepIn`, `ReplaceSurveyor`, `Freeze`, `Unfreeze` or `ExtendDeadline` alone while other accounts hold eligible tokens.
-Splitting tokens across sybil accounts takes as many real purchases. No vote lock is applied: a lock could only last
-until the proposal resolves, and it couldn't stop a refund after execution.
+Why both: the distinct-holder majority stops one account passing a `StepIn`, `ReplaceSurveyor`, `Freeze`, `Unfreeze` or
+`ExtendDeadline` alone while other accounts hold eligible tokens; the weight majority (net equity, capped at creation)
+stops sybil accounts holding cheap tokens from out-voting the money (each token costs ≥ 10% of its price on new
+estates). No vote lock is applied: a lock could only last until the proposal resolves, and it couldn't stop a refund
+after execution. Not implemented (documented): a timelock between a passing `StepIn` / `ReplaceSurveyor` and its
+execution. It would need a new proposal status (an enum variant appended at the end would be layout-safe) and an
+`execute_proposal` call; the quorum, both majorities and the net-weight snapshot are the safeguards meanwhile.
 
 On weighted proposals `voted` is stored as `"+<unit_id>"` / `"-<unit_id>"`. Views show bare unit ids, plus the
 `holders_*` counts computed at view time. A proposal opened before weighted voting (`ProposalView.weighted == false`)
@@ -156,9 +181,12 @@ or after `veto_until`, when `claim_release` can already have moved the stage's m
 wait for open Veto proposals, or a settlement margin before `veto_until` with a keeper to call it, so it is left out.
 
 Recovery after a missed deadline: `ExtendDeadline` may be proposed and executed while refunds are open. With the quorum
-and both majorities (weight and distinct holders) it moves the milestone's deadline (`new_deadline` must be in the future and between its
-neighbours' deadlines), which closes refunds for that milestone, so `claim_release` (`E_REFUNDS_OPEN` meanwhile) works
-again. Holders who want out vote no and refund before it passes.
+and both majorities (weight and distinct holders) it moves the milestone's deadline (`new_deadline` must be in the
+future, **later than the milestone's current deadline** — an extension never shortens — and strictly between its
+neighbours' deadlines; `E_DEADLINES` at `propose`). The same rules are **re-checked when it passes**: a proposal whose
+deadline the clock overtook, or that another executed extension made shorter or out of order, is `Rejected` instead
+of executed. It closes refunds for that milestone, so `claim_release` (`E_REFUNDS_OPEN` meanwhile) works again. Holders
+who want out vote no and refund before it passes.
 
 #### 1.2.1 Deposits
 

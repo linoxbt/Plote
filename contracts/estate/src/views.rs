@@ -384,7 +384,9 @@ impl Estate {
                     .filter(|id| !self.nft_pending(id, now))
                     .take(MAX_VOTE_TOKENS_PER_CALL)
                     .filter_map(|id| self.units.get(id))
-                    .fold(0u32, |w, u| w.saturating_add(self.weight_for(u, p.created_at)))
+                    .fold(0u32, |w, u| {
+                        w.saturating_add(self.weight_for(u, p.created_at))
+                    })
             })
             .unwrap_or(0)
     }

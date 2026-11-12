@@ -46,7 +46,7 @@ export default function PaymentsPage() {
         </div>
       </Section>
 
-      <Section label="The balance is the truth" className="!pt-0">
+      <Section label="How a payment is booked" className="!pt-0">
         <GlowPanel tone="sky" className="p-6 sm:p-12">
           <Split
             visual={
@@ -62,13 +62,13 @@ export default function PaymentsPage() {
                   </div>
                 ))}
                 <div className="flex items-center justify-between rounded-2xl bg-white/[0.06] px-5 py-4 ring-1 ring-white/20">
-                  <span className="text-sm">Unit balance</span>
+                  <span className="text-sm">Booked as paid</span>
                   <span className="mono text-sm">8,800 USDC</span>
                 </div>
               </div>
             }
           >
-            <Heading eyebrow="One rule" title={<>The unit&apos;s balance is <Hl>the truth</Hl>.</>} lead="However money arrives, the estate re-reads the unit's USDC balance and credits the difference. Wallet payments to a unit nobody reserved bounce straight back, and stray deposits are never credited to anyone — they can be swept back to whoever reserved the unit." />
+            <Heading eyebrow="How it's booked" title={<>Every payment is booked <Hl>once</Hl>.</>} lead="A wallet payment (ft_transfer_call) is credited by the estate from its exact amount, in the same transaction; if the unit isn't reserved or held, USDC returns it to you. A cross-chain (1Click) delivery is a plain transfer, so it is credited only when Plote's deposit reporter reports it and the estate sees that surplus on the unit in two balance reads. A public sync only checks the balance; it credits nothing. Stray deposits are never credited to anyone: they can be swept back to whoever reserved the unit." />
           </Split>
         </GlowPanel>
       </Section>

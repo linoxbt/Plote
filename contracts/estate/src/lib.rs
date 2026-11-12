@@ -90,7 +90,8 @@ pub const PLAYGROUND_RESET_INTERVAL_NS: u64 = 10 * 60_000_000_000;
 pub const NFT_PENDING_MAX_NS: u64 = 10 * 60_000_000_000;
 /// The pre-hardening verifier the live testnet estates are pinned to. It doesn't echo `evidence_id`/`sha256`, and a
 /// verdict without them can't pass (finding 3), so those estates must `repin_verifier` to the hardened build.
-pub const LEGACY_VERIFIER: &str = "31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8";
+pub const LEGACY_VERIFIER: &str =
+    "31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8";
 
 pub const GAS_UNIT_INIT: Gas = Gas::from_tgas(5);
 pub const GAS_USDC_REGISTER: Gas = Gas::from_tgas(5);

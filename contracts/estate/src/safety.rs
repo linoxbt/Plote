@@ -179,7 +179,7 @@ impl Estate {
         ))?;
         let unit = self.units.get(&unit_id)?;
         // An offer from an earlier holder is void (move_token deletes it; this also hides any stale one).
-        (unit.holder.as_ref() == Some(&p.holder)).then(|| Lien {
+        (unit.holder.as_ref() == Some(&p.holder)).then_some(Lien {
             lender: p.lender,
             cap: U128(p.cap),
         })

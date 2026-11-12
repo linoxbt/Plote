@@ -42,7 +42,7 @@ describe("dynamic NFT SVG = the contract's unit_svg", () => {
     expect(litParts(1, 6)).toBe(1);
     expect(litParts(5, 4)).toBe(4);
     expect(litParts(0, 0)).toBe(0);
-    expect(litParts(1, 3, "HandedOver")).toBe(2);
+    expect(litParts(1, 3)).toBe(2);
   });
   it("formats dollars like the contract", () => {
     expect(dollars("85000000000")).toBe("$85,000");

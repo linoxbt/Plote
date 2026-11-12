@@ -42,10 +42,27 @@ export function PassClient({ slug, unitId }: { slug: string; unitId: string }) {
     }
   }, [accountId, account, unitId]);
 
+  // Rotate every ROTATE_MS while the page is visible. When it's hidden at the due time, keep re-arming (cheap) instead
+  // of stopping, and refresh as soon as the page becomes visible again with an expired pass.
   useEffect(() => {
     if (!pass) return;
-    timer.current = setTimeout(() => { if (document.visibilityState === "visible") sign(); }, ROTATE_MS);
-    return () => { if (timer.current) clearTimeout(timer.current); };
+    const due = pass.at + ROTATE_MS;
+    const tick = () => {
+      if (document.visibilityState === "visible") void sign();
+      else timer.current = setTimeout(tick, 5000);
+    };
+    timer.current = setTimeout(tick, Math.max(0, due - Date.now()));
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() >= due) {
+        if (timer.current) clearTimeout(timer.current);
+        void sign();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [pass, sign]);
 
   if (est.isLoading || unit.isLoading) return <Page narrow><LoadingCard /></Page>;

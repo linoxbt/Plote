@@ -2,13 +2,13 @@
 
 export const FAQ: [string, React.ReactNode][] = [
   ["Where is my money, exactly?", <>In your unit&apos;s own NEAR account, e.g. <span className="mono">a-4b.harmattan-court.plote.near</span>. Anyone can look it up.</>],
-  ["Can Plote take my money?", "No. Plote's servers don't hold any key that can move it. Only the estate contract's rules can, and those rules are public."],
+  ["Can Plote take my money?", "Plote's servers hold no key that can move it out of a unit; only the estate contract's public rules can. Plote's relayer is still trusted for two things: it reports cross-chain (1Click) deposits, and on estates in HTTPS mode it submits photo verdicts. On testnet, Plote also still holds the keys that can upgrade the estate contracts; they will be deleted before mainnet."],
   ["What if the developer disappears?", "When a deadline passes without a verified stage, you can refund everything not yet released."],
   ["Doesn't the developer need money to start building?", "An estate can release a fixed mobilisation share (up to 10%) when a unit is allocated. Everything else waits for a proven stage."],
   ["What if I can't keep paying?", "Your unit is listed for what you've paid. When it sells, you get that back minus a fixed 5%."],
   ["What does it cost me?", "Nothing on top of the price during the pilot. You pay a small network fee for each transaction (fractions of a cent)."],
   ["Is my name public?", "Your account name and amounts are public. Your real name isn't stored on-chain."],
-  ["Why one vote per unit and not per account?", "Each unit is one stake. Splitting units across accounts can't add votes, and units bought after a vote opens can't swing it."],
+  ["How do holder votes work?", "Each token allocated before a vote opens can vote once, weighted by the USDC paid into its unit (net of refunds, up to the price), and the total weight is fixed when the vote opens. A veto passes on more than half of that weight. Every other proposal also needs a majority of the distinct holders, plus a quorum (at least 3 tokens and a quarter of the units allocated), so one big holder can't pass it alone. Opening a proposal costs a 0.05 NEAR deposit, kept by the estate."],
   ["Is this live?", "The hackathon build runs on NEAR testnet, with a real cross-chain payment demonstrated on mainnet."],
 ];
 

@@ -119,7 +119,7 @@ export function PayStatusClient({ depositAddress, hint }: { depositAddress: stri
           <Button variant="primary" onClick={async () => {
             if (!accountId) return connect();
             const r = await run("Claim my late payment", () => sendTx(E.sweepUnattributed(estate, unitId)), { success: "Sent back to the last reserver." });
-            if (r) qc.invalidateQueries();
+            if (r) await Promise.all([qc.invalidateQueries({ queryKey: ["unit", estate, unitId] }), qc.invalidateQueries({ queryKey: ["units", estate] })]);
           }}>Claim my late payment</Button>
         </BracketCard>
       ) : null}

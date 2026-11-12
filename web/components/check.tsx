@@ -9,7 +9,6 @@ import { AlertOctagon, Clock, Home, Lock, Search, Share2, Unlock } from "lucide-
 import { clsx } from "clsx";
 import { checkedViews as V } from "@/lib/estate";
 import { estateSlug, parseUnitQuery, type UnitRef } from "@/lib/estates";
-import { explainError } from "@/lib/errors";
 import { expectedUnitAccount, isGenuineEstate, type Genuineness } from "@/lib/genuine";
 import { formatDate, pct, unitDisplay } from "@/lib/format";
 import type { TakenView } from "@/lib/types";

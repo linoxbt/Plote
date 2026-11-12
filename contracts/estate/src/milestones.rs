@@ -733,16 +733,31 @@ impl Estate {
     /// milestone reopens, the verdict is kept for the record, and in outlayer mode (`raw_hash` set) the check's
     /// `VERIFY_DEPOSIT` goes back to the verification budget and the playground submission slot is returned. Only for
     /// a Pending evidence (each OutLayer request resumes once), so a budget refund can't repeat.
-    fn infra_error(&mut self, evidence_id: u64, mut verdict: Verdict, raw_hash: Option<String>) -> bool {
+    fn infra_error(
+        &mut self,
+        evidence_id: u64,
+        mut verdict: Verdict,
+        raw_hash: Option<String>,
+    ) -> bool {
         let reasons = verdict.reasons.clone();
         let first = self.set_error_with(
             evidence_id,
             &format!("the check couldn't run: {}", reasons.join(", ")),
-            reasons.first().map(String::as_str).unwrap_or("worker_error"),
+            reasons
+                .first()
+                .map(String::as_str)
+                .unwrap_or("worker_error"),
         );
         if let Some(mut ev) = self.evidence.get(&evidence_id).cloned() {
             verdict.pass = false;
-            verdict.source = Some(if raw_hash.is_some() { "outlayer" } else { "https" }.to_string());
+            verdict.source = Some(
+                if raw_hash.is_some() {
+                    "outlayer"
+                } else {
+                    "https"
+                }
+                .to_string(),
+            );
             verdict.reasons.truncate(16);
             verdict.warnings.truncate(16);
             verdict.ai_observations.truncate(MAX_OBSERVATIONS);
@@ -766,7 +781,11 @@ impl Estate {
         self.verification_budget = self
             .verification_budget
             .saturating_add(VERIFY_DEPOSIT.as_yoctonear());
-        if let Some(by) = self.evidence.get(&evidence_id).map(|e| e.submitted_by.clone()) {
+        if let Some(by) = self
+            .evidence
+            .get(&evidence_id)
+            .map(|e| e.submitted_by.clone())
+        {
             let k = crate::ext::key(crate::ext::P_PLAYGROUND_SUBMITS, by.as_bytes());
             if let Some(mut v) = crate::ext::get::<Vec<u64>>(&k) {
                 v.pop();
@@ -809,7 +828,9 @@ impl Estate {
             "E_RATE_LIMIT",
             "at most {} playground submissions per account per hour; next at {}",
             PLAYGROUND_SUBMITS_PER_HOUR,
-            v.first().map(|t| t.saturating_add(ONE_HOUR_NS)).unwrap_or(now)
+            v.first()
+                .map(|t| t.saturating_add(ONE_HOUR_NS))
+                .unwrap_or(now)
         );
         v.push(now);
         crate::ext::set(&k, &v);

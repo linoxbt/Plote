@@ -13,7 +13,7 @@ export default function SecurityPage() {
       <PageHero
         eyebrow="Security"
         title={<>Nobody can take your money. <Hl>Not even us.</Hl></>}
-        lead="Plote's servers don't hold any key that can move a buyer's money. Only the estate contract's public rules can — and every rule is open source and on-chain."
+        lead="Plote's servers don't hold any key that can move a buyer's money out of a unit. Only the estate contract's public rules can — and every rule is open source and on-chain. Where Plote is still trusted, this page says so."
         actions={
           <>
             <PillLink href="/status">System status</PillLink>
@@ -45,11 +45,14 @@ export default function SecurityPage() {
           <FeatureCard icon={<KeyRound className="h-5 w-5" strokeWidth={1.5} />} title="Scoped keys">
             The surveyor&apos;s key can only sign milestones. The developer&apos;s claim key can only claim releases and propose extensions.
           </FeatureCard>
-          <FeatureCard icon={<Server className="h-5 w-5" strokeWidth={1.5} />} title="Servers only pay gas">
-            Plote&apos;s relayer pays network fees for a fixed list of methods, with no deposit and a gas cap. It can&apos;t move funds.
+          <FeatureCard icon={<Server className="h-5 w-5" strokeWidth={1.5} />} title="What the relayer is trusted with">
+            Plote&apos;s relayer pays network fees for surveyor calls (a fixed list of methods, no deposit, a gas cap). It also reports cross-chain (1Click)
+            deposits, which the estate credits only up to the surplus it sees on the unit in two balance reads, and on HTTPS-mode estates it submits photo
+            verdicts. It can&apos;t move funds out of a unit, but those two roles are residual trust in Plote.
           </FeatureCard>
           <FeatureCard icon={<Vote className="h-5 w-5" strokeWidth={1.5} />} title="Holders have the last word">
-            One vote per unit: veto a sign-off, freeze releases, replace the surveyor, or redirect releases to a replacement contractor.
+            Votes weighted by USDC at stake (net of refunds, capped when the vote opens) can veto a sign-off, freeze releases, replace the surveyor or
+            redirect releases to a replacement contractor. Everything but a veto also needs a majority of distinct holders and a quorum.
           </FeatureCard>
           <FeatureCard icon={<Eye className="h-5 w-5" strokeWidth={1.5} />} title="Everything is public">
             Payments, releases, refunds, proofs and votes are on-chain. Anyone can check any unit without logging in.
@@ -84,6 +87,10 @@ export default function SecurityPage() {
           </FeatureCard>
           <FeatureCard icon={<Eye className="h-5 w-5" strokeWidth={1.5} />} title="Photos can be staged">
             Secure hardware proves the checks ran on the committed photo, not that the scene is honest. The challenge code and a replaceable surveyor limit the damage.
+          </FeatureCard>
+          <FeatureCard icon={<KeyRound className="h-5 w-5" strokeWidth={1.5} />} title="Testnet estates can still be upgraded">
+            The testnet estate contracts still have full-access keys, so Plote can upgrade their code (it has, to fix audit findings). Those keys will be
+            deleted before any estate holds real money; <TextLink href="/status">the status page</TextLink> shows whether each estate&apos;s keys are gone.
           </FeatureCard>
           <FeatureCard icon={<ShieldCheck className="h-5 w-5" strokeWidth={1.5} />} title="USDC today">
             Plote works in USDC. Naira payments are on the roadmap.

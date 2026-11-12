@@ -7,7 +7,9 @@ use serde_json::{json, Value};
 
 const ESTATE: &str = "estate.test.near";
 const USDC: &str = "musdc.test.near";
-const MOCK: &str = "outlayer.test.near";
+/// The estate only accepts the real OutLayer account (`outlayer.near` for a non-testnet estate, audit round 4); in this
+/// sandbox the mock is deployed there, where it stands in for OutLayer (no `mock_verifier` warning).
+const MOCK: &str = "outlayer.near";
 const DEV: &str = "dev.test.near";
 const QS: &str = "qs.test.near";
 const ALICE: &str = "alice.test.near";
@@ -728,6 +730,8 @@ fn holder_methods_need_one_yocto_on_chain() {
             "set_lien",
             json!({ "unit_id": "a-4b", "lender": CAROL, "cap": "1" }),
         ),
+        // a lien is only an offer until the lender accepts it (audit round 4, finding 2c)
+        (CAROL, "accept_lien", json!({ "unit_id": "a-4b" })),
         (CAROL, "clear_lien", json!({ "unit_id": "a-4b" })),
         (DEV, "set_app_url", json!({ "url": "https://plote.app" })),
         (BOB, "cancel_reservation", json!({ "unit_id": "b-2a" })),
@@ -759,4 +763,50 @@ fn holder_methods_need_one_yocto_on_chain() {
         view(&c, "get_estate", json!({}))["app_url"],
         "https://plote.app"
     );
+}
+
+/// Audit round 4: stages go in order on chain, and a sold estate's verifier can be re-pinned only by the estate account
+/// itself (findings 1 and 4); `set_verifier` needs 1 yocto (finding 15).
+#[test]
+fn audit4_stage_order_and_repin_on_chain() {
+    let c = setup();
+    buy(&c, "a-4b", ALICE, 8_500 * USD);
+    let r = c
+        .call(ESTATE, "open_capture")
+        .from(QS)
+        .args(json!({ "milestone": 1 }).to_string())
+        .fire()
+        .unwrap();
+    assert!(!r.ok && r.panic.unwrap_or_default().contains("E_MILESTONE_STATE"));
+    let v = json!({ "verifier": { "repo": "project:plote.testnet/plote-verifier",
+        "commit": "07cf962632350d40bcdc4318d382af8f31aa49aab264b7b725add86dd415df6b", "build_target": "wasm32-wasip2" } });
+    let r = c
+        .call(ESTATE, "set_verifier")
+        .from(DEV)
+        .args(v.to_string())
+        .fire()
+        .unwrap();
+    assert!(!r.ok && r.panic.unwrap_or_default().contains("1 yoctoNEAR"));
+    let r = c
+        .call(ESTATE, "repin_verifier")
+        .from(DEV)
+        .args(v.to_string())
+        .attach(1)
+        .fire()
+        .unwrap();
+    assert!(!r.ok && r.panic.unwrap_or_default().contains("E_NOT_ESTATE"));
+    ok(
+        c.call(ESTATE, "repin_verifier")
+            .from(ESTATE)
+            .args(v.to_string())
+            .attach(1)
+            .fire()
+            .unwrap(),
+        "repin_verifier from the estate account",
+    );
+    assert_eq!(
+        view(&c, "get_estate", json!({}))["verifier"]["commit"],
+        "07cf962632350d40bcdc4318d382af8f31aa49aab264b7b725add86dd415df6b"
+    );
+    assert_eq!(view(&c, "state_version", json!({})), json!(2));
 }
