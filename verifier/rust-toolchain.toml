@@ -1,0 +1,7 @@
+# Pinned so the release WASM (and so its SHA-256, OutLayer's version key) is reproducible.
+# Changing this changes the hash: bump it deliberately and re-publish the hash.
+[toolchain]
+channel = "1.97.0"
+profile = "minimal"
+targets = ["wasm32-wasip2"]
+components = ["clippy", "rustfmt"]

@@ -7,9 +7,10 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { AlertOctagon, Clock, Home, Lock, Search, Share2, Unlock } from "lucide-react";
 import { clsx } from "clsx";
-import { estate as E } from "@/lib/estate";
-import { estateSlug, isKnownEstate, parseUnitQuery, type UnitRef } from "@/lib/estates";
+import { checkedViews as V } from "@/lib/estate";
+import { estateSlug, parseUnitQuery, type UnitRef } from "@/lib/estates";
 import { explainError } from "@/lib/errors";
+import { expectedUnitAccount, isGenuineEstate, type Genuineness } from "@/lib/genuine";
 import { formatDate, pct, unitDisplay } from "@/lib/format";
 import type { TakenView } from "@/lib/types";
 import { AccountChip, CountdownChip, MonoAmount } from "./chain";
@@ -20,21 +21,28 @@ export type CheckOutcome =
   | { kind: "not_plote"; ref: UnitRef | null; input: string; why: string }
   | { kind: "error"; ref: UnitRef; error: unknown };
 
-export async function runCheck(input: string): Promise<CheckOutcome> {
+type CheckDeps = { genuine?: (estate: string) => Promise<Genuineness>; isTaken?: typeof V.isTaken };
+
+/**
+ * Anything that isn't a genuine Plote estate (configured, or a root subaccount running a published estate build) is
+ * "NOT A PLOTE UNIT", whatever its contract answers: a look-alike contract can claim a unit is available.
+ */
+export async function runCheck(input: string, deps: CheckDeps = {}): Promise<CheckOutcome> {
   const ref = parseUnitQuery(input);
   if (!ref) return { kind: "not_plote", ref: null, input, why: "That doesn't look like a Plote unit name." };
   try {
-    const v = await E.isTaken(ref.estate, ref.unit);
+    const g = await (deps.genuine ?? isGenuineEstate)(ref.estate);
+    if (!g.genuine) return { kind: "not_plote", ref, input, why: g.why };
+    const v = await (deps.isTaken ?? V.isTaken)(ref.estate, ref.unit);
     if (!v || !v.exists) return { kind: "not_plote", ref, input, why: `There is no unit ${unitDisplay(ref.unit)} in ${ref.estate}.` };
+    if (v.account && v.account !== expectedUnitAccount(ref.estate, ref.unit)) {
+      return { kind: "not_plote", ref, input, why: `${ref.estate} reports ${v.account} as the unit's account; a Plote unit's account is always ${expectedUnitAccount(ref.estate, ref.unit)}.` };
+    }
     if (v.status === "HandedOver") return { kind: "handed_over", ref, view: v };
     if (v.status === "Allocated" || v.status === "InDefault") return { kind: "taken", ref, view: v };
     if (v.status === "Reserved") return { kind: "reserved", ref, view: v };
     return { kind: "available", ref, view: v };
   } catch (e) {
-    const x = explainError(e);
-    if (!isKnownEstate(ref.estate) && (x.code === "CONTRACT_NOT_DEPLOYED" || /MethodNotFound|method.*not found/i.test(x.raw))) {
-      return { kind: "not_plote", ref, input, why: `${ref.estate} isn't a Plote estate contract.` };
-    }
     return { kind: "error", ref, error: e };
   }
 }

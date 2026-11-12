@@ -117,7 +117,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
 
   return (
     <Page>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <Celebration
         open={celebrate}
         onClose={() => setDismissed(true)}

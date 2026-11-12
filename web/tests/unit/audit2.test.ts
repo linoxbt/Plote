@@ -5,7 +5,8 @@ import { encodeGatePass, gateMessage, randomNonce, signNep413WithSecret } from "
 import { collectWindow, memoryStore, parseTxReceipts, pollEstate, supabaseStore, type NbReceipt, type OutcomeReceipt, type PollDeps } from "@/lib/server/poller";
 import { planCleanup, PLAYGROUND_RETENTION_MS } from "@/lib/server/storage-cleanup";
 import { photoCheckStatus, publicView } from "@/lib/server/health";
-import { confirmToken, notifyConfigured, readToken, unsubscribeToken } from "@/lib/server/notify";
+import { confirmToken, notifyConfigured, readToken, readUnsubscribeToken, UNSUBSCRIBE_TTL_MS, unsubscribeToken } from "@/lib/server/notify";
+import { createHmac } from "node:crypto";
 import { verifyGatePassServer, type GateDeps } from "@/lib/server/gate";
 import { relayLimits, uploadLimits } from "@/lib/server/limits";
 import { warnFallback } from "@/lib/server/rate-limit";
@@ -146,19 +147,23 @@ describe("event poller: indexes receipts, not transactions", () => {
       chain.select = () => chain;
       chain.eq = () => chain;
       chain.in = () => ret([{ receipt_id: "seen1" }]);
-      chain.maybeSingle = () => ret({ block_height: 42 });
+      chain.maybeSingle = () => ret({ block_height: 42, resume_next: null });
       chain.upsert = () => {
         writes.push(table);
         return { select: () => ret([]) , then: (f: (x: unknown) => unknown) => f({ error: null }) };
       };
       return chain;
     };
-    const store = supabaseStore({ from: q } as never, { dryRun: true });
-    expect(await store.getCursor(ESTATE)).toBe(42);
+    const rpc = () => {
+      writes.push("rpc");
+      return Promise.resolve({ error: null });
+    };
+    const store = supabaseStore({ from: q, rpc } as never, { dryRun: true });
+    expect(await store.getState(ESTATE)).toEqual({ height: 42, resume: null });
     expect([...(await store.seen(["seen1", "new1"]))]).toEqual(["seen1"]);
-    await store.setCursor(ESTATE, 50);
+    await store.saveState(ESTATE, { height: 50, resume: null });
     await store.markProcessed([{ receipt_id: "new1", estate: ESTATE, tx_hash: "T", block_height: 50, events: 0 }]);
-    const rows = [{ network: "testnet", estate: ESTATE, unit: null, standard: "plote", event: "qs_signed", data: {}, tx_hash: "T", block_height: 50, block_time: "x" }];
+    const rows = [{ network: "testnet", estate: ESTATE, unit: null, standard: "plote", event: "qs_signed", data: {}, tx_hash: "T", receipt_id: "R", log_index: 0, data_index: 0, block_height: 50, block_time: "x", notified_at: null }];
     expect(await store.insertEvents(rows)).toEqual(rows);
     expect(writes).toEqual([]);
   });
@@ -227,21 +232,34 @@ describe("notify: dedicated secret, required sender", () => {
   afterEach(() => {
     process.env = { ...keep };
   });
-  it("signs with NOTIFY_SECRET, falls back to CRON_SECRET, accepts old unsubscribe links only", () => {
+  /** A link as the old code made it: [account, estate, unit] signed with CRON_SECRET. */
+  const legacyUnsub = (key: string) => {
+    const body = Buffer.from(JSON.stringify(["alice.testnet", ESTATE, "a-1"])).toString("base64url");
+    return `${body}.${createHmac("sha256", key).update(body).digest("base64url")}`;
+  };
+  it("signs only with NOTIFY_SECRET; CRON_SECRET only verifies old unsubscribe links", () => {
     process.env.CRON_SECRET = "cron";
     delete process.env.NOTIFY_SECRET;
-    const oldUnsub = unsubscribeToken("alice.testnet", ESTATE, "a-1");
-    const oldConfirm = confirmToken("alice.testnet", ESTATE, "a-1", "a@example.com", 1);
-    expect(readToken(oldUnsub)).toHaveLength(3);
+    expect(() => unsubscribeToken("alice.testnet", ESTATE, "a-1")).toThrow(/NOTIFY_SECRET/);
+    expect(() => confirmToken("alice.testnet", ESTATE, "a-1", "a@example.com")).toThrow(/NOTIFY_SECRET/);
+    const old = legacyUnsub("cron");
+    expect(readUnsubscribeToken(old)).toEqual({ account: "alice.testnet", estate: ESTATE, unit: "a-1" }); // old links keep working
     process.env.NOTIFY_SECRET = "notify";
-    const fresh = unsubscribeToken("alice.testnet", ESTATE, "a-1");
-    expect(fresh).not.toBe(oldUnsub);
-    expect(readToken(fresh, "unsubscribe")).toHaveLength(3);
-    expect(readToken(oldUnsub, "unsubscribe")).toHaveLength(3); // links in emails already sent keep working
-    expect(readToken(oldUnsub)).toBeNull();
-    expect(readToken(oldConfirm)).toBeNull(); // confirm links only verify against the current key
+    const fresh = unsubscribeToken("alice.testnet", ESTATE, "a-1", 1_000);
+    expect(readUnsubscribeToken(fresh, 2_000)).toEqual({ account: "alice.testnet", estate: ESTATE, unit: "a-1" });
+    expect(readUnsubscribeToken(fresh, 1_000 + UNSUBSCRIBE_TTL_MS + 1)).toBe("expired");
+    expect(readUnsubscribeToken(old)).toMatchObject({ unit: "a-1" });
+    expect(readToken(old)).toBeNull(); // only unsubscribe links fall back to the legacy key
+    const c = confirmToken("alice.testnet", ESTATE, "a-1", "a@example.com", 1);
+    expect(readToken(c)).toHaveLength(6);
+    expect(readUnsubscribeToken(c)).toBeNull(); // a confirm link is not an unsubscribe link
     delete process.env.CRON_SECRET;
-    expect(readToken(oldUnsub, "unsubscribe")).toBeNull();
+    expect(readUnsubscribeToken(old)).toBeNull();
+  });
+  it("is off without NOTIFY_SECRET (CRON_SECRET no longer signs)", () => {
+    Object.assign(process.env, { RESEND_API_KEY: "re_x", RESEND_FROM: "Plote <n@x.example>", CRON_SECRET: "c", NEXT_PUBLIC_SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" });
+    delete process.env.NOTIFY_SECRET;
+    expect(notifyConfigured()).toBe(false);
   });
   it("is configured only with RESEND_API_KEY and RESEND_FROM (no default sender)", () => {
     Object.assign(process.env, { RESEND_API_KEY: "re_x", NOTIFY_SECRET: "n", NEXT_PUBLIC_SUPABASE_URL: "https://x.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" });
@@ -298,11 +316,11 @@ describe("gate pass: server-side, single use", () => {
 describe("playground caps", () => {
   it("adds hourly caps for playground uploads and relayed captures", () => {
     expect(uploadLimits("a.testnet", false)).toEqual([["upload:a.testnet", 20, 60_000]]);
-    expect(uploadLimits("a.testnet", true)).toContainEqual(["upload-pg:a.testnet", 5, 3600_000]);
-    expect(uploadLimits("a.testnet", true)).toContainEqual(["upload-pg:all", 50, 3600_000]);
-    expect(relayLimits("a.testnet", "1.2.3.4", true, ["submit_evidence"])).toContainEqual(["relay-pg:a.testnet", 10, 3600_000]);
-    expect(relayLimits("a.testnet", "1.2.3.4", true, ["qs_sign"])).toHaveLength(3);
-    expect(relayLimits("a.testnet", "1.2.3.4", false, ["submit_evidence"])).toHaveLength(3);
+    expect(uploadLimits("a.testnet", true, ESTATE)).toContainEqual([`upload-pg:${ESTATE}:a.testnet`, 5, 3600_000]);
+    expect(uploadLimits("a.testnet", true, ESTATE)).toContainEqual([`upload-pg:${ESTATE}:all`, 50, 3600_000]);
+    expect(relayLimits("a.testnet", "1.2.3.4", ESTATE, true, ["submit_evidence"])).toContainEqual([`relay-pg:${ESTATE}:a.testnet`, 10, 3600_000]);
+    expect(relayLimits("a.testnet", "1.2.3.4", ESTATE, true, ["qs_sign"])).toHaveLength(5); // signing is capped on the playground too
+    expect(relayLimits("a.testnet", "1.2.3.4", "real.plote.testnet", false, ["submit_evidence"])).toHaveLength(3);
   });
 });
 

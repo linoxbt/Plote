@@ -1,5 +1,6 @@
 // Evidence storage housekeeping, run by the poller for each estate. Never deletes a file an on-chain evidence points
-// at (list_evidence urls). Reports only, unless STORAGE_CLEANUP_DELETE=1.
+// at (list_evidence urls). Deletes by default on a production deployment; STORAGE_CLEANUP_DELETE=0 makes it report
+// only, =1 forces deletion elsewhere (lib/server/env.ts cleanupDeletes).
 //  - playground_expired: playground photos older than 14 days (the judge sandbox is public; keep it from becoming
 //    free hosting).
 //  - uploaded_late: the bytes arrived after the 5-minute upload deadline recorded by /api/evidence/upload-url

@@ -43,7 +43,7 @@ export function ReleasesClient({ slug }: { slug: string }) {
   };
   return (
     <Page>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <EstateHeader e={e} slug={estateSlug(account)} />
       <RequireWallet what="claiming releases">
         <BracketCard className="space-y-4">

@@ -1,40 +1,23 @@
-//! Bakes the git commit into the binary as `PLOTE_WORKER_COMMIT`.
-//! Priority: `GIT_SHA` env var, then `git rev-parse HEAD`, then "unknown".
-use std::process::Command;
-
-fn git(args: &[&str]) -> Option<String> {
-    let out = Command::new("git").args(args).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    (!s.is_empty()).then_some(s)
-}
-
+//! Bakes the worker's version label into the binary as `PLOTE_WORKER_COMMIT`.
+//!
+//! Reproducible on purpose: nothing about the build machine or checkout (git HEAD,
+//! dirty state, time, paths) goes in. The label is `GIT_SHA` when the builder sets
+//! it explicitly (hex, 7–64 characters), else the fixed `plote-verifier@<version>`.
+//! The build's real identity is the SHA-256 of the WASM (OutLayer's version key),
+//! which anyone can reproduce with `./build-wasm.sh` (README "Reproducible build").
 fn main() {
     println!("cargo:rerun-if-env-changed=GIT_SHA");
     println!("cargo:rerun-if-changed=build.rs");
 
-    let sha = std::env::var("GIT_SHA")
+    let explicit = std::env::var("GIT_SHA")
         .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| git(&["rev-parse", "HEAD"]))
-        .unwrap_or_else(|| "unknown".to_string());
-
-    // Re-run when HEAD moves (if we are in a git checkout).
-    if let Some(dir) = git(&["rev-parse", "--absolute-git-dir"]) {
-        let mut watch = vec![format!("{dir}/HEAD"), format!("{dir}/packed-refs")];
-        if let Some(r) = git(&["symbolic-ref", "-q", "HEAD"]) {
-            watch.push(format!("{dir}/{r}"));
-        }
-        for p in watch {
-            // A missing path would force a rebuild every time; skip those.
-            if std::path::Path::new(&p).exists() {
-                println!("cargo:rerun-if-changed={p}");
-            }
-        }
-    }
-
-    println!("cargo:rustc-env=PLOTE_WORKER_COMMIT={sha}");
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| (7..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit()));
+    let label = explicit.unwrap_or_else(|| {
+        format!(
+            "plote-verifier@{}",
+            std::env::var("CARGO_PKG_VERSION").unwrap_or_default()
+        )
+    });
+    println!("cargo:rustc-env=PLOTE_WORKER_COMMIT={label}");
 }

@@ -53,7 +53,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
 
   return (
     <Page>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <nav className="mono mb-4 text-xs text-muted" aria-label="Breadcrumb">
         <Link href="/estates" className="hover:text-text">Estates</Link> / <Link href={`/estates/${s}`} className="hover:text-text">{e.name}</Link> / {unitDisplay(u.id)}
       </nav>

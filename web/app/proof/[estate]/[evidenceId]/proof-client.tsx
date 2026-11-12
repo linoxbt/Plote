@@ -63,7 +63,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
 
   return (
     <Page>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <nav className="mono mb-4 text-xs text-muted" aria-label="Breadcrumb">
         <Link href={`/estates/${estateSlug(account)}`} className="hover:text-text">{e.name}</Link> / <Link href={`/estates/${estateSlug(account)}/milestones`} className="hover:text-text">milestones</Link> / proof #{ev.id}
       </nav>

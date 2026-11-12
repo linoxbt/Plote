@@ -81,7 +81,7 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
 
   return (
     <Page narrow>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <p className="mono mb-2 text-xs tracking-[0.12em] text-orange">{e.name.toUpperCase()} · {unitDisplay(u.id)}</p>
       <h1 className="mb-1 text-3xl font-normal">{u.label}</h1>
       <p className="mb-6"><MonoAmount value={u.price} account={u.account} size="lg" /></p>

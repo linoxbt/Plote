@@ -65,7 +65,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
 
   return (
     <Page>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <EstateHeader e={e} slug={estateSlug(account)} right={<><LinkButton href={`/dev/estates/${estateSlug(account)}/releases`} variant="primary" size="sm">Claim releases</LinkButton><LinkButton href={`/gate/${estateSlug(account)}`} size="sm" prefetch={false}>Gate scanner</LinkButton></>} />
       <RequireWallet what="the developer console">
         {!isDev ? <BracketCard tone="amber" className="mb-6">You&apos;re signed in as <span className="mono">{accountId}</span>; only <span className="mono">{e.developer_id}</span> can add units.</BracketCard> : null}

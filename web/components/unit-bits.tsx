@@ -3,15 +3,19 @@
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ShoppingCart } from "lucide-react";
-import { nftApprovedCount } from "@/lib/estate";
+import { checkedViews as V, nftApprovedCount } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
-import { formatDate, pct, shareOf, toBig, unitDisplay } from "@/lib/format";
+import { PloteError } from "@/lib/errors";
+import { formatDate, formatUsd, pct, shareOf, toBig, unitDisplay } from "@/lib/format";
+import { assertPayable } from "@/lib/genuine";
 import { useNow } from "@/lib/hooks";
 import { sendTx } from "@/lib/near";
+import { assertFtCallAccepted } from "@/lib/tx-outcome";
 import { usdc } from "@/lib/usdc";
 import type { EstateView, EvidenceView, MilestoneView, NftToken, UnitView } from "@/lib/types";
 import { AccountChip, CountdownChip, MonoAmount, StatusBadge } from "./chain";
 import { HouseNFT } from "./house-nft";
+import { EvidenceThumb } from "./evidence-image";
 import { useTx } from "./toast";
 import { useWallet } from "./wallet";
 import { Bar, BracketCard, Button, EmptyState } from "./ui";
@@ -127,27 +131,60 @@ export function PlanTable({ u }: { u: UnitView }) {
   );
 }
 
-/** Atomic resale buy: usdc.ft_transfer_call(estate, ask, {"buy": id}) — S4. */
-export function BuyListingButton({ estate, u }: { estate: string; u: UnitView }) {
+/** Why a listing can't be bought right now (the estate would refuse and refund), or null when it can. */
+export function listingBlocker(u: Pick<UnitView, "listing" | "lien" | "in_flight">, frozen: boolean): string | null {
+  if (!u.listing) return "This unit isn't listed.";
+  if (frozen) return "Releases on this estate are frozen by a holder vote, so listings can't be bought until it's lifted.";
+  if (u.lien) return "A lender's lien is set on this unit, so it can't change hands until the lender clears it.";
+  if (toBig(u.in_flight) > 0n) return "A transfer out of this unit is still settling. Try again in a few seconds.";
+  return null;
+}
+
+/**
+ * Atomic resale buy: usdc.ft_transfer_call(estate, ask, {"buy": id}) — S4. Re-reads the estate and the unit right
+ * before paying (the default ask moves with later payments, and a freeze, lien or transfer out makes the estate refuse),
+ * checks the estate is genuine, and treats a refused purchase (USDC returned) as a failure, not a success.
+ */
+export function BuyListingButton({ estate, u, frozen = false }: { estate: string; u: UnitView; frozen?: boolean }) {
   const { accountId, connect } = useWallet();
   const { run } = useTx();
   const qc = useQueryClient();
   if (!u.listing) return null;
   const mine = accountId && accountId === u.holder;
+  const blocked = listingBlocker(u, frozen);
+  if (blocked && !mine) return <p className="text-sm text-amber">{blocked}</p>;
   return (
     <Button
       variant="primary"
       disabled={!!mine}
       onClick={async () => {
         if (!accountId) return connect();
-        const r = await run(`Buy ${unitDisplay(u.id)} for $${(Number(u.listing!.ask) / 1e6).toLocaleString()}`, () =>
-          sendTx(usdc.ftTransferCall(estate, u.listing!.ask, JSON.stringify({ buy: u.id }))),
-          { success: "Paid, and the token moved to you in the same transaction." },
-        );
-        if (r) qc.invalidateQueries();
+        const r = await run(`Buy ${unitDisplay(u.id)}`, async () => {
+          const [e, fresh] = await Promise.all([V.getEstate(estate, { fresh: true }), V.getUnit(estate, u.id, { fresh: true })]);
+          if (!fresh?.listing) throw new PloteError("E_LISTING", "listing gone", "This unit is no longer listed.");
+          await assertPayable(estate, fresh);
+          const why = listingBlocker(fresh, !!e.frozen);
+          if (why) throw new PloteError("LISTING_BLOCKED", why, why);
+          if (fresh.holder === accountId) throw new PloteError("E_BAD_ARGS", "buyer is the seller", "You already hold this unit.");
+          const ask = fresh.listing.ask;
+          if (ask !== u.listing!.ask && !window.confirm(`The price changed to ${formatUsd(ask)} (a default listing's ask follows what the holder has paid). Buy for ${formatUsd(ask)}?`)) {
+            throw new PloteError("WALLET_REJECTED", "price changed; cancelled");
+          }
+          const res = await sendTx(usdc.ftTransferCall(estate, ask, JSON.stringify({ buy: u.id })));
+          assertFtCallAccepted(res, ask, "purchase");
+          return res;
+        }, { success: "Paid, and the token moved to you in the same transaction." });
+        if (r) {
+          await Promise.all([
+            qc.invalidateQueries({ queryKey: ["unit", estate, u.id] }),
+            qc.invalidateQueries({ queryKey: ["units", estate] }),
+            qc.invalidateQueries({ queryKey: ["my-units"] }),
+            qc.invalidateQueries({ queryKey: ["usdc-bal"] }),
+          ]);
+        }
       }}
     >
-      <ShoppingCart className="h-4 w-4" aria-hidden /> {mine ? "Your listing" : "Buy this unit"}
+      <ShoppingCart className="h-4 w-4" aria-hidden /> {mine ? "Your listing" : `Buy this unit · ${formatUsd(u.listing.ask)}`}
     </Button>
   );
 }
@@ -178,7 +215,7 @@ export function ListingCard({ estate, e, u }: { estate: string; e: EstateView; u
           </dd>
         </div>
       </dl>
-      <BuyListingButton estate={estate} u={u} />
+      <BuyListingButton estate={estate} u={u} frozen={!!e.frozen} />
     </BracketCard>
   );
 }
@@ -191,7 +228,7 @@ export function EvidenceThumbs({ estate, list }: { estate: string; list: Evidenc
         <li key={ev.id}>
           <Link href={`/proof/${estateSlug(estate)}/${ev.id}`} className="corners corners-hover block bg-surface p-2">
             <div className="aspect-[4/3] overflow-hidden bg-surface-2">
-              <img src={ev.url} alt={`Evidence #${ev.id}`} className="h-full w-full object-cover" loading="lazy" />
+              <EvidenceThumb src={ev.url} alt={`Evidence #${ev.id}`} className="h-full w-full object-cover" sizes="(max-width: 640px) 50vw, 240px" />
             </div>
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="mono text-xs text-muted">#{ev.id}</span>

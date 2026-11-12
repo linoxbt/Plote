@@ -23,7 +23,7 @@ export function MilestonesClient({ slug }: { slug: string }) {
   const base = (units.data ?? []).reduce((n, u) => n + (toBig(u.paid) < toBig(u.price) ? toBig(u.paid) : toBig(u.price)), 0n);
   return (
     <Page>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <EstateHeader e={e} slug={estateSlug(account)} />
       <h2 className="mb-4 text-2xl font-normal">Milestone timeline</h2>
       {ms.error ? <ErrorState error={ms.error} onRetry={() => ms.refetch()} /> : !ms.data ? <LoadingCard lines={5} /> : (

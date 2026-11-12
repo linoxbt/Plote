@@ -299,6 +299,39 @@ impl Estate {
     }
 }
 
+#[near]
+impl Estate {
+    /// Upgrade hook (finding 11). State-layout rule: `Estate` and everything stored in it keep their borsh layout
+    /// forever (enums may only gain variants at the end); new state goes under new raw keys (`ext.rs`). So an in-place
+    /// code upgrade loads the old state as is, and `migrate` only has to bring the *new* keys up to `STATE_VERSION`:
+    /// deploy the new code, then call `migrate` from the estate account (`#[private]`), e.g. as the second action of the
+    /// same `DeployContract` transaction. Idempotent. A future change that does need a new root layout would instead
+    /// add `#[private] #[init(ignore_state)] pub fn migrate_vN() -> Self` that reads the old struct with
+    /// `env::state_read::<OldEstate>()` and returns the new one; this method is the place to dispatch on the stored
+    /// version for that.
+    #[private]
+    pub fn migrate(&mut self) -> u32 {
+        let from = ext::state_version();
+        if from < 2 {
+            // v1 → v2: remember how long proposals opened before the upgrade stay open, so weight changes during them
+            // are snapshotted (votes.rs `note_weight_change`).
+            let h = self.proposal_horizon();
+            ext::set(ext::K_PROPOSAL_HORIZON, &h);
+        }
+        ext::set(ext::K_VERSION, &ext::STATE_VERSION);
+        events::emit(
+            "migrated",
+            near_sdk::serde_json::json!({ "from": from, "to": ext::STATE_VERSION }),
+        );
+        ext::STATE_VERSION
+    }
+
+    /// View: the state version (1 = an estate deployed before the marker existed and not migrated yet).
+    pub fn state_version(&self) -> u32 {
+        ext::state_version()
+    }
+}
+
 // ---------- internal helpers shared by the modules ----------
 
 /// Did the promise result at `i` succeed? (Payload ignored.)

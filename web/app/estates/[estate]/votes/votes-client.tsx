@@ -39,7 +39,7 @@ export function VotesClient({ slug }: { slug: string }) {
   const past = list.filter((p) => p.status !== "Open");
   return (
     <Page>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <EstateHeader
         e={e}
         slug={estateSlug(account)}

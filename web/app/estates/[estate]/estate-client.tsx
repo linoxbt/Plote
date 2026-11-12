@@ -18,7 +18,7 @@ export function EstateClient({ slug }: { slug: string }) {
   const e = est.data;
   return (
     <Page>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <EstateHeader e={e} slug={estateSlug(account)} />
       <div className="space-y-6">
         <BracketCard>

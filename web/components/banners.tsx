@@ -1,8 +1,9 @@
 "use client";
 
-import { FlaskConical, Snowflake, Timer } from "lucide-react";
+import { AlertOctagon, FlaskConical, Snowflake, Timer } from "lucide-react";
 import type { EstateView } from "@/lib/types";
 import { formatDuration, nsToMs } from "@/lib/format";
+import { useGenuineEstate } from "@/lib/hooks";
 
 export function PlaygroundBanner() {
   return (
@@ -29,6 +30,13 @@ export function DemoBanner({ estate }: { estate: EstateView }) {
   );
 }
 
+/** The refund sentence for a frozen estate: `refunds_open` is the estate-wide truth (freeze with refunds, or a miss). */
+export function frozenRefundText(estate: Pick<EstateView, "frozen" | "refunds_open">): string {
+  if (estate.frozen?.refunds_open) return " Holders also opened refunds: every holder can take back what hasn't been released.";
+  if (estate.refunds_open) return " Refunds are open anyway, because a milestone deadline passed without a timely sign-off.";
+  return " Refunds aren't open: they open if a milestone deadline plus its grace period passes, or if holders vote a freeze with refunds.";
+}
+
 export function FrozenBanner({ estate }: { estate: EstateView }) {
   if (!estate.frozen) return null;
   return (
@@ -36,18 +44,34 @@ export function FrozenBanner({ estate }: { estate: EstateView }) {
       <Snowflake className="mt-0.5 h-4 w-4 shrink-0 text-red" strokeWidth={1.5} aria-hidden />
       <p>
         <span className="mono font-normal text-red">FREEZE ACTIVE</span> — holders voted to stop releases: “{estate.frozen.reason}”.
-        {estate.frozen.refunds_open ? " Refunds are open." : " Refunds open only after a missed deadline."}
+        {frozenRefundText(estate)}
       </p>
     </div>
   );
 }
 
-export function EstateBanners({ estate }: { estate: EstateView | undefined | null }) {
-  if (!estate) return null;
-  const any = estate.params.playground || estate.params.demo_mode || estate.frozen;
+/** Red warning when the account in the URL isn't a genuine Plote estate (see lib/genuine.ts). */
+export function NotGenuineBanner({ account }: { account: string }) {
+  const g = useGenuineEstate(account);
+  if (!g.data || g.data.genuine) return null;
+  return (
+    <div className="corners corners-red flex items-start gap-3 bg-red/10 p-3 text-sm" role="alert">
+      <AlertOctagon className="mt-0.5 h-4 w-4 shrink-0 text-red" strokeWidth={1.5} aria-hidden />
+      <p>
+        <span className="mono font-normal text-red">NOT A PLOTE ESTATE</span> — {g.data.why} Whatever this contract reports is not checked by Plote, and
+        this site won&apos;t send it money.
+      </p>
+    </div>
+  );
+}
+
+export function EstateBanners({ estate, account }: { estate: EstateView | undefined | null; account?: string }) {
+  if (!estate) return account ? <div className="mb-6 empty:hidden"><NotGenuineBanner account={account} /></div> : null;
+  const any = estate.params.playground || estate.params.demo_mode || estate.frozen || account;
   if (!any) return null;
   return (
-    <div className="mb-6 space-y-2">
+    <div className="mb-6 space-y-2 empty:hidden">
+      {account ? <NotGenuineBanner account={account} /> : null}
       <FrozenBanner estate={estate} />
       {estate.params.playground ? <PlaygroundBanner /> : null}
       {estate.params.demo_mode ? <DemoBanner estate={estate} /> : null}

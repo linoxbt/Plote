@@ -227,7 +227,7 @@ export function CaptureClient({ slug }: { slug: string }) {
 
   return (
     <Page narrow>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <h1 className="mb-2 text-3xl font-normal">Capture · {e.name}</h1>
       <div className="mb-4"><SignerBadge s={signer} /></div>
       {!signer.mode ? <BracketCard tone="amber" className="mb-4">Connect the surveyor wallet or <Link className="underline" href="/qs/setup">install a phone key</Link> first.</BracketCard> : !allowed ? (

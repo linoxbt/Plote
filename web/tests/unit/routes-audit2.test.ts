@@ -7,6 +7,8 @@ const h = vi.hoisted(() => ({
   relayer: vi.fn(),
   poll: vi.fn(),
   results: new Map<string, Record<string, unknown>>(),
+  rpcs: [] as string[],
+  lockHeld: false,
 }));
 
 vi.mock("@/lib/near", async (orig) => {
@@ -19,7 +21,7 @@ vi.mock("@/lib/near", async (orig) => {
     }),
   };
 });
-vi.mock("@/lib/server/relayer", async (orig) => ({ ...(await orig<typeof import("@/lib/server/relayer")>()), callAsRelayer: h.relayer }));
+vi.mock("@/lib/server/relayer", async (orig) => ({ ...(await orig<typeof import("@/lib/server/relayer")>()), callAsReporter: h.relayer }));
 vi.mock("@/lib/server/poller", async (orig) => ({ ...(await orig<typeof import("@/lib/server/poller")>()), pollEstate: h.poll }));
 vi.mock("@/lib/server/balances", () => ({ balances: async () => ({ ok: true, detail: "", low: [] }) }));
 vi.mock("@/lib/server/health", async (orig) => ({ ...(await orig<typeof import("@/lib/server/health")>()), accountBalances: async () => ({ ok: true, detail: "", low: [] }) }));
@@ -54,7 +56,14 @@ function fakeSb() {
     };
     return q;
   };
-  return { from: table, rpc: () => Promise.resolve({ data: null, error: { message: "not in tests" } }) };
+  // The poller's run lock is free; every other rpc is unavailable (routes fall back or fail closed).
+  return {
+    from: table,
+    rpc: (fn: string) => {
+      h.rpcs.push(fn);
+      return Promise.resolve(fn === "poll_lock_acquire" ? { data: !h.lockHeld, error: null } : fn === "poll_lock_release" ? { data: null, error: null } : { data: null, error: { message: "not in tests" } });
+    },
+  };
 }
 const sb = fakeSb();
 vi.mock("@/lib/server/supabase-admin", () => ({ supabaseAdmin: () => sb }));

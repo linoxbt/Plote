@@ -51,7 +51,7 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
 
   return (
     <Page narrow>
-      <EstateBanners estate={e} />
+      <EstateBanners estate={e} account={account} />
       <div className="grid gap-6 sm:grid-cols-[220px_1fr] sm:items-center">
         <BracketCard className="p-2"><UnitImage e={e} u={u} ms={ms.data} /></BracketCard>
         <div className="space-y-3">

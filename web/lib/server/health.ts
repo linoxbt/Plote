@@ -85,6 +85,25 @@ export async function accountBalances(estates: string[] = ESTATES, extra: string
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Poller freshness: every successful estate pass stamps poll_cursor.updated_at (poll_cursor_save, migration 0006).
+
+export const POLLER_MAX_AGE_MS = 20 * 60_000;
+
+/** Not ok when any configured estate's cursor wasn't saved in the last 20 minutes (or never). Detail names estates. */
+export function pollerFreshness(rows: { estate: string; updated_at: string | null }[], estates: string[] = ESTATES, now: number = Date.now(), maxAgeMs = POLLER_MAX_AGE_MS): { ok: boolean; detail: string } {
+  const at = new Map(rows.map((r) => [r.estate, r.updated_at ? Date.parse(r.updated_at) : NaN]));
+  const parts: string[] = [];
+  const stale: string[] = [];
+  for (const e of estates) {
+    const t = at.get(e);
+    const age = t !== undefined && Number.isFinite(t) ? now - t : null;
+    parts.push(`${e} ${age === null ? "never" : `${Math.round(age / 60_000)} min ago`}`);
+    if (age === null || age > maxAgeMs) stale.push(e);
+  }
+  return { ok: stale.length === 0, detail: (stale.length ? `STALE: ${stale.join(", ")} · ` : "") + (parts.join(" · ") || "no estates") };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // /api/health public view
 
 export type Check = { ok: boolean; detail: string; configured?: boolean; mainnet_only?: boolean };
@@ -95,6 +114,8 @@ const PUBLIC_DETAIL: Record<string, [ok: string, notOk: string]> = {
   accounts: ["developer and payout accounts above 0.5 NEAR", "a developer or payout account is below 0.5 NEAR"],
   photo_checks: ["recent photo checks ran normally", "recent photo checks are failing (AI, challenge read or worker)"],
   relayer: ["configured", "not working"],
+  reporter: ["configured", "not working"],
+  poller: ["indexed events within the last 20 minutes", "the event poller hasn't completed a run recently"],
 };
 
 export function publicView(h: Health): Health {

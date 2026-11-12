@@ -103,13 +103,13 @@ describe("family wall reads the chain, not the poster", () => {
 
 describe("notify tokens", () => {
   it("round-trips signed tokens and rejects tampering", () => {
-    process.env.CRON_SECRET = "test-secret";
+    process.env.NOTIFY_SECRET = "test-secret";
     const c = confirmToken("alice.testnet", ESTATE, "a-4b", "a@example.com", 123);
     expect(readToken(c)).toEqual(["confirm", "alice.testnet", ESTATE, "a-4b", "a@example.com", 123]);
     const [body, sig] = c.split(".");
     expect(readToken(`${body}x.${sig}`)).toBeNull();
     expect(readToken("garbage")).toBeNull();
-    expect(readToken(unsubscribeToken("alice.testnet", ESTATE, "a-4b"))).toHaveLength(3);
+    expect(readToken(unsubscribeToken("alice.testnet", ESTATE, "a-4b"))).toHaveLength(5);
   });
 });
 

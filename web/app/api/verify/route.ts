@@ -1,7 +1,8 @@
 // POST /api/verify — HTTPS fallback for the TEE photo check (SPEC 6.6).
 // Body: { estate, evidenceId }. Reads the exact worker input from the estate (`check_input`), runs the worker on
-// OutLayer's HTTPS API, and submits the verdict with submit_verdict, signed by the relayer (the estate's
-// verdict_relayer). Weaker than yield/resume: the relayer is trusted to pass the result through, and the
+// OutLayer's HTTPS API (capped at WORKER_TIMEOUT_MS), stores the paid verdict (verify_results), then submits it with
+// submit_verdict, signed by the reporter key (REPORTER_*, the estate's verdict_relayer; testnet falls back to the
+// relayer key). Resumable: a stored, unsubmitted verdict is submitted again instead of paying for another run. Weaker than yield/resume: the relayer is trusted to pass the result through, and the
 // proof page says "verdict via HTTPS". Only for estates whose verify_mode is "https": an OutLayer-mode estate
 // gets its verdict from OutLayer's yield/resume callback, and the contract rejects relayed ones (E_VERIFY_MODE).
 
@@ -15,7 +16,8 @@ import { clientIp, jsonError, notConfigured, ok, parseJson } from "@/lib/server/
 import { PloteError } from "@/lib/errors";
 import { claimOnce, claimVerify, releaseVerify } from "@/lib/server/once";
 import { rateLimitShared } from "@/lib/server/rate-limit";
-import { callAsRelayer, relayerCredentials } from "@/lib/server/relayer";
+import { callAsReporter, reporterCredentials, reporterEnvNames } from "@/lib/server/relayer";
+import { logError } from "@/lib/server/alert";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { extractVerdict, paidStore, relayAllowed, toContractVerdict, type PaidStore } from "@/lib/server/verify";
 
@@ -23,15 +25,17 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const MAX_ATTEMPTS = 3;
+/** The worker call must leave time to store and submit the verdict inside maxDuration (60 s). */
+export const WORKER_TIMEOUT_MS = 35_000;
 
 const Body = z.object({ estate: z.string().min(2).max(64), evidenceId: z.union([z.string().regex(/^\d+$/), z.number().int().positive()]) });
 
 export async function POST(req: Request) {
   const url = process.env.OUTLAYER_HTTPS_URL?.trim();
   const key = process.env.OUTLAYER_PAYMENT_KEY?.trim();
-  const creds = relayerCredentials();
+  const creds = reporterCredentials();
   if (!url || !key || !creds) {
-    return notConfigured("The HTTPS verifier", ["OUTLAYER_HTTPS_URL", "OUTLAYER_PAYMENT_KEY", "RELAYER_ACCOUNT_ID", "RELAYER_PRIVATE_KEY"]);
+    return notConfigured("The HTTPS verifier", ["OUTLAYER_HTTPS_URL", "OUTLAYER_PAYMENT_KEY", ...reporterEnvNames()]);
   }
   const p = await parseJson(req, Body);
   if (!p.ok) return p.res;
@@ -98,44 +102,57 @@ async function runWorker(url: string, key: string, estate: string, id: string, i
       method: "POST",
       headers: { "content-type": "application/json", "x-payment-key": key },
       body: JSON.stringify({ input }),
-      signal: AbortSignal.timeout(55_000),
+      signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
     });
     const text = await r.text();
-    if (!r.ok) return jsonError("WORKER_FAILED", `OutLayer returned ${r.status}: ${text.slice(0, 200)}`, 502);
+    if (!r.ok) {
+      logError("plote:verify-worker-failed", `OutLayer HTTP ${r.status}`, { estate, evidence: id, body: text.slice(0, 200) });
+      return jsonError("WORKER_FAILED", "The photo check service returned an error. Try again in a minute.", 502);
+    }
     raw = JSON.parse(text);
   } catch (err) {
-    return jsonError("WORKER_FAILED", `OutLayer call failed: ${(err as Error).message}`, 502);
+    logError("plote:verify-worker-failed", err, { estate, evidence: id });
+    return jsonError("WORKER_FAILED", "The photo check didn't finish in time or its answer couldn't be read. Try again in a minute.", 502);
   }
   const found = extractVerdict(raw);
-  if (!found) return jsonError("WORKER_FAILED", "Couldn't find a verdict in OutLayer's response.", 502);
-  return submitVerdict(estate, id, toContractVerdict(found.verdict, found.attestation), paid, false);
+  if (!found) {
+    logError("plote:verify-worker-failed", "no verdict in OutLayer's response", { estate, evidence: id });
+    return jsonError("WORKER_FAILED", "The photo check didn't return a verdict. Try again in a minute.", 502);
+  }
+  const verdict = toContractVerdict(found.verdict, found.attestation);
+  // OutLayer is paid now: keep the verdict before anything else can fail (submit error, the 60 s limit), so a retry
+  // submits this one instead of paying for another run.
+  const saved = await paid.save(estate, id, verdict, "not submitted yet").catch(() => false);
+  if (!saved) logError("plote:verify-verdict-not-saved", "verify_results write failed", { estate, evidence: id });
+  return submitVerdict(estate, id, verdict, paid, false, saved);
 }
 
 /**
- * submit_verdict as the relayer. On a contract rejection (E_* panic: e.g. the evidence is no longer pending) the stored
- * result is closed, since resubmitting can't help. On any other failure (RPC, gas) the paid verdict is stored and the
- * caller gets 502 with details; the next POST resubmits it without another OutLayer run.
+ * submit_verdict as the reporter (the estate's verdict_relayer). On a contract rejection (E_* panic: e.g. the evidence
+ * is no longer pending) the stored result is closed, since resubmitting can't help. On any other failure (RPC, gas)
+ * the paid verdict stays stored and the caller gets 502; the next POST resubmits it without another OutLayer run.
  */
-async function submitVerdict(estate: string, id: string, verdict: Record<string, unknown>, paid: PaidStore, reused: boolean) {
+async function submitVerdict(estate: string, id: string, verdict: Record<string, unknown>, paid: PaidStore, reused: boolean, saved = true) {
   try {
-    const tx = await callAsRelayer(fnCall(estate, "submit_verdict", { evidence_id: id, verdict }, 50));
+    const tx = await callAsReporter(fnCall(estate, "submit_verdict", { evidence_id: id, verdict }, 50));
     await paid.submitted(estate, id, tx.hash || null).catch(() => undefined);
     return ok({ pass: verdict.pass, reasons: verdict.reasons, tx, ...(reused ? { reused: true } : {}) });
   } catch (err) {
     const pe = err instanceof PloteError ? err : null;
-    const message = (pe ? (pe.code.startsWith("E_") ? pe.message : pe.raw) : err instanceof Error ? err.message : String(err)).slice(0, 300);
     if (pe?.code.startsWith("E_")) {
       await paid.submitted(estate, id, null).catch(() => undefined);
-      return jsonError(pe.code, `The estate rejected the verdict: ${message}`, 409);
+      return jsonError(pe.code, `The estate rejected the verdict: ${pe.message}`, 409);
     }
-    const saved = await paid.save(estate, id, verdict, message).catch(() => false);
+    logError("plote:verify-submit-failed", err, { estate, evidence: id });
+    const internal = (pe ? pe.raw : err instanceof Error ? err.message : String(err)).slice(0, 300);
+    const kept = (await paid.save(estate, id, verdict, internal).catch(() => false)) || saved;
     return NextResponse.json(
       {
         code: "VERDICT_SUBMIT_FAILED",
-        message: saved
+        message: kept
           ? "The photo was checked, but sending the verdict to the estate failed. Retry: the saved verdict is sent again without another paid check."
           : "The photo was checked, but sending the verdict to the estate failed, and the verdict couldn't be saved.",
-        details: { error: message, saved, pass: verdict.pass, reasons: verdict.reasons },
+        details: { saved: kept, pass: verdict.pass, reasons: verdict.reasons },
       },
       { status: 502 },
     );

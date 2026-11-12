@@ -1,7 +1,7 @@
 //! Unit tests that simulate the chain around the estate: unit balances, cross-contract callbacks
 //! and the clock. Names follow SPEC 17.1 (flow::, refund::, resale::, default::, verify::, vote::, ...).
 
-use crate::milestones::extract_verdict;
+use crate::milestones::{extract_verdict, VerdictArg};
 use crate::views::UnitView;
 use crate::*;
 use near_contract_standards::non_fungible_token::metadata::{
@@ -288,7 +288,7 @@ impl Env {
         )]);
         match self
             .c
-            .on_report_first(id.to_string(), U128(amount), expected)
+            .on_report_first(id.to_string(), U128(amount), expected, None)
         {
             PromiseOrValue::Promise(_) => Some(()),
             PromiseOrValue::Value(v) => {
@@ -310,7 +310,7 @@ impl Env {
             serde_json::to_vec(&U128(second)).unwrap(),
         )]);
         self.c
-            .on_report_second(id.to_string(), U128(amount), expected, U128(first))
+            .on_report_second(id.to_string(), U128(amount), expected, U128(first), None)
             .0
     }
 
@@ -436,7 +436,8 @@ impl Env {
         json!({ "evidence_id": ev, "pass": pass, "reasons": reasons, "warnings": [], "phash": PHASH,
             "nearest_distance": 27, "exif_time": 1793739420000000000u64, "gps": [6447118, 3474201], "gps_source": "exif",
             "distance_m": 23, "ai_stage": "roofing", "ai_confidence": 88, "challenge_read": "K7RQ4M", "ai_chat_id": "chatcmpl-1",
-            "ai_observations": ["roof trusses in place", "paper with code visible"], "worker_commit": commit })
+            "ai_observations": ["roof trusses in place", "paper with code visible"], "worker_commit": commit,
+            "sha256": "a".repeat(64) })
     }
 
     /// OutLayer resumes `on_verdict` with this JSON.
@@ -449,6 +450,17 @@ impl Env {
 /// The worker's JSON as the contract's `Verdict` (the relayer route sends `exif_time` as a string).
 fn verdict_of(v: serde_json::Value) -> Verdict {
     extract_verdict(&v, 0).unwrap().0
+}
+
+/// `submit_verdict`'s argument for evidence `ev`: the verdict plus the echoed evidence id and the committed sha256 that
+/// `Env::submit` uses ("a" × 64).
+fn bound(v: Verdict, ev: u64) -> VerdictArg {
+    VerdictArg {
+        verdict: v,
+        evidence_id: Some(json!(ev)),
+        sha256: Some("a".repeat(64)),
+        ai_model: None,
+    }
 }
 
 /// Every `transfer_out` receipt created by the last call: (unit account, receiver, amount).
@@ -1270,7 +1282,7 @@ fn verify_https_fallback_by_relayer_only() {
     panics(
         "E_NOT_RELAYER",
         std::panic::AssertUnwindSafe(|| {
-            e.c.submit_verdict(U64(ev), v2);
+            e.c.submit_verdict(U64(ev), bound(v2, ev));
         }),
     );
     let input: serde_json::Value =
@@ -1279,7 +1291,7 @@ fn verify_https_fallback_by_relayer_only() {
     assert_eq!(input["challenge"].as_str().unwrap().len(), 6);
     assert_eq!(input["geofence"]["radius_m"], 300);
     e.as_("relayer.testnet");
-    assert!(e.c.submit_verdict(U64(ev), v));
+    assert!(e.c.submit_verdict(U64(ev), bound(v, ev)));
     assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Verified);
     assert_eq!(
         e.c.get_evidence(U64(ev))
@@ -1325,7 +1337,7 @@ fn verify_submit_verdict_rejected_in_outlayer_mode() {
     panics(
         "E_VERIFY_MODE",
         std::panic::AssertUnwindSafe(|| {
-            e.c.submit_verdict(U64(ev), v);
+            e.c.submit_verdict(U64(ev), bound(v, ev));
         }),
     );
     let got = e.c.get_evidence(U64(ev)).unwrap();
@@ -1353,7 +1365,7 @@ fn verify_submit_verdict_accepted_in_https_mode() {
     assert_eq!(e.c.verification_budget, budget);
     let v: Verdict = verdict_of(Env::verdict_json(ev, true, &[], "abc"));
     e.as_("relayer.testnet");
-    assert!(e.c.submit_verdict(U64(ev), v));
+    assert!(e.c.submit_verdict(U64(ev), bound(v, ev)));
     let got = e.c.get_evidence(U64(ev)).unwrap();
     assert_eq!(got.status, EvidenceStatus::Pass);
     assert_eq!(got.verdict.unwrap().source.as_deref(), Some("https"));
@@ -1411,7 +1423,7 @@ fn https_commit_mismatch() {
     let ev = e.submit(0, "qs.testnet");
     let v: Verdict = verdict_of(Env::verdict_json(ev, true, &[], "other"));
     e.as_("relayer.testnet");
-    assert!(!e.c.submit_verdict(U64(ev), v));
+    assert!(!e.c.submit_verdict(U64(ev), bound(v, ev)));
     assert_eq!(
         e.c.get_evidence(U64(ev)).unwrap().status,
         EvidenceStatus::Error
@@ -2216,7 +2228,7 @@ fn invariants_evidence_committed_before_check() {
     panics(
         "E_BAD_ARGS",
         std::panic::AssertUnwindSafe(|| {
-            e.c.submit_verdict(U64(ghost), v);
+            e.c.submit_verdict(U64(ghost), bound(v, ghost));
         }),
     );
     e.c.verify_mode = "outlayer".into();
@@ -2898,7 +2910,7 @@ fn deposit_pending_then_accepted_credits_exactly_once() {
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
             let _ =
-                e.c.on_report_first("a-1a".into(), U128(9_000 * USDC), expected);
+                e.c.on_report_first("a-1a".into(), U128(9_000 * USDC), expected, None);
         }),
     );
     // same if the credit lands between the two reads
@@ -2925,6 +2937,7 @@ fn deposit_pending_then_accepted_credits_exactly_once() {
                 U128(9_000 * USDC),
                 expected,
                 U128(9_000 * USDC),
+                None,
             );
         }),
     );
@@ -2959,7 +2972,7 @@ fn deposit_report_voided_by_transfer_out_between_reads() {
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
             let _ =
-                e.c.on_report_first("a-4b".into(), U128(1_000 * USDC), expected);
+                e.c.on_report_first("a-4b".into(), U128(1_000 * USDC), expected, None);
         }),
     );
     // and once it landed (the read still shows the money that left)
@@ -2969,7 +2982,7 @@ fn deposit_report_voided_by_transfer_out_between_reads() {
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
             let _ =
-                e.c.on_report_first("a-4b".into(), U128(1_000 * USDC), expected);
+                e.c.on_report_first("a-4b".into(), U128(1_000 * USDC), expected, None);
         }),
     );
     assert_eq!(e.unit("a-4b").paid.0, 10_000 * USDC, "nothing booked");
@@ -3015,7 +3028,7 @@ fn deposit_report_voided_by_transfer_out_between_reads() {
     panics(
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
-            let _ = e.c.on_report_first("a-4b".into(), U128(1), expected);
+            let _ = e.c.on_report_first("a-4b".into(), U128(1), expected, None);
         }),
     );
 }

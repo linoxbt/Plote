@@ -45,6 +45,13 @@ impl Estate {
         );
 
         let estate = env::current_account_id();
+        // Anything attached above what the units need goes back to the developer (finding 13).
+        let extra = env::attached_deposit().saturating_sub(need);
+        if !extra.is_zero() {
+            Promise::new(env::predecessor_account_id())
+                .transfer(extra)
+                .detach();
+        }
         for input in units {
             ensure!(
                 valid_unit_id(&input.id),
@@ -245,8 +252,11 @@ impl Estate {
     }
 
     /// Developer may repoint the verifier worker until the first unit is sold; afterwards the code is fixed. The
-    /// playground (judge sandbox, no real money) may repoint it at any time, but only to a pinned build.
+    /// playground (judge sandbox, no real money) may repoint it at any time, but only to a pinned build. Attach 1 yocto
+    /// (a full-access key: an app function-call key must not be able to swap the verifier).
+    #[payable]
     pub fn set_verifier(&mut self, verifier: VerifierSource) {
+        assert_one_yocto();
         self.assert_developer();
         if self.params.playground {
             ensure!(
@@ -262,6 +272,36 @@ impl Estate {
             );
         }
         crate::assert_safe_checks(&self.params, &self.geofence, &verifier);
+        emit(
+            "verifier_changed",
+            json!({ "old": self.verifier, "new": verifier, "by": "developer" }),
+        );
+        self.verifier = verifier;
+    }
+
+    /// Finding 4: re-pin a sold estate's verifier (e.g. off the pre-hardening build `LEGACY_VERIFIER`). Callable ONLY by
+    /// the estate account itself (`predecessor == current_account_id`, i.e. a transaction signed with the estate's own
+    /// full-access key, which can already redeploy the code, so this grants no new power) with 1 yocto. Runs the same
+    /// checks as `set_verifier` (a pinned, non-empty build outside the playground) and emits `verifier_changed`. Once the
+    /// estate's full-access key is deleted at launch, nobody can call it.
+    #[payable]
+    pub fn repin_verifier(&mut self, verifier: VerifierSource) {
+        assert_one_yocto();
+        ensure!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "E_NOT_ESTATE",
+            "only the estate account itself can re-pin its verifier"
+        );
+        ensure!(
+            !verifier.commit.trim().is_empty() && !verifier.repo.trim().is_empty(),
+            "E_BAD_ARGS",
+            "the verifier must be pinned (non-empty repo and commit / version key)"
+        );
+        crate::assert_safe_checks(&self.params, &self.geofence, &verifier);
+        emit(
+            "verifier_changed",
+            json!({ "old": self.verifier, "new": verifier, "by": "estate" }),
+        );
         self.verifier = verifier;
     }
 
@@ -280,6 +320,9 @@ impl Estate {
 
     /// Playground only: reopen every milestone with deadlines re-based on now, so the next judge can run
     /// the whole flow again. Units, payments and releases are untouched.
+    /// Finding 9: the developer and the surveyor may reset at any time. Anyone else only while no photo check is running
+    /// (`E_CHECK_PENDING`), no other account's capture is live (`E_CAPTURE_ACTIVE`) and at most once per
+    /// `PLAYGROUND_RESET_INTERVAL_NS` (10 min, `E_RATE_LIMIT`), so one judge can't keep wiping another's run.
     pub fn playground_reset(&mut self) {
         ensure!(
             self.params.playground,
@@ -287,6 +330,39 @@ impl Estate {
             "only the playground estate can be reset"
         );
         let now = Self::now();
+        let caller = env::predecessor_account_id();
+        if caller != self.developer_id && caller != self.surveyor_id {
+            ensure!(
+                !self
+                    .milestones
+                    .iter()
+                    .any(|m| m.status == MilestoneStatus::Checking),
+                "E_CHECK_PENDING",
+                "a photo check is running; reset after its verdict"
+            );
+            for i in 0..self.milestones.len() as u8 {
+                if let Some(c) = self.captures.get(&i) {
+                    ensure!(
+                        c.by == caller || now >= c.expires_at.0,
+                        "E_CAPTURE_ACTIVE",
+                        "{} has an open capture for milestone {} until {}",
+                        c.by,
+                        i,
+                        c.expires_at.0
+                    );
+                }
+            }
+            let last: Option<u64> = crate::ext::get(crate::ext::K_PLAYGROUND_RESET);
+            if let Some(t) = last {
+                ensure!(
+                    now >= t.saturating_add(PLAYGROUND_RESET_INTERVAL_NS),
+                    "E_RATE_LIMIT",
+                    "the playground was reset recently; next reset from {}",
+                    t.saturating_add(PLAYGROUND_RESET_INTERVAL_NS)
+                );
+            }
+        }
+        crate::ext::set(crate::ext::K_PLAYGROUND_RESET, &now);
         let spacing = 30 * ONE_DAY_NS;
         for (i, m) in self.milestones.iter_mut().enumerate() {
             m.status = MilestoneStatus::Open;
