@@ -7,19 +7,30 @@ import { MonoAmount } from "@/components/chain";
 import { BuyListingButton } from "@/components/unit-bits";
 import { BracketCard, EmptyState, ErrorState, LoadingCard } from "@/components/ui";
 import { ESTATES } from "@/lib/config";
-import { listAllUnits } from "@/lib/hooks";
+import { listAllUnits, useAllEstates } from "@/lib/hooks";
+import { explainError } from "@/lib/errors";
 import { estateSlug } from "@/lib/estates";
 import { formatDate, toBig, unitDisplay } from "@/lib/format";
 
 export function MarketClient() {
-  const qs = useQueries({ queries: ESTATES.map((e) => ({ queryKey: ["units", e], queryFn: () => listAllUnits(e), retry: 1 })) });
+  const qs = useQueries({ queries: ESTATES.map((e) => ({ queryKey: ["units", e], queryFn: () => listAllUnits(e), retry: 1, staleTime: 5000 })) });
+  const estates = new Map(useAllEstates(ESTATES).map((x) => [x.account, x.q.data]));
   const loading = qs.some((q) => q.isLoading);
-  const failed = qs.filter((q) => q.error);
+  const failed = qs.map((q, i) => ({ estate: ESTATES[i], q })).filter((x) => x.q.error);
   const listings = qs.flatMap((q, i) => (q.data ?? []).filter((u) => u.listing).map((u) => ({ estate: ESTATES[i], u })));
   if (loading) return <LoadingCard lines={4} />;
   return (
     <div className="space-y-4">
-      {failed.length === ESTATES.length && ESTATES.length ? <ErrorState error={failed[0].error} title="Couldn't read any estate" /> : null}
+      {failed.length === ESTATES.length && ESTATES.length ? <ErrorState error={failed[0].q.error} title="Couldn't read any estate" onRetry={() => failed.forEach((x) => x.q.refetch())} /> : failed.length ? (
+        <ul className="space-y-2" aria-label="Estates that failed to load">
+          {failed.map(({ estate, q }) => (
+            <li key={estate} role="alert" className="corners corners-red flex flex-wrap items-center justify-between gap-2 bg-red/5 p-3 text-sm">
+              <span>Couldn&apos;t load listings from <span className="mono">{estateSlug(estate)}</span>: {explainError(q.error).message} Its listings aren&apos;t shown.</span>
+              <button type="button" className="mono min-h-9 text-xs underline" onClick={() => q.refetch()}>Try again</button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {!listings.length ? (
         <EmptyState title="Nothing listed right now">Holders can list a unit from “My units”. Units whose holder misses an instalment are listed here automatically.</EmptyState>
       ) : (
@@ -44,7 +55,7 @@ export function MarketClient() {
                     <div><dt className="label">Paid so far</dt><dd><MonoAmount value={u.paid} account={u.account} /></dd></div>
                     <div className="col-span-2"><dt className="label">You inherit</dt><dd className="text-sm">credit of <MonoAmount value={u.paid} naira={false} /> · remaining <MonoAmount value={(remaining > 0n ? remaining : 0n).toString()} naira={false} />{u.next_due ? ` · next due ${formatDate(u.next_due.due_at)}` : ""}</dd></div>
                   </dl>
-                  <BuyListingButton estate={estate} u={u} />
+                  <BuyListingButton estate={estate} u={u} frozen={!!estates.get(estate)?.frozen} />
                 </BracketCard>
               </li>
             );

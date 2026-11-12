@@ -1,9 +1,12 @@
-# Calls the event poller every 5 minutes (Vercel Hobby cron is too infrequent). Disable after judging.
+# Manual run of the event poller. The 5-minute schedule runs from Supabase pg_cron (migrations 0005 + 0007), so this
+# workflow has no `schedule:` (two schedulers would overlap; the poller's run lock would make one of them a no-op).
+# Use it to poke the poller by hand: Actions → poll → Run workflow.
 name: poll
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   poll:
@@ -11,6 +14,7 @@ jobs:
     steps:
       # A block scalar: an unquoted `run:` value can't contain ": " (it made this file invalid YAML).
       # The poller answers 502 when every estate failed, so this step (and the job) fails and prints the report;
-      # partial failures answer 200 and go to ALERT_WEBHOOK_URL instead.
+      # partial failures answer 200 and go to ALERT_WEBHOOK_URL instead. A run that overlaps the scheduled one
+      # answers 200 with "skipped": true.
       - run: |
           curl -sS --fail-with-body --max-time 90 -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" "${{ vars.APP_URL || 'https://plote-vert.vercel.app' }}/api/cron/poll"

@@ -14,6 +14,7 @@ import { estateAccount, estateSlug } from "@/lib/estates";
 import { formatUsd, timeAgo, toBig, unitDisplay } from "@/lib/format";
 import { useEstate, useUnits } from "@/lib/hooks";
 import { callNoPopup, sendTx } from "@/lib/near";
+import { PloteError } from "@/lib/errors";
 import { recentEvents, supabaseConfigured } from "@/lib/supabase";
 
 export function ReleasesClient({ slug }: { slug: string }) {
@@ -33,13 +34,20 @@ export function ReleasesClient({ slug }: { slug: string }) {
   const total = claimable.filter((u) => sel.has(u.id)).reduce((n, u) => n + toBig(u.releasable_now), 0n);
   const claim = async () => {
     const ids = [...sel];
+    const to = e.payout_redirect ?? e.payout_id;
     for (let i = 0; i < ids.length; i += MAX_UNITS_PER_CLAIM) {
       const chunk = ids.slice(i, i + MAX_UNITS_PER_CLAIM);
-      const r = await run(`Claim ${chunk.length} unit(s)`, () => (accountId ? callNoPopup(accountId, E.claimRelease(account, chunk)) : sendTx(E.claimRelease(account, chunk))), { success: `Sent to ${e.payout_redirect ?? e.payout_id}.` });
+      const r = await run(`Claim ${chunk.length} unit(s)`, async () => {
+        const res = accountId ? await callNoPopup(accountId, E.claimRelease(account, chunk)) : await sendTx(E.claimRelease(account, chunk));
+        // claim_release returns how many transfers it started; 0 means nothing was releasable after all.
+        const started = typeof res.returnValue === "number" ? res.returnValue : Number(res.returnValue ?? NaN);
+        if (started === 0) throw new PloteError("NOTHING_RELEASED", "claim_release started 0 transfers", "Nothing was released: none of these units had money releasable at that moment (a veto window may still be open, or a transfer is already settling).");
+        return res;
+      }, { success: `Transfers started to ${to}. They land in a few seconds.` });
       if (!r) break;
     }
     setSel(new Set());
-    qc.invalidateQueries();
+    await Promise.all([qc.invalidateQueries({ queryKey: ["units", account] }), qc.invalidateQueries({ queryKey: ["estate", account] }), qc.invalidateQueries({ queryKey: ["release-history", account] })]);
   };
   return (
     <Page>
@@ -51,10 +59,10 @@ export function ReleasesClient({ slug }: { slug: string }) {
             <h2 className="text-xl font-normal">Releases</h2>
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" onClick={() => setSel(new Set(claimable.map((u) => u.id)))}>Select all claimable</Button>
-              <Button variant="primary" disabled={!sel.size || !!e.frozen} onClick={claim}>claim_release {sel.size ? `· ${formatUsd(total)}` : ""}</Button>
+              <Button variant="primary" disabled={!sel.size || !!e.frozen || e.refunds_open} onClick={claim}>claim_release {sel.size ? `· ${formatUsd(total)}` : ""}</Button>
             </div>
           </div>
-          <p className="text-sm text-muted">Anyone can call claim_release; funds always go to <span className="mono">{e.payout_redirect ?? e.payout_id}</span>. Only milestones whose veto window has passed count. {e.frozen ? <span className="text-red">Releases are frozen.</span> : null}</p>
+          <p className="text-sm text-muted">Anyone can call claim_release; funds always go to <span className="mono">{e.payout_redirect ?? e.payout_id}</span>. Only milestones whose veto window has passed count. {e.frozen ? <span className="text-red">Releases are frozen.</span> : e.refunds_open ? <span className="text-red">Refunds are open (a deadline was missed), so nothing is released until holders vote to extend it.</span> : null}</p>
           {accountId === e.developer_id ? <AppKeyToggle contractId={account} role="dev" methods={DEV_KEY_METHODS} enableLabel="Add claim key (no popup per claim)" activeLabel="Claim key is on: claims sign without a popup." success="Key added. claim_release now signs from this browser." /> : null}
           {units.error ? <ErrorState error={units.error} /> : !units.data ? <LoadingCard /> : !list.length ? <EmptyState title="No paid units yet" /> : (
             <div className="overflow-x-auto">

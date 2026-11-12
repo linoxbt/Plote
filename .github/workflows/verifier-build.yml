@@ -1,0 +1,62 @@
+# Reproducible build of the OutLayer verifier worker (verifier/README.md "Reproducible build").
+# Builds the wasm32-wasip2 release with the toolchain pinned in verifier/rust-toolchain.toml and the locked
+# dependencies, and publishes the WASM plus its SHA-256 (= the OutLayer version key the estates pin). Anyone can run
+# `cd verifier && ./build-wasm.sh` on the same commit and compare.
+name: verifier-build
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*", "verifier-v*"]
+    paths: ["verifier/**", ".github/workflows/verifier-build.yml"]
+  pull_request:
+    paths: ["verifier/**", ".github/workflows/verifier-build.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: verifier
+    steps:
+      - uses: actions/checkout@v4
+      # No build cache on purpose: the artifact must come from a clean build.
+      - name: install the pinned toolchain (verifier/rust-toolchain.toml)
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustc --version
+      - name: tests
+        run: cargo test --locked
+      - name: reproducible wasm build
+        run: ./build-wasm.sh | tee build.log
+      - name: hash
+        run: |
+          wasm=target/wasm32-wasip2/release/plote-verifier.wasm
+          sum=$(sha256sum "$wasm" | cut -d' ' -f1)
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "toolchain=$(rustc --version)"
+            echo "sha256=${sum}"
+            echo "bytes=$(stat -c %s "$wasm")"
+          } > hashes.txt
+          cat hashes.txt
+          {
+            echo "### plote-verifier.wasm"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`${GITHUB_SHA}\` |"
+            echo "| toolchain | \`$(rustc --version)\` |"
+            echo "| sha256 (OutLayer version key) | \`${sum}\` |"
+            echo ""
+            echo "Reproduce: \`cd verifier && ./build-wasm.sh\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plote-verifier-wasm
+          path: |
+            verifier/target/wasm32-wasip2/release/plote-verifier.wasm
+            verifier/hashes.txt
+          if-no-files-found: error

@@ -12,6 +12,7 @@ import { formatUsd, formatDuration, nsToMs, toBig } from "@/lib/format";
 import { useAllEstates, useAllMilestones, useEstate, useMilestones, useUnit } from "@/lib/hooks";
 import { chainName, oneclick, PICKER_CHAINS, STABLE_SYMBOLS } from "@/lib/oneclick";
 import { CheckChip, CheckInput, type CheckOutcome } from "./check";
+import { EvidenceThumb } from "./evidence-image";
 import { HouseNFT } from "./house-nft";
 import { CountUp, usePrefersReducedMotion } from "./motion";
 import { BracketCard, ChainLink, LinkButton } from "./ui";
@@ -330,7 +331,7 @@ export function LiveProofCard() {
   return (
     <BracketCard className="grid gap-5 md:grid-cols-[1fr_1.2fr]">
       <div className="corners corners-orange relative aspect-[4/3] overflow-hidden bg-surface-2">
-        {ev ? <img src={ev.url} alt="Milestone photo from the demo estate" className="h-full w-full object-cover" loading="lazy" /> : (
+        {ev ? <EvidenceThumb src={ev.url} alt="Milestone photo from the demo estate" className="h-full w-full object-cover" width={800} height={600} sizes="(max-width: 768px) 100vw, 480px" /> : (
           <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted">
             {q.isLoading
               ? "Loading the latest proof…"

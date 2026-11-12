@@ -1,3 +1,5 @@
+// TEST-ONLY (testnet demos and local testing; refuses any other network). Not part of `just deploy-testnet` or any
+// production path: real estates use OutLayer (verify_mode "outlayer") or the HTTPS fallback.
 // Fallback for demos when the real OutLayer path isn't wired yet: deploys outlayer-mock to
 // outlayer-mock.<root>. Point an estate at it with "outlayer": "outlayer-mock.plote.testnet" in its config.
 // Proof pages show the "mock_verifier" warning, so nobody mistakes it for a TEE verdict.

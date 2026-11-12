@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Film, Heart, Share2 } from "lucide-react";
 import { EstateBanners } from "@/components/banners";
 import { MonoAmount, StatusBadge } from "@/components/chain";
+import { EvidenceThumb } from "@/components/evidence-image";
 import { UnitImage } from "@/components/unit-bits";
 import { useTx } from "@/components/toast";
 import { useWallet } from "@/components/wallet";
@@ -16,7 +17,9 @@ import { approvedCount } from "@/lib/estate";
 import { estateAccount, estateSlug } from "@/lib/estates";
 import { formatDate, formatUsd, parseUsdc, pct, unitDisplay } from "@/lib/format";
 import { useEstate, useEvidenceList, useMilestones, useUnit } from "@/lib/hooks";
+import { assertPayable } from "@/lib/genuine";
 import { sendTx } from "@/lib/near";
+import { assertFtCallAccepted } from "@/lib/tx-outcome";
 import { chipins, supabaseConfigured } from "@/lib/supabase";
 import { usdc } from "@/lib/usdc";
 import type { EvidenceView } from "@/lib/types";
@@ -114,7 +117,7 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
                     </div>
                     {best ? (
                       <Link href={`/proof/${s}/${best.id}`} className="block">
-                        <img src={best.url} alt={`${m.title} photo`} className="aspect-video w-full object-cover" loading="lazy" />
+                        <EvidenceThumb src={best.url} alt={`${m.title} photo`} className="aspect-video w-full object-cover" width={960} height={540} sizes="(max-width: 768px) 100vw, 720px" />
                         <p className="mono mt-2 text-xs text-muted">{chipText(best)} · {formatDate(best.submitted_at)} · open proof →</p>
                       </Link>
                     ) : <p className="text-sm text-muted">No photo yet · due {formatDate(m.deadline)}</p>}
@@ -126,13 +129,13 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
         )}
       </section>
 
-      <FamilyWall estate={account} unitAccount={u.account} unitId={u.id} open={chip} paid={u.paid} />
+      <FamilyWall estate={account} unitAccount={u.account} unitId={u.id} open={chip} paid={u.paid} takesPayments={u.status !== "Available"} />
       <p className="mt-8 text-center text-xs text-muted">{approvedCount(ms.data)} of {ms.data?.length ?? 4} stages approved · read live from NEAR · <Link className="underline" href={`/estates/${s}/units/${u.id}`}>unit details</Link></p>
     </Page>
   );
 }
 
-function FamilyWall({ estate, unitAccount, unitId, open, paid }: { estate: string; unitAccount: string; unitId: string; open: boolean; paid: string }) {
+function FamilyWall({ estate, unitAccount, unitId, open, paid, takesPayments }: { estate: string; unitAccount: string; unitId: string; open: boolean; paid: string; takesPayments: boolean }) {
   const q = useQuery({ queryKey: ["chipins", estate, unitId], queryFn: () => chipins(estate, unitId), enabled: supabaseConfigured(), retry: 0 });
   const [show, setShow] = useState(open);
   const family = (q.data ?? []).reduce((n, c) => n + BigInt(c.amount ?? "0"), 0n);
@@ -142,7 +145,7 @@ function FamilyWall({ estate, unitAccount, unitId, open, paid }: { estate: strin
         <h2 className="text-2xl font-normal">Family wall</h2>
         <Button variant="accent" onClick={() => setShow((x) => !x)}><Heart className="h-4 w-4" aria-hidden /> Chip in</Button>
       </div>
-      {show ? <ChipInForm estate={estate} unitAccount={unitAccount} unitId={unitId} /> : null}
+      {show ? (takesPayments ? <ChipInForm estate={estate} unitAccount={unitAccount} unitId={unitId} /> : <p className="text-sm text-amber">Nobody holds or has reserved this unit yet, so it doesn&apos;t take payments: a chip-in would be returned.</p>) : null}
       {!supabaseConfigured() ? (
         <EmptyState title="Family wall offline">Names and notes are stored off-chain and that store isn&apos;t connected here. Amounts are always on the chain.</EmptyState>
       ) : q.data?.length ? (
@@ -177,12 +180,22 @@ function ChipInForm({ estate, unitAccount, unitId }: { estate: string; unitAccou
     try { base = parseUsdc(amount); } catch (e) { return setErr((e as Error).message); }
     if (!accountId) return connect();
     const msg = JSON.stringify({ from: name.slice(0, 40), note: note.slice(0, 140) });
-    const r = await run(`Chip in ${formatUsd(base)} to ${unitDisplay(unitId)}`, () => sendTx(usdc.ftTransferCall(unitAccount, base, msg)), { success: "Thank you — the money is in the unit's own account." });
+    if (BigInt(base) <= 0n) return setErr("Amount must be more than 0");
+    const r = await run(`Chip in ${formatUsd(base)} to ${unitDisplay(unitId)}`, async () => {
+      await assertPayable(estate, { id: unitId, account: unitAccount });
+      const res = await sendTx(usdc.ftTransferCall(unitAccount, base, msg));
+      assertFtCallAccepted(res, base, "deposit");
+      return res;
+    }, { success: "Thank you — the unit's account accepted the money." });
     if (r) {
       try {
         await fetch("/api/chipin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate, unit: unitId, txHash: r.hash, sender: accountId, displayName: name, note }) });
       } catch { /* the wall is best-effort; the payment is on-chain */ }
-      qc.invalidateQueries();
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["unit", estate, unitId] }),
+        qc.invalidateQueries({ queryKey: ["chipins", estate, unitId] }),
+        qc.invalidateQueries({ queryKey: ["usdc-bal"] }),
+      ]);
     }
   };
   return (

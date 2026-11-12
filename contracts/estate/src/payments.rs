@@ -306,9 +306,10 @@ impl Estate {
         }
         if surplus.unwrap_or(false) {
             crate::ext::del(&crate::ext::key(crate::ext::P_SURPLUS, unit_id.as_bytes()));
+            let spare = seen.saturating_sub(expected.0 + credit);
             crate::ext::set(
                 &crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes()),
-                &Self::now(),
+                &(Self::now(), spare),
             );
             unit.unattributed += credit;
             emit(
@@ -327,9 +328,11 @@ impl Estate {
         let now = Self::now();
         self.credit(&mut unit, credit, now, "report");
         self.save(unit);
+        // What the reads saw above the books that this report left unbooked (see `on_unit_deposit`).
+        let spare = seen.saturating_sub(expected.0 + credit);
         crate::ext::set(
             &crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes()),
-            &now,
+            &(now, spare),
         );
         U128(credit)
     }
@@ -374,12 +377,19 @@ impl Estate {
         }
         // Finding 14: USDC credited the unit before this receipt ran, so a `report_deposit` that finished in between may
         // already have booked this money from its balance reads (e.g. a retried report). Booking it again would put
-        // the books above the balance. Within `REPORT_SETTLE_NS` of a report that credited this unit, the deposit is
-        // accepted (the money stays on the unit) but not booked: it is a surplus the deposit reporter can book with
-        // `report_deposit` (two balance reads, never twice). Event `deposit_deferred`.
-        let last_report: Option<u64> =
-            crate::ext::get(&crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes()));
-        if last_report.is_some_and(|t| now < t.saturating_add(REPORT_SETTLE_NS)) {
+        // the books above the balance. A report remembers the surplus its reads saw and left unbooked (`spare`); within
+        // `REPORT_SETTLE_NS` of it, a deposit larger than `spare` is accepted (the money stays on the unit) but not
+        // booked: it is a surplus the deposit reporter books with `report_deposit` (two balance reads, never twice).
+        // Event `deposit_deferred`. A deposit within `spare` is booked and uses that much of it up.
+        let lr_key = crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes());
+        let last_report: Option<(u64, u128)> = crate::ext::get(&lr_key);
+        if let Some((t, spare)) = last_report.filter(|(t, _)| now < t.saturating_add(REPORT_SETTLE_NS)) {
+            if amount.0 <= spare {
+                crate::ext::set(&lr_key, &(t, spare - amount.0));
+                self.credit(&mut unit, amount.0, now, "ft_transfer_call");
+                self.save(unit);
+                return U128(0);
+            }
             env::log_str(&format!(
                 "deposit of {} from {} to {} accepted but not booked: a report_deposit just credited this unit; report it",
                 amount.0, sender_id, unit_id

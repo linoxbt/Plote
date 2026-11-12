@@ -1,8 +1,8 @@
-// Publishes the Plote verifier on OutLayer (testnet) and wires the estates to it — no wallet or dashboard needed.
+// Publishes the Plote verifier on OutLayer (testnet by default; mainnet only with --mainnet --i-know) and wires the estates to it.
 // Mirrors what the official outlayer-cli does (upload.rs, deploy.rs, secrets.rs, crypto.rs):
 //   1. upload   — the verifier WASM goes on-chain via FastFS (`__fastdata_fastfs`, borsh args, gas 1 on purpose:
 //                 the receipt fails but the data is indexed at https://test.fastfs.io/<sender>/<receiver>/<sha256>.wasm)
-//   2. project  — `create_project` (or `add_version` + set_active) on outlayer.testnet, source = WasmUrl{url, hash}
+//   2. project  — `create_project` (or `add_version` + set_active) on outlayer.testnet / outlayer.near, source = WasmUrl{url, hash}
 //   3. secrets  — for each deployed estate, NEAR_AI_API_KEY is encrypted to the OutLayer keystore (ECIES: X25519 →
 //                 HKDF-SHA256 "outlayer-keystore-v1" → ChaCha20-Poly1305) and stored with `store_secrets`, signed by the
 //                 estate account itself, profile "plote" (the estate's request_execution uses secrets_ref
@@ -10,35 +10,93 @@
 //   4. pin      — the version key (= SHA-256 of the WASM) is set as verifier.commit via `set_verifier` (developer, only
 //                 allowed before the first unit is sold) and written into the estate configs.
 //
-// Usage: NEAR_AI_API_KEY=… pnpm -C scripts exec tsx outlayer-setup.ts [--skip-upload] [--skip-secrets] [--only=<estate>]
-// The API key is read from the environment only; it is never written to disk or logged.
+// Usage (testnet, the default):
+//   NEAR_AI_API_KEY=… pnpm -C scripts exec tsx outlayer-setup.ts [--skip-upload] [--skip-secrets] [--only=<estate>]
+// Mainnet (deliberate, guarded: needs NEAR_ENV=mainnet, ROOT_ACCOUNT, both flags, and explicit configs):
+//   NEAR_ENV=mainnet ROOT_ACCOUNT=plote.near NEAR_AI_API_KEY_YOUR_ESTATE=… pnpm -C scripts exec tsx outlayer-setup.ts \
+//     --mainnet --i-know --config=config/your-estate.mainnet.json [--config=…] --wasm-url=https://…/<sha256>.wasm
+//   There is no known mainnet FastFS host, so on mainnet the WASM is not uploaded by this script: upload it yourself
+//   (the script prints the steps) and pass the URL with --wasm-url; the script checks that it serves exactly the
+//   bytes of the local build before using it.
+// API keys: one per estate if you want, NEAR_AI_API_KEY_<ESTATE_SLUG_UPPER> (e.g. NEAR_AI_API_KEY_HARMATTAN_COURT),
+// falling back to NEAR_AI_API_KEY. Either is stored under the secret name NEAR_AI_API_KEY (what the worker reads).
+// Keys are read from the environment only; they are never written to disk or logged (only the variable name is).
+// Build the WASM reproducibly first: cd verifier && ./build-wasm.sh
 import { createHash, createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { actions } from "near-api-js";
 import { NETWORK, ROOT, ROOT_ACCOUNT, TGAS, account, call, deployments, exists, log, near, record, usage, view } from "./lib.js";
 
-if (NETWORK !== "testnet") usage("testnet only (mainnet uses outlayer.near / api.outlayer.ai — run deliberately)");
 const argv = process.argv.slice(2);
-const OUTLAYER = "outlayer.testnet";
-const API = "https://testnet-api.outlayer.ai";
-const FASTFS = "https://test.fastfs.io";
+const flag = (name: string) => argv.includes(name);
+const opt = (name: string) => argv.filter((a) => a.startsWith(`${name}=`)).map((a) => a.slice(name.length + 1));
+const MAINNET = flag("--mainnet");
+
+// ---------- network guard ----------
+if (MAINNET !== (NETWORK === "mainnet")) {
+  usage(MAINNET ? "--mainnet needs NEAR_ENV=mainnet (so keys and RPC are mainnet too)" : `NEAR_ENV=${NETWORK}: pass --mainnet --i-know to run on mainnet, or unset NEAR_ENV for testnet`);
+}
+if (MAINNET && !flag("--i-know")) {
+  usage("✗ mainnet: this publishes the verifier that decides real milestone payouts and stores the NEAR AI key on real estates. Re-run with --mainnet --i-know once the build hash has been reproduced and reviewed (docs/LAUNCH.md §3).");
+}
+if (MAINNET && !ROOT_ACCOUNT) usage("✗ mainnet: set ROOT_ACCOUNT (the account that owns the OutLayer project, e.g. plote.near)");
+
+const NET = MAINNET
+  ? { outlayer: "outlayer.near", api: "https://api.outlayer.ai", fastfs: null as string | null }
+  : { outlayer: "outlayer.testnet", api: "https://testnet-api.outlayer.ai", fastfs: "https://test.fastfs.io" as string | null };
+const OUTLAYER = NET.outlayer;
+const API = NET.api;
 const PROJECT_NAME = "plote-verifier";
 const PROJECT_ID = `${ROOT_ACCOUNT}/${PROJECT_NAME}`;
 const PROFILE = "plote";
 const WASM_PATH = join(ROOT, "verifier/target/wasm32-wasip2/release/plote-verifier.wasm");
-const ONLY = argv.find((a) => a.startsWith("--only="))?.slice(7); // e.g. --only=harmattan-court
-const CONFIGS = ["harmattan-court", "baobab-heights", "playground"]
-  .filter((n) => !ONLY || n === ONLY)
-  .map((n) => join(ROOT, `config/${n}.testnet.json`));
+const ONLY = opt("--only")[0]; // e.g. --only=harmattan-court
+const CONFIGS = MAINNET
+  ? opt("--config").map((p) => resolve(ROOT, p))
+  : ["harmattan-court", "baobab-heights", "playground"].filter((n) => !ONLY || n === ONLY).map((n) => join(ROOT, `config/${n}.testnet.json`));
+if (MAINNET && CONFIGS.length === 0) usage("✗ mainnet: name the estate configs explicitly with --config=config/<estate>.mainnet.json");
+for (const c of CONFIGS) if (!existsSync(c)) usage(`config not found: ${c}`);
 
-if (!existsSync(WASM_PATH)) usage(`build the verifier first: cd verifier && cargo build --release --target wasm32-wasip2`);
+if (!existsSync(WASM_PATH)) usage(`build the verifier first: cd verifier && ./build-wasm.sh`);
 const code = new Uint8Array(readFileSync(WASM_PATH));
 const hash = createHash("sha256").update(code).digest("hex");
 const relPath = `${hash}.wasm`;
-const url = `${FASTFS}/${ROOT_ACCOUNT}/${OUTLAYER}/${relPath}`;
-const root = account(ROOT_ACCOUNT);
+const WASM_URL_OPT = opt("--wasm-url")[0];
+const url = WASM_URL_OPT ?? (NET.fastfs ? `${NET.fastfs}/${ROOT_ACCOUNT}/${OUTLAYER}/${relPath}` : "");
+log(`network: ${NETWORK} (${OUTLAYER}, ${API})`);
 log(`verifier: ${code.length} bytes, version key ${hash}`);
+
+if (MAINNET && !WASM_URL_OPT) {
+  const steps = [
+    "✗ mainnet: no FastFS mainnet host is known to this script, so it won't upload the WASM. Do it by hand:",
+    "  1. cd verifier && ./build-wasm.sh   # reproduce; the last line must be the hash below",
+    `       ${hash}  target/wasm32-wasip2/release/plote-verifier.wasm`,
+    "     and check the same hash in the verifier-build workflow's summary for this commit.",
+    "  2. Upload verifier/target/wasm32-wasip2/release/plote-verifier.wasm where OutLayer mainnet can fetch it over https",
+    `     (OutLayer's own upload: outlayer-cli upload, signed by ${ROOT_ACCOUNT}; or the mainnet FastFS if you have its host),`,
+    "     and note the https URL it is served from.",
+    `  3. Re-run: NEAR_ENV=mainnet ROOT_ACCOUNT=${ROOT_ACCOUNT} pnpm -C scripts exec tsx outlayer-setup.ts --mainnet --i-know \\`,
+    `       ${CONFIGS.map((c) => `--config=${c}`).join(" ")} --wasm-url=<that url>`,
+    "     It checks the URL serves exactly these bytes, then on outlayer.near calls create_project (or add_version) with",
+    `       {"name":"${PROJECT_NAME}","source":{"WasmUrl":{"url":"<that url>","hash":"${hash}","build_target":"wasm32-wasip2"}}}`,
+    "     stores each estate's NEAR AI key with store_secrets (signed by the estate account) and pins the version key.",
+  ];
+  usage(steps.join("\n"));
+}
+
+const root = account(ROOT_ACCOUNT);
+
+/** The secret for one estate: NEAR_AI_API_KEY_<SLUG> first, then the shared NEAR_AI_API_KEY. Returns the value and the
+ *  name of the variable it came from (the name may be logged; the value never is). */
+function apiKeyFor(estateSlug: string, env: NodeJS.ProcessEnv = process.env): { key: string; from: string } | null {
+  const perEstate = `NEAR_AI_API_KEY_${estateSlug.split(".")[0].replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}`;
+  for (const name of [perEstate, "NEAR_AI_API_KEY"]) {
+    const v = env[name]?.trim();
+    if (v) return { key: v, from: name };
+  }
+  return null;
+}
 
 // ---------- borsh helpers (FastFS payload) ----------
 const u32 = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
@@ -56,6 +114,7 @@ async function fastfsSend(payload: Buffer) {
 }
 
 async function upload() {
+  if (!NET.fastfs) usage("no FastFS host for this network; pass --wasm-url (see the steps printed without it)");
   const head = await fetch(url, { method: "HEAD" }).catch(() => null);
   if (head?.ok) return log(`= already on FastFS: ${url}`);
   if (code.length <= CHUNK) {
@@ -117,10 +176,10 @@ function encrypt(pubHex: string, plaintext: string): string {
   return Buffer.concat([Buffer.from([1]), ephRaw, nonce, ct]).toString("base64");
 }
 
-async function secrets(estate: string) {
-  const apiKey = process.env.NEAR_AI_API_KEY?.trim();
-  if (!apiKey) return log(`! NEAR_AI_API_KEY not set — skipping secrets for ${estate}`);
-  const secretsJson = JSON.stringify({ NEAR_AI_API_KEY: apiKey });
+async function secrets(estate: string, slug: string) {
+  const found = apiKeyFor(slug);
+  if (!found) return log(`! neither NEAR_AI_API_KEY_${slug.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()} nor NEAR_AI_API_KEY is set — skipping secrets for ${estate}`);
+  const secretsJson = JSON.stringify({ NEAR_AI_API_KEY: found.key });
   const r = await fetch(`${API}/secrets/pubkey`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -144,7 +203,7 @@ async function secrets(estate: string) {
     },
     { deposit: near("0.1"), gas: 50n * TGAS },
   );
-  log(`✓ ${estate}: NEAR_AI_API_KEY stored (profile "${PROFILE}", usable only in runs requested by the ${estate} contract)`);
+  log(`✓ ${estate}: NEAR AI key from ${found.from} stored as NEAR_AI_API_KEY (profile "${PROFILE}", usable only in runs requested by the ${estate} contract)`);
 }
 
 async function pin(estate: string, developer: string) {
@@ -157,8 +216,19 @@ async function pin(estate: string, developer: string) {
   }
 }
 
+/** An explicit --wasm-url must serve exactly the local build. */
+async function checkWasmUrl() {
+  if (!/^https:\/\//.test(url)) usage(`--wasm-url must be https: ${url}`);
+  const r = await fetch(url).catch(() => null);
+  if (!r?.ok) usage(`--wasm-url not reachable: ${url} (${r?.status ?? "network error"})`);
+  const got = createHash("sha256").update(new Uint8Array(await r.arrayBuffer())).digest("hex");
+  if (got !== hash) usage(`--wasm-url serves ${got}, not the local build ${hash}`);
+  log(`✓ ${url} serves the local build`);
+}
+
 // ---------- run ----------
-if (!argv.includes("--skip-upload")) await upload();
+if (WASM_URL_OPT) await checkWasmUrl();
+else if (!flag("--skip-upload")) await upload();
 await project();
 record("verifier_project", PROJECT_ID);
 record("verifier_version", hash);
@@ -174,7 +244,7 @@ for (const path of CONFIGS) {
     log(`= ${estate} not deployed yet; config pinned for its deploy`);
     continue;
   }
-  if (!argv.includes("--skip-secrets")) await secrets(estate);
+  if (!flag("--skip-secrets")) await secrets(estate, String(cfg.account));
   const dev = cfg.developer.includes(".") ? cfg.developer : `${cfg.developer}.${ROOT_ACCOUNT}`;
   await pin(estate, dev);
 }

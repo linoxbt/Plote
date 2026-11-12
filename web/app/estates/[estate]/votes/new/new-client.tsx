@@ -2,9 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { clsx } from "clsx";
 import { EstateBanners } from "@/components/banners";
@@ -29,9 +29,12 @@ const TEMPLATES: { id: Template; title: string; effect: string; devOk?: boolean 
   { id: "StepIn", title: "Step in", effect: "Future releases go to a replacement contractor's account." },
 ];
 
+// Each template has its own fields (a Veto milestone and an ExtendDeadline milestone are separate), so switching
+// templates never carries a stale choice into the proposal.
 const schema = z.object({
   account: z.string().optional(),
-  milestone: z.string().optional(),
+  veto_milestone: z.string().optional(),
+  extend_milestone: z.string().optional(),
   reason: z.string().max(200).optional(),
   refunds_open: z.boolean().optional(),
   new_deadline: z.string().optional(),
@@ -45,18 +48,19 @@ function buildKind(t: Template, v: FormValues): { kind?: ProposalKind; error?: s
       if (!v.account || !isValidAccountId(v.account)) return { error: "Enter a valid NEAR account for the new surveyor." };
       return { kind: { ReplaceSurveyor: { account: v.account } } };
     case "Veto":
-      if (v.milestone === undefined || v.milestone === "") return { error: "Pick the milestone to veto." };
-      return { kind: { Veto: { milestone: Number(v.milestone) } } };
+      if (v.veto_milestone === undefined || v.veto_milestone === "") return { error: "Pick the milestone to veto." };
+      return { kind: { Veto: { milestone: Number(v.veto_milestone) } } };
     case "Freeze":
       if (!v.reason?.trim()) return { error: "Say why, in one sentence." };
       return { kind: { Freeze: { reason: v.reason.trim(), refunds_open: !!v.refunds_open } } };
     case "Unfreeze":
       return { kind: "Unfreeze" };
     case "ExtendDeadline": {
-      if (v.milestone === undefined || v.milestone === "") return { error: "Pick the milestone." };
+      if (v.extend_milestone === undefined || v.extend_milestone === "") return { error: "Pick the milestone." };
       const ms = v.new_deadline ? Date.parse(v.new_deadline) : NaN;
       if (!Number.isFinite(ms)) return { error: "Pick the new deadline." };
-      return { kind: { ExtendDeadline: { milestone: Number(v.milestone), new_deadline: msToNs(ms) } } };
+      if (ms <= Date.now()) return { error: "The new deadline must be in the future." };
+      return { kind: { ExtendDeadline: { milestone: Number(v.extend_milestone), new_deadline: msToNs(ms) } } };
     }
     case "StepIn":
       if (!v.new_payout_id || !isValidAccountId(v.new_payout_id)) return { error: "Enter the replacement contractor's NEAR account." };
@@ -71,11 +75,12 @@ export function NewProposalClient({ slug }: { slug: string }) {
   const { accountId } = useWallet();
   const { run } = useTx();
   const router = useRouter();
+  const qc = useQueryClient();
   const [t, setT] = useState<Template>("ReplaceSurveyor");
   const supply = useQuery({ queryKey: ["nft-supply", account, accountId], queryFn: () => E.nftSupplyForOwner(account, accountId!), enabled: !!accountId, retry: 0 });
-  const { register, watch, handleSubmit } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { refunds_open: true } });
-  const values = watch();
-  const built = useMemo(() => buildKind(t, values), [t, values]);
+  const { register, control, handleSubmit, formState: { isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { refunds_open: true } });
+  const values = useWatch({ control });
+  const built = useMemo(() => buildKind(t, values as FormValues), [t, values]);
 
   if (est.isLoading) return <Page><LoadingCard /></Page>;
   if (!est.data) return <Page><ErrorState error={est.error} onRetry={() => est.refetch()} /></Page>;
@@ -89,14 +94,17 @@ export function NewProposalClient({ slug }: { slug: string }) {
   const onSubmit = handleSubmit(async () => {
     if (!built.kind || !accountId) return;
     const r = await run("Open proposal", () => sendTx(E.propose(account, built.kind!)), { success: "Proposal opened. Holders can vote now." });
-    if (r) router.push(`/estates/${estateSlug(account)}/votes`);
+    if (r) {
+      await qc.invalidateQueries({ queryKey: ["proposals", account] });
+      router.push(`/estates/${estateSlug(account)}/votes`);
+    }
   });
 
   return (
     <Page narrow>
       <EstateBanners estate={e} account={account} />
       <PageHeader eyebrow={`${e.name.toUpperCase()} · HOLDER VOTE`} title="New proposal">
-        One open proposal per account. Opening one costs 0.05 NEAR, kept by the estate so proposals can&apos;t be spammed. Holders can propose any kind; the developer can only propose a deadline extension. Replacing the surveyor, freezing and stepping in need at least 3 holders and a quarter of the units sold.
+        One open proposal per account. Opening one costs 0.05 NEAR, kept by the estate so proposals can&apos;t be spammed. Holders can propose any kind; the developer can only propose a deadline extension. Every kind except a veto needs a quorum (at least 3 tokens and a quarter of the units allocated) and, to pass, both a USDC-weighted majority and a majority of distinct holders.
       </PageHeader>
       <RequireWallet what="proposals">
         <div className="space-y-6">
@@ -121,7 +129,7 @@ export function NewProposalClient({ slug }: { slug: string }) {
               ) : null}
               {t === "Veto" ? (
                 <Field label="Milestone in its veto window" htmlFor="milestone" hint={vetoable.length ? undefined : "No milestone is in its veto window right now."}>
-                  <select id="milestone" className="input" {...register("milestone")}>
+                  <select id="milestone" className="input" {...register("veto_milestone")}>
                     <option value="">Choose…</option>
                     {vetoable.map((m) => <option key={m.index} value={m.index}>{m.index + 1}. {m.title}</option>)}
                   </select>
@@ -136,7 +144,7 @@ export function NewProposalClient({ slug }: { slug: string }) {
               {t === "ExtendDeadline" ? (
                 <>
                   <Field label="Milestone" htmlFor="milestone">
-                    <select id="milestone" className="input" {...register("milestone")}>
+                    <select id="milestone" className="input" {...register("extend_milestone")}>
                       <option value="">Choose…</option>
                       {(ms.data ?? []).map((m) => <option key={m.index} value={m.index}>{m.index + 1}. {m.title} — now {formatDate(m.deadline)}</option>)}
                     </select>
@@ -155,7 +163,7 @@ export function NewProposalClient({ slug }: { slug: string }) {
               {!canPropose ? (
                 <p className="text-sm text-amber">{isDev ? "As the developer you can only propose a deadline extension." : "Only holders of a token in this estate can propose."}</p>
               ) : null}
-              <Button type="submit" variant="primary" disabled={!built.kind || !canPropose}>Open proposal</Button>
+              <Button type="submit" variant="primary" loading={isSubmitting} disabled={!built.kind || !canPropose}>Open proposal · 0.05 NEAR</Button>
             </form>
           </BracketCard>
           <p className="text-xs text-muted">Votes last {Math.round(nsToMs(e.params.proposal_period_ns) / 60000)} minutes on this estate. A veto also expires when the milestone&apos;s veto window closes.</p>

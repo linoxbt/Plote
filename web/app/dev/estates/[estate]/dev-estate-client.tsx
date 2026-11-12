@@ -17,6 +17,7 @@ import { estateAccount, estateSlug, UNIT_ID_RE } from "@/lib/estates";
 import { formatNear, msToNs, nearToYocto, parseUsdc, unitDisplay } from "@/lib/format";
 import { useEstate, useNow, useUnits } from "@/lib/hooks";
 import { sendTx } from "@/lib/near";
+import { PloteError } from "@/lib/errors";
 import type { UnitInput } from "@/lib/types";
 
 type Row = { id: string; label: string; price: string; plan: { date: string; cumulative: string }[] };
@@ -39,6 +40,17 @@ export function DevEstateClient({ slug }: { slug: string }) {
   const isDev = accountId === e.developer_id;
   const set = (i: number, patch: Partial<Row>) => setRows((r) => r.map((x, k) => (k === i ? { ...x, ...patch } : x)));
 
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ["units", account] }), qc.invalidateQueries({ queryKey: ["estate", account] })]);
+
+  const retrySetup = async (unitId: string) => {
+    const r = await run(`Retry setup of ${unitDisplay(unitId)}`, async () => {
+      const res = await sendTx(E.retryUnitSetup(account, unitId));
+      if (res.returnValue === false) throw new PloteError("SETUP_PENDING", "retry_unit_setup returned false", `${unitDisplay(unitId)} still isn't ready (the unit account didn't answer or USDC registration failed). Its record is kept; try again in a minute.`);
+      return res;
+    }, { success: `${unitDisplay(unitId)} is ready: it can take reservations and payments now.` });
+    if (r) await refresh();
+  };
+
   const submit = async () => {
     setErr(null);
     let list: UnitInput[];
@@ -54,13 +66,27 @@ export function DevEstateClient({ slug }: { slug: string }) {
       return setErr((x as Error).message);
     }
     if (!list.length) return setErr("Add at least one unit");
-    for (let i = 0; i < list.length; i += MAX_UNITS_PER_ADD) {
-      const batch = list.slice(i, i + MAX_UNITS_PER_ADD);
-      const r = await run(`Add ${batch.length} unit(s)`, () => sendTx(E.addUnits(account, batch)), { success: "Unit accounts created and registered on USDC." });
-      if (!r) return;
+    const added = new Set<string>();
+    try {
+      for (let i = 0; i < list.length; i += MAX_UNITS_PER_ADD) {
+        const batch = list.slice(i, i + MAX_UNITS_PER_ADD);
+        const r = await run(`Add ${batch.length} unit(s)`, () => sendTx(E.addUnits(account, batch)), {
+          success: `Added ${batch.map((b) => unitDisplay(b.id)).join(", ")}. Each unit's account is being created and registered on USDC; a unit shows "being set up" until that finishes (retry it below if it doesn't).`,
+        });
+        if (!r) {
+          if (added.size) setErr(`Added ${added.size} unit(s); the rest weren't. Their rows are still here to retry.`);
+          return;
+        }
+        batch.forEach((b) => added.add(b.id));
+      }
+    } finally {
+      // Drop the rows that were added (also after a later batch failed), so a retry doesn't re-send them (E_UNIT_EXISTS).
+      if (added.size) setRows((rs) => {
+        const left = rs.filter((r) => !added.has(r.id));
+        return left.length ? left : [{ id: "", label: "", price: "", plan: [] }];
+      });
+      if (added.size) await refresh();
     }
-    setRows([{ id: "", label: "", price: "", plan: [] }]);
-    qc.invalidateQueries();
   };
 
   return (
@@ -84,7 +110,14 @@ export function DevEstateClient({ slug }: { slug: string }) {
                       return (
                         <tr key={u.id} className="border-t border-line">
                           <td className="py-2"><span className="mono font-normal">{unitDisplay(u.id)}</span> <span className="text-muted">{u.label}</span></td>
-                          <td><StatusBadge status={u.status} /></td>
+                          <td>
+                            {u.ready ? <StatusBadge status={u.status} /> : (
+                              <span className="flex flex-wrap items-center gap-2">
+                                <span className="mono bg-amber/10 px-2 py-1 text-xs text-amber">BEING SET UP</span>
+                                {isDev ? <Button size="sm" onClick={() => retrySetup(u.id)}>Retry setup (0.00125 NEAR)</Button> : null}
+                              </span>
+                            )}
+                          </td>
                           <td className="text-right"><MonoAmount value={u.price} naira={false} /></td>
                           <td className="text-right"><MonoAmount value={u.paid} naira={false} account={u.account} /></td>
                           <td className="text-right"><MonoAmount value={u.released} naira={false} /></td>
@@ -104,7 +137,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
 
           <BracketCard className="space-y-4">
             <h2 className="text-xl font-normal">Add units</h2>
-            <p className="text-sm text-muted">Each unit becomes its own account under the estate, registered on USDC. Sent in batches of {MAX_UNITS_PER_ADD}; attach 0.03 NEAR per unit.</p>
+            <p className="text-sm text-muted">Each unit becomes its own account under the estate, registered on USDC. Sent in batches of {MAX_UNITS_PER_ADD}; attach 0.035 NEAR per unit (unit account funding, USDC registration and the unit record).</p>
             {rows.map((r, i) => (
               <div key={i} className="space-y-2 border-t border-line pt-3">
                 <div className="grid gap-2 sm:grid-cols-[120px_1fr_140px_auto]">
@@ -148,7 +181,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
             <p>Balance: <span className="mono">{formatNear(e.verification_budget)} NEAR</span> — each photo check costs about 0.05 NEAR; submit_evidence fails with E_BUDGET below that.</p>
             <div className="flex flex-wrap items-end gap-2">
               <Field label="Top up (NEAR)" htmlFor="topup"><input id="topup" className="input w-32" inputMode="decimal" value={topup} onChange={(x) => setTopup(x.target.value)} /></Field>
-              <Button onClick={async () => { const r = await run(`Fund verification ${topup} NEAR`, () => sendTx(E.fundVerification(account, nearToYocto(topup || "0")))); if (r) qc.invalidateQueries(); }}>fund_verification</Button>
+              <Button onClick={async () => { const r = await run(`Fund verification ${topup} NEAR`, () => sendTx(E.fundVerification(account, nearToYocto(topup || "0")))); if (r) await qc.invalidateQueries({ queryKey: ["estate", account] }); }}>fund_verification</Button>
             </div>
             <p className="text-xs text-muted">Anyone can top up the budget.</p>
           </BracketCard>

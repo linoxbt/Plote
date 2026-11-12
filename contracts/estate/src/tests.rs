@@ -1172,6 +1172,7 @@ fn estate_payout_failure_becomes_owed() {
 fn verify_fail_reasons_reopen_milestone() {
     let mut e = Env::standard();
     e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    e.approve_milestone(0);
     let ev = e.submit(1, "qs.testnet");
     assert_eq!(e.c.get_milestones()[1].status, MilestoneStatus::Checking);
     assert!(!e.verdict(ev, false, &["phash_reuse:3"]));
@@ -1434,6 +1435,7 @@ fn https_commit_mismatch() {
 #[test]
 fn verify_ai_observations_stored_and_bounded() {
     let mut e = Env::standard();
+    e.approve_milestone(0);
     let ev = e.submit(1, "qs.testnet");
     let mut v = Env::verdict_json(ev, true, &[], "abc");
     v["ai_observations"] = json!(["a", "b", "x".repeat(500), "d", "e", "f"]);
@@ -1448,7 +1450,9 @@ fn verify_ai_observations_stored_and_bounded() {
     assert_eq!(obs[0], "a");
     assert_eq!(obs[2].chars().count(), 160);
     // Older workers that don't send observations still parse.
-    let ev2 = e.submit(0, "qs.testnet");
+    e.as_("qs.testnet");
+    e.c.qs_sign(1);
+    let ev2 = e.submit(2, "qs.testnet");
     let mut v = Env::verdict_json(ev2, true, &[], "abc");
     v.as_object_mut().unwrap().remove("ai_observations");
     assert!(e.resume(ev2, &v));
@@ -1790,6 +1794,10 @@ fn lien_blocks_transfer_and_refunds_lender_first() {
     e.buy("a-4b", "alice.testnet", 10_000 * USDC);
     e.as_1y("alice.testnet");
     e.c.set_lien("a-4b".into(), acc("bank.testnet"), U128(6_000 * USDC));
+    // pending until the lender accepts (audit round 4, finding 2c)
+    assert!(e.unit("a-4b").lien.is_none());
+    e.as_1y("bank.testnet");
+    e.c.accept_lien("a-4b".into());
     e.as_dep("alice.testnet", NearToken::from_yoctonear(1));
     panics(
         "E_LIEN",
@@ -1928,6 +1936,10 @@ fn random_walk(mut seed: u64, steps: usize) -> HashMap<String, u32> {
             1 => {
                 let amt = (rnd(12_000) + 1) as u128 * USDC;
                 e.wallet_pay(id, who, amt);
+                // Accepted but deferred right after a report (finding 14): the reporter books it with another report.
+                if get_logs().iter().any(|l| l.contains("deposit_deferred")) {
+                    e.sync(id);
+                }
             }
             2 => {
                 e.land(id, (rnd(3_000) + 1) as u128 * USDC);
@@ -2148,6 +2160,8 @@ fn invariants_exits_only_to_allowed_places() {
     e.buy("a-1a", "carol.testnet", 10_000 * USDC);
     e.as_1y("carol.testnet");
     e.c.set_lien("a-1a".into(), acc("bank.testnet"), U128(6_000 * USDC));
+    e.as_1y("bank.testnet");
+    e.c.accept_lien("a-1a".into());
     e.now = T0 + 123 * MIN;
     for (to, amount) in [
         ("bank.testnet", 6_000 * USDC),
@@ -2179,6 +2193,7 @@ fn invariants_exits_only_to_allowed_places() {
 #[test]
 fn invariants_evidence_committed_before_check() {
     let mut e = Env::standard();
+    e.approve_milestone(0);
     e.as_("qs.testnet");
     e.c.open_capture(1);
     let sha = "b".repeat(64);
@@ -2221,7 +2236,7 @@ fn invariants_evidence_committed_before_check() {
     let ghost = ev + 100;
     assert!(!e.resume(ghost, &Env::verdict_json(ghost, true, &[], "abc")));
     assert!(e.c.get_evidence(U64(ghost)).is_none());
-    assert_eq!(e.c.get_milestones()[0].status, MilestoneStatus::Open);
+    assert_eq!(e.c.get_milestones()[1].status, MilestoneStatus::Checking);
     e.c.verify_mode = "https".into();
     e.as_("relayer.testnet");
     let v: Verdict = verdict_of(Env::verdict_json(ghost, true, &[], "abc"));
@@ -2234,7 +2249,9 @@ fn invariants_evidence_committed_before_check() {
     e.c.verify_mode = "outlayer".into();
 
     // The verdict attaches to the committed record and can't rewrite its hash.
-    assert!(e.resume(ev, &Env::verdict_json(ev, true, &[], "abc")));
+    let mut good = Env::verdict_json(ev, true, &[], "abc");
+    good["sha256"] = json!(sha);
+    assert!(e.resume(ev, &good));
     let after = e.c.get_evidence(U64(ev)).unwrap();
     assert_eq!(after.status, EvidenceStatus::Pass);
     assert_eq!(after.sha256, sha);
@@ -2350,7 +2367,7 @@ fn real_estate_cannot_turn_the_geofence_off() {
     let mut e = Env::standard();
     let mut v = e.c.get_estate().verifier.clone();
     v.commit = String::new();
-    e.as_("dev.testnet");
+    e.as_1y("dev.testnet");
     e.c.set_verifier(v);
 }
 
@@ -3184,6 +3201,9 @@ fn cancel_listing_recovery_and_clear_lien() {
     // clear_lien: only the lender
     e.as_1y("alice.testnet");
     e.c.set_lien("a-4b".into(), acc("bank.testnet"), U128(1_000 * USDC));
+    e.as_1y("bank.testnet");
+    e.c.accept_lien("a-4b".into());
+    e.as_1y("alice.testnet");
     panics(
         "E_NOT_LENDER",
         std::panic::AssertUnwindSafe(|| e.c.clear_lien("a-4b".into())),
@@ -3570,8 +3590,14 @@ fn set_app_url_by_developer_only() {
     });
 }
 
-/// `Estate::new(a)` with the estate deployed at `account` (the testnet exemption reads the current account).
+/// `Estate::new(a)` with the estate deployed at `account` (the testnet exemption reads the current account). The
+/// test args name `outlayer.testnet`; on a non-testnet account they are moved to `outlayer.near` (the only OutLayer
+/// `new` accepts there, audit round 4 finding 3) unless a test set something else on purpose.
 fn init_on(account: &str, a: NewArgs) -> Result<Estate, String> {
+    let mut a = a;
+    if !account.ends_with(".testnet") && a.outlayer_id.as_str() == "outlayer.testnet" {
+        a.outlayer_id = acc("outlayer.near");
+    }
     let mut b = VMContextBuilder::new();
     b.current_account_id(acc(account))
         .predecessor_account_id(acc("deployer.testnet"))
@@ -3652,12 +3678,16 @@ fn init_refuses_unsafe_params_outside_playground_and_testnet() {
     a.geofence.radius_m = 0;
     let msg = init_on("baobab-heights.plote.testnet", a).err().unwrap();
     assert!(msg.contains("geofence"), "{msg}");
-    // the playground keeps its demo timings anywhere
-    assert!(init_on("playground.plote.near", new_args(params(true), d)).is_ok());
+    // the playground exists only on testnet (audit round 4, finding 3), where it keeps its demo timings
+    assert!(init_on("playground.plote.testnet", new_args(params(true), d)).is_ok());
+    let msg = init_on("playground.plote.near", new_args(params(true), d))
+        .err()
+        .unwrap();
+    assert!(msg.contains("E_BAD_ARGS") && msg.contains("testnet"), "{msg}");
     // a live demo estate isn't bricked: set_verifier before the first sale still works
     let mut e = Env::standard();
     assert!(e.c.params.demo_mode && e.c.params.grace_ns.0 < ONE_DAY_NS);
-    e.as_("dev.testnet");
+    e.as_1y("dev.testnet");
     e.c.set_verifier(VerifierSource {
         repo: "https://github.com/x/plote-verifier".into(),
         commit: "def".into(),
@@ -3676,7 +3706,13 @@ fn set_verifier_after_sale_only_on_playground() {
     };
     let mut e = Env::standard();
     e.buy("a-4b", "alice.testnet", 10_000 * USDC);
+    // a function-call key (no deposit) can't call it at all (finding 15)
     e.as_("dev.testnet");
+    panics(
+        "exactly 1 yoctoNEAR",
+        std::panic::AssertUnwindSafe(|| e.c.set_verifier(v("def"))),
+    );
+    e.as_1y("dev.testnet");
     panics(
         "E_ALREADY_SOLD",
         std::panic::AssertUnwindSafe(|| e.c.set_verifier(v("def"))),
@@ -3689,12 +3725,12 @@ fn set_verifier_after_sale_only_on_playground() {
     ];
     let mut p = Env::new_with(params(true), d, &[("p-01", 1_000 * USDC, vec![])]);
     p.buy("p-01", "judge.testnet", 1_000 * USDC);
-    p.as_("judge.testnet");
+    p.as_1y("judge.testnet");
     panics(
         "E_NOT_DEVELOPER",
         std::panic::AssertUnwindSafe(|| p.c.set_verifier(v("def"))),
     );
-    p.as_("dev.testnet");
+    p.as_1y("dev.testnet");
     panics(
         "E_BAD_ARGS",
         std::panic::AssertUnwindSafe(|| p.c.set_verifier(v("  "))),
@@ -3723,8 +3759,13 @@ fn playground_capture_not_replaceable_by_others() {
         }),
     );
     assert_eq!(e.c.get_capture(0).unwrap().code, code);
-    // other milestones are free; the owner may reopen their own
-    e.c.open_capture(1);
+    // later milestones wait for this one (stage order, audit round 4 finding 1); the owner may reopen their own
+    panics(
+        "E_MILESTONE_STATE",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.open_capture(1);
+        }),
+    );
     e.as_("judge1.testnet");
     e.c.open_capture(0);
     // the estate's surveyor may take over

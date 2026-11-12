@@ -11,7 +11,7 @@ export type CheckItem = { key: CheckKey; label: string; state: CheckState; detai
 const GROUP: Record<string, CheckKey> = {
   fetch_failed: "integrity", hash_mismatch: "integrity", bad_image: "integrity",
   exif_missing: "freshness", exif_stale: "freshness", exif_future: "freshness",
-  outside_geofence: "location", gps_missing: "location",
+  outside_geofence: "location", gps_missing: "location", gps_device_missing: "location",
   phash_reuse: "reuse",
   ai_stage_mismatch: "stage", ai_low_confidence: "stage", ai_screen_photo: "stage", ai_unavailable: "stage",
   challenge_missing: "challenge", challenge_mismatch: "challenge", challenge_unverified: "challenge", worker_commit_mismatch: "integrity", exif_before_capture: "challenge",
@@ -26,6 +26,9 @@ export const REASON_TEXT: Record<string, string> = {
   exif_future: "The photo's capture time is in the future.",
   outside_geofence: "The photo was taken outside the site's boundary.",
   gps_missing: "Neither the photo nor the phone recorded a location.",
+  gps_device_missing: "The phone didn't send its location with the photo, which this estate requires.",
+  check_timeout: "No verdict arrived within an hour, so the check was reopened.",
+  worker_error: "The checking worker failed or returned output the estate couldn't read.",
   phash_reuse: "The photo matches one used before.",
   ai_stage_mismatch: "The model doesn't see the claimed stage in the photo.",
   ai_low_confidence: "The model wasn't confident enough about the stage.",
@@ -97,4 +100,43 @@ export function verdictSentence(ev: EvidenceView): string {
   if (v.ai_stage) parts.push(`and shows ${v.ai_stage.replace(/_/g, " ")} work`);
   const body = parts.length > 1 ? parts.slice(0, -1).join(", ") + ", " + parts[parts.length - 1] : parts[0];
   return `This photo ${body}.${v.warnings.length ? " Some checks were downgraded to warnings on this estate." : ""}`;
+}
+
+/** Where to read how the verifier WASM is built reproducibly. */
+export const VERIFIER_BUILD_DOCS = "https://github.com/linoxbt/Plote/blob/main/verifier/README.md";
+
+export type VerifierPin = {
+  /** "project": an OutLayer project pinned by the sha256 of its uploaded WASM (version key). "github": a git commit OutLayer builds. */
+  kind: "project" | "github" | "none";
+  /** What the estate pins: the WASM sha256 / version key (project) or the git commit (github). */
+  pinned: string;
+  /** A link for the source, only when it's a real URL (never a broken `project:` link). */
+  sourceUrl: string | null;
+  /** The verdict's worker_commit compared with the pin, case-insensitively. "n/a" when the two aren't comparable. */
+  match: "matches" | "differs" | "n/a" | "no-verdict";
+};
+
+/**
+ * Describe the estate's verifier pin truthfully. For an OutLayer project the pin is the sha256 of the WASM that was
+ * uploaded (its version key), and the worker reports the git commit it was built from, so the two can't be compared
+ * directly: the contract relies on OutLayer running that exact version. For a GitHub source the pin is a commit and
+ * the estate rejects verdicts from any other build, so a verdict can "match the pin".
+ */
+export function verifierPin(verifier: { repo: string; commit: string }, workerCommit: string | null | undefined): VerifierPin {
+  const repo = (verifier.repo ?? "").trim();
+  const pinned = (verifier.commit ?? "").trim();
+  const got = (workerCommit ?? "").trim();
+  const eq = !!got && !!pinned && got.toLowerCase() === pinned.toLowerCase();
+  if (!repo) return { kind: "none", pinned, sourceUrl: null, match: workerCommit == null ? "no-verdict" : "n/a" };
+  if (repo.startsWith("project:")) {
+    return { kind: "project", pinned, sourceUrl: null, match: workerCommit == null ? "no-verdict" : eq ? "matches" : "n/a" };
+  }
+  let sourceUrl: string | null = null;
+  try {
+    const u = new URL(repo);
+    if (u.protocol === "https:") sourceUrl = pinned && /^https:\/\/github\.com\//.test(repo) ? `${repo.replace(/\/$/, "")}/tree/${pinned}` : repo;
+  } catch {
+    sourceUrl = null;
+  }
+  return { kind: "github", pinned, sourceUrl, match: workerCommit == null ? "no-verdict" : !pinned ? "n/a" : eq ? "matches" : "differs" };
 }

@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { PenLine } from "lucide-react";
 import { EstateBanners } from "@/components/banners";
 import { CountdownChip, StatusBadge } from "@/components/chain";
+import { EvidenceThumb } from "@/components/evidence-image";
 import { ProofChecklist } from "@/components/milestones";
 import { SignerBadge, useSurveyorSigner } from "@/components/surveyor";
 import { useTx } from "@/components/toast";
@@ -26,8 +27,6 @@ export function SignClient({ slug }: { slug: string }) {
   const { run } = useTx();
   const qc = useQueryClient();
   const [checked, setChecked] = useState<Record<number, boolean>>({});
-  const today = new Date().toISOString().slice(0, 10);
-  const [dates, setDates] = useState<Record<number, string>>({});
 
   if (est.isLoading) return <Page narrow><LoadingCard /></Page>;
   if (!est.data) return <Page narrow><ErrorState error={est.error} onRetry={() => est.refetch()} /></Page>;
@@ -56,19 +55,18 @@ export function SignClient({ slug }: { slug: string }) {
                   <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-normal">{m.index + 1}. {m.title}</h2><StatusBadge kind="milestone" status={m.status} /></div>
                   {ev ? (
                     <>
-                      <Link href={`/proof/${s}/${ev.id}`}><img src={ev.url} alt={`${m.title} photo`} className="aspect-video w-full object-cover" /></Link>
+                      <Link href={`/proof/${s}/${ev.id}`}><EvidenceThumb src={ev.url} alt={`${m.title} photo`} className="aspect-video w-full object-cover" width={960} height={540} sizes="(max-width: 768px) 100vw, 720px" /></Link>
                       <p className="text-sm">{verdictSentence(ev)}</p>
                       <ProofChecklist evidence={ev} geofenceRadius={e.geofence.radius_m} compact />
                     </>
                   ) : <p className="text-sm text-muted">Verified {formatDateTime(m.verified_at)}.</p>}
                   <label className="flex min-h-11 flex-wrap items-center gap-3 text-sm">
                     <input type="checkbox" className="h-5 w-5 accent-orange" checked={!!checked[m.index]} onChange={(x) => setChecked((c) => ({ ...c, [m.index]: x.target.checked }))} />
-                    I inspected this site in person on
-                    <input type="date" className="input w-44" value={dates[m.index] ?? today} onChange={(x) => setDates((d) => ({ ...d, [m.index]: x.target.value }))} aria-label="Inspection date" />
+                    I inspected this site in person and the photo shows this stage.
                   </label>
                   <Button variant="primary" className="min-h-14 w-full" disabled={!checked[m.index] || !allowed || signer.locked} onClick={async () => {
                     const r = await run(`Sign ${m.title}`, () => signer.call(E.qsSign(account, m.index)), { success: "Signed. The holder veto window has started." });
-                    if (r) qc.invalidateQueries();
+                    if (r) await Promise.all([qc.invalidateQueries({ queryKey: ["milestones", account] }), qc.invalidateQueries({ queryKey: ["estate", account] }), qc.invalidateQueries({ queryKey: ["units", account] })]);
                   }}><PenLine className="h-5 w-5" aria-hidden /> Sign</Button>
                 </BracketCard>
               </li>

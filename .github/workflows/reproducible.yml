@@ -1,18 +1,31 @@
 # Reproducible contract builds (docs/LAUNCH.md §3). Builds the estate and unit contracts inside the Docker image pinned
 # by digest in each Cargo.toml and prints their SHA-256 and NEAR code hashes, so anyone can compare them with what is
 # deployed (`view_account` → code_hash). Run it on the commit you are about to deploy.
+# It also checks the estate WASM against the pinned hash in config/estate-wasm.sha256 (the artifact the live estates
+# run) and fails on a mismatch: after a reviewed contract change, deploy the new artifact and update that file in the
+# same commit (instructions in the file and in the failure message).
 name: reproducible-build
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - "config/estate-wasm.sha256"
+      - ".github/workflows/reproducible.yml"
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
       - run: cargo install cargo-near --locked --no-default-features
       - name: reproducible builds
         run: |
@@ -35,7 +48,21 @@ jobs:
                   line = f"{f}  sha256={d.hex()}  code_hash={b58(d)}"
                   print(line); out.write(line + "\n")
           EOF
-      - uses: actions/upload-artifact@v4
+      - name: compare the estate WASM with config/estate-wasm.sha256
+        run: |
+          built=$(sha256sum target/near/plote_estate/plote_estate.wasm | cut -d' ' -f1)
+          pinned=$(grep -v '^[[:space:]]*#' config/estate-wasm.sha256 | grep -Eo '[0-9a-f]{64}' | head -n1)
+          echo "built  estate sha256: $built"
+          echo "pinned estate sha256: ${pinned:-<none>}"
+          if [ "$built" != "$pinned" ]; then
+            echo "::error file=config/estate-wasm.sha256::The reproducible estate WASM ($built) is not the pinned artifact (${pinned:-none})."
+            echo "If this contract change is intended: deploy this artifact (scripts/upgrade-estate-code.ts --expected-hash $built),"
+            echo "then replace the hash in config/estate-wasm.sha256 with $built in the same commit."
+            exit 1
+          fi
+          echo "OK: the estate WASM matches the pinned, deployed artifact."
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: reproducible-wasm
           path: |

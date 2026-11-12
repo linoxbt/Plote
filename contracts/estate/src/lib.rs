@@ -88,8 +88,8 @@ pub const PLAYGROUND_SUBMITS_PER_HOUR: usize = 5;
 pub const PLAYGROUND_RESET_INTERVAL_NS: u64 = 10 * 60_000_000_000;
 /// How long an `nft_transfer_call` blocks the token's money and vote methods if its resolve callback never runs.
 pub const NFT_PENDING_MAX_NS: u64 = 10 * 60_000_000_000;
-/// The pre-hardening verifier the live testnet estates are pinned to: it doesn't echo `evidence_id`/`sha256`, so its
-/// verdicts may pass without them. Any other pin needs both (finding 3); `repin_verifier` moves an estate off it.
+/// The pre-hardening verifier the live testnet estates are pinned to. It doesn't echo `evidence_id`/`sha256`, and a
+/// verdict without them can't pass (finding 3), so those estates must `repin_verifier` to the hardened build.
 pub const LEGACY_VERIFIER: &str = "31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8";
 
 pub const GAS_UNIT_INIT: Gas = Gas::from_tgas(5);

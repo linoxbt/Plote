@@ -13,9 +13,11 @@ import { RequireWallet, useWallet } from "@/components/wallet";
 import { BracketCard, Button, ErrorState, Field, LinkButton, LoadingCard, Page } from "@/components/ui";
 import { approvedCount, estate as E, MAX_GUARDIANS, nftApprovedCount } from "@/lib/estate";
 import { estateAccount, estateSlug, isValidAccountId } from "@/lib/estates";
-import { formatUsd, parseUsdc, toBig, unitDisplay } from "@/lib/format";
-import { useEstate, useMilestones, useNftToken, useNow, useUnit, useUsdcBalance } from "@/lib/hooks";
-import { bytesToBase64, getWallet, sendTx, sendTxs, type TxSpec } from "@/lib/near";
+import { formatUsd, nsToMs, parseUsdc, toBig, unitDisplay } from "@/lib/format";
+import { assertPayable } from "@/lib/genuine";
+import { useEstate, useMilestones, useNftToken, useNow, usePendingLien, useUnit, useUsdcBalance } from "@/lib/hooks";
+import { bytesToBase64, getWallet, sendTx, sendTxs, type TxResult, type TxSpec } from "@/lib/near";
+import { assertFtCallAccepted } from "@/lib/tx-outcome";
 import { notifyMessage, timestampedNonce } from "@/lib/nep413";
 import { isRegistered, usdc } from "@/lib/usdc";
 
@@ -57,6 +59,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
   const unit = useUnit(account, unitId, { poll: 10_000 });
   const ms = useMilestones(account);
   const token = useNftToken(account, unitId);
+  const pendingLien = usePendingLien(account, unitId, { poll: 15_000 });
   const { accountId } = useWallet();
   const bal = useUsdcBalance(accountId);
   const owed = useQuery({ queryKey: ["owed", account, accountId], queryFn: () => E.owedOf(account, accountId!), enabled: !!accountId, retry: 0 });
@@ -94,10 +97,28 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
     }
   }, [ms.data, done, seenKey, accountId]);
 
-  const exec = async (title: string, spec: TxSpec | TxSpec[], success?: string) => {
+  const refresh = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ["unit", account, unitId] }),
+      qc.invalidateQueries({ queryKey: ["units", account] }),
+      qc.invalidateQueries({ queryKey: ["nft", account, unitId] }),
+      qc.invalidateQueries({ queryKey: ["pending-lien", account, unitId] }),
+      qc.invalidateQueries({ queryKey: ["owed", account] }),
+      qc.invalidateQueries({ queryKey: ["estate", account] }),
+      qc.invalidateQueries({ queryKey: ["usdc-bal"] }),
+      qc.invalidateQueries({ queryKey: ["my-units"] }),
+      qc.invalidateQueries({ queryKey: ["my-positions"] }),
+    ]);
+
+  /** `check` runs on the result (e.g. a payment refused by the unit throws, so the toast shows a failure). */
+  const exec = async (title: string, spec: TxSpec | TxSpec[], success?: string, check?: (r: TxResult[]) => Promise<void> | void) => {
     setErr(null);
-    const r = await run(title, (): Promise<unknown> => (Array.isArray(spec) ? sendTxs(spec) : sendTx(spec)), { success });
-    if (r) qc.invalidateQueries();
+    const r = await run(title, async (): Promise<unknown> => {
+      const res = Array.isArray(spec) ? await sendTxs(spec) : [await sendTx(spec)];
+      await check?.(res);
+      return Array.isArray(spec) ? res : res[0];
+    }, { success });
+    if (r) await refresh();
     return r;
   };
 
@@ -109,6 +130,10 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
   const isHolder = !!accountId && u.holder === accountId;
   const isGuardian = !!accountId && u.guardians.includes(accountId);
   const isLender = !!accountId && u.lien?.lender === accountId;
+  const pending = pendingLien.data ?? null;
+  const isPendingLender = !!accountId && pending?.lender === accountId;
+  const lienToLender = !!u.lien && toBig(u.lien.cap) > 0n;
+  const recoveryReady = !!u.recovery?.ready_at && nsToMs(u.recovery.ready_at) <= now;
   const refundable = toBig(u.refundable_now);
   const nextRefundOpen = (ms.data ?? []).filter((m) => !(m.status === "Approved" && m.veto_passed)).map((m) => m.refunds_open_at).sort()[0];
   const handoverMs = ms.data?.[ms.data.length - 1];
@@ -128,7 +153,14 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
       />
       <nav className="mono mb-4 text-xs text-muted"><Link href="/me" className="hover:text-text">My units</Link> / {s} / {unitDisplay(u.id)}</nav>
       <RequireWallet what="managing this unit">
-        {!isHolder && !isGuardian && !isLender ? (
+        {isPendingLender && pending ? (
+          <BracketCard tone="accent" className="mb-6 space-y-2" id="accept-lien">
+            <p className="font-display text-lg font-normal">The holder named you as lender on {unitDisplay(u.id)}.</p>
+            <p className="text-sm text-muted">Accepting activates a lien up to <MonoAmount value={pending.cap} naira={false} />: while it&apos;s set the token can&apos;t be moved or listed, and a refund pays you first, up to the cap. Only you can clear it later.</p>
+            <Button variant="primary" onClick={() => exec("Accept lien", E.acceptLien(account, u.id), "Lien accepted. It's now active on this unit.")}>Accept lien</Button>
+          </BracketCard>
+        ) : null}
+        {!isHolder && !isGuardian && !isLender && !isPendingLender ? (
           <BracketCard tone="amber" className="mb-6">You don&apos;t hold {unitDisplay(u.id)}. <Link className="underline" href={`/estates/${s}/units/${u.id}`}>See the public unit page</Link>.</BracketCard>
         ) : null}
         {err ? <p className="mb-4 text-sm text-red" role="alert">{err}</p> : null}
@@ -159,10 +191,19 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
               <Button variant="primary" onClick={async () => {
                 let base: string;
                 try { base = parseUsdc(amount || (u.next_due ? String(Number(u.next_due.shortfall) / 1e6) : "")); } catch (x) { return setErr((x as Error).message); }
+                if (toBig(base) <= 0n) return setErr("Amount must be more than 0");
+                if (bal.data && toBig(bal.data) < toBig(base)) return setErr(`You have ${formatUsd(bal.data)} USDC.`);
+                try {
+                  await assertPayable(account, u);
+                } catch (x) {
+                  return setErr((x as Error).message);
+                }
                 const specs: TxSpec[] = [];
                 if (accountId && !(await isRegistered(accountId).catch(() => true))) specs.push(usdc.storageDeposit(accountId));
                 specs.push(usdc.ftTransferCall(u.account, base, ""));
-                await exec(`Pay ${formatUsd(base)} into ${unitDisplay(u.id)}`, specs, "Paid into the unit's own account.");
+                await exec(`Pay ${formatUsd(base)} into ${unitDisplay(u.id)}`, specs, "Payment accepted by the unit's own account.", (res) => {
+                  assertFtCallAccepted(res[res.length - 1], base, "deposit");
+                });
               }}>Pay from NEAR wallet</Button>
               <p className="text-xs text-muted">Family can pay too, from the <Link className="underline" href={`/w/${s}/${u.id}?chip=1`}>watch page</Link>.</p>
             </Section>
@@ -171,9 +212,14 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
               {refundable > 0n ? (
                 <>
                   <p>A deadline passed without a verified stage{e.frozen?.refunds_open ? " (or holders opened refunds with a freeze)" : ""}. You can take back everything not yet released: <MonoAmount value={u.refundable_now} account={u.account} size="lg" />.</p>
-                  <p className="text-sm text-muted">Your allocation token will be burned and the unit goes back on sale. This can&apos;t be undone.</p>
+                  <p className="text-sm text-muted">Your allocation token will be burned once everything is refunded, and the unit goes back on sale. This can&apos;t be undone.</p>
+                  {lienToLender ? <p className="text-sm text-amber">A lender&apos;s lien is set: this refund goes to the lender <span className="mono">{u.lien!.lender}</span> first, up to its cap of {formatUsd(u.lien!.cap)}. Ask again afterwards for anything left.</p> : null}
                   <Button variant="danger" disabled={!isHolder} onClick={() => {
-                    if (window.confirm(`Refund ${formatUsd(u.refundable_now)} to ${accountId}? Your token for ${unitDisplay(u.id)} will be burned.`)) exec("Get my money back", E.refund(account, u.id), "Refund sent to your account.");
+                    const msg = lienToLender
+                      ? `Refund ${formatUsd(u.refundable_now)}?\n\nA lien is set, so up to ${formatUsd(u.lien!.cap)} goes to the lender ${u.lien!.lender} first, not to you. Anything above the cap stays refundable to you afterwards.`
+                      : `Refund ${formatUsd(u.refundable_now)} to ${accountId}? Your token for ${unitDisplay(u.id)} will be burned.`;
+                    if (!window.confirm(msg)) return;
+                    return exec("Get my money back", E.refund(account, u.id), lienToLender ? `Refund sent to the lender ${u.lien!.lender} (up to its cap).` : "Refund sent to your account.");
                   }}>Get my money back</Button>
                 </>
               ) : (
@@ -194,7 +240,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
                   <p className="text-sm text-muted">Set your price. When a buyer pays, you&apos;re paid and the token moves to them in one transaction. No fees on a voluntary sale. The escrow stays with the unit.</p>
                   <div className="flex flex-wrap items-end gap-2">
                     <div className="min-w-48 flex-1"><Field label="Ask (USDC)" htmlFor="ask"><input id="ask" className="input" inputMode="decimal" value={ask} onChange={(x) => setAsk(x.target.value)} placeholder={String(Number(u.paid) / 1e6)} /></Field></div>
-                    <Button disabled={!isHolder} onClick={() => { try { exec("List for sale", E.listForSale(account, u.id, parseUsdc(ask))); } catch (x) { setErr((x as Error).message); } }}>List for sale</Button>
+                    <Button disabled={!isHolder} onClick={() => { try { return exec("List for sale", E.listForSale(account, u.id, parseUsdc(ask))); } catch (x) { setErr((x as Error).message); } }}>List for sale</Button>
                   </div>
                 </>
               )}
@@ -212,15 +258,16 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
                 <Button className="self-end" disabled={!isHolder} onClick={() => {
                   const list = guardians.split(",").map((g) => g.trim()).filter(Boolean);
                   if (list.length > MAX_GUARDIANS || list.some((g) => !isValidAccountId(g))) return setErr("Up to 3 valid NEAR accounts");
-                  exec("Set guardians", E.setGuardians(account, u.id, list));
+                  return exec("Set guardians", E.setGuardians(account, u.id, list));
                 }}>Save guardians</Button>
               </div>
               {u.recovery ? (
                 <BracketCard tone="amber" className="space-y-2">
                   <p className="text-sm">Recovery to <AccountChip account={u.recovery.new_owner} /> · approvals {u.recovery.approvals.length}/2 {u.recovery.ready_at ? <CountdownChip until={u.recovery.ready_at} label="ready" /> : null}</p>
+                  {!u.recovery.ready_at ? <p className="text-xs text-muted">The timer starts once 2 guardians approve.</p> : !recoveryReady ? <p className="text-xs text-muted">Anyone can finish the recovery once the timer ends; the holder can cancel it until then.</p> : null}
                   <div className="flex flex-wrap gap-2">
                     {isHolder ? <Button variant="danger" size="sm" onClick={() => exec("Cancel recovery", E.cancelRecovery(account, u.id))}>Cancel recovery</Button> : null}
-                    <Button size="sm" onClick={() => exec("Finish recovery", E.finishRecovery(account, u.id))}>Finish recovery</Button>
+                    {recoveryReady ? <Button size="sm" onClick={() => exec("Finish recovery", E.finishRecovery(account, u.id))}>Finish recovery</Button> : null}
                   </div>
                 </BracketCard>
               ) : null}
@@ -233,12 +280,17 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
                   <p className="text-sm">Lien held by <AccountChip account={u.lien.lender} /> up to <MonoAmount value={u.lien.cap} naira={false} />. While it&apos;s set the token can&apos;t be moved or listed, and refunds go to the lender up to the cap.</p>
                   {isLender ? <Button onClick={() => exec("Clear lien", E.clearLien(account, u.id))}>Clear lien</Button> : <p className="text-xs text-muted">Only the lender can clear it.</p>}
                 </>
+              ) : pending ? (
+                <p className="text-sm">A lien naming <AccountChip account={pending.lender} /> up to <MonoAmount value={pending.cap} naira={false} /> is waiting for the lender to accept it. It has no effect until they do.</p>
               ) : (
-                <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                  <Field label="Lender account" htmlFor="lender"><input id="lender" className="input" value={lender} onChange={(x) => setLender(x.target.value.trim())} placeholder="bank.testnet" /></Field>
-                  <Field label="Cap (USDC)" htmlFor="cap"><input id="cap" className="input" inputMode="decimal" value={cap} onChange={(x) => setCap(x.target.value)} /></Field>
-                  <Button className="self-end" disabled={!isHolder} onClick={() => { try { if (!isValidAccountId(lender)) throw new Error("Not a valid NEAR account"); exec("Set lien", E.setLien(account, u.id, lender, parseUsdc(cap))); } catch (x) { setErr((x as Error).message); } }}>Set lien</Button>
-                </div>
+                <>
+                  <p className="text-sm text-muted">Name a lender (e.g. a bank financing the rest). The lien only becomes active when the lender accepts it from their own account.</p>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                    <Field label="Lender account" htmlFor="lender"><input id="lender" className="input" value={lender} onChange={(x) => setLender(x.target.value.trim())} placeholder="bank.testnet" /></Field>
+                    <Field label="Cap (USDC)" htmlFor="cap"><input id="cap" className="input" inputMode="decimal" value={cap} onChange={(x) => setCap(x.target.value)} /></Field>
+                    <Button className="self-end" disabled={!isHolder} onClick={() => { try { if (!isValidAccountId(lender)) throw new Error("Not a valid NEAR account"); return exec("Propose lien", E.setLien(account, u.id, lender, parseUsdc(cap)), "Lien proposed. It becomes active when the lender accepts it."); } catch (x) { setErr((x as Error).message); } }}>Propose lien</Button>
+                  </div>
+                </>
               )}
             </Section>
 
@@ -281,7 +333,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
   );
 }
 
-function GuardianRecover({ onGo }: { onGo: (to: string) => void }) {
+function GuardianRecover({ onGo }: { onGo: (to: string) => unknown }) {
   const [to, setTo] = useState("");
   return (
     <div className="grid gap-2 sm:grid-cols-[1fr_auto]">

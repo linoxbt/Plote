@@ -297,6 +297,11 @@ impl Estate {
             "E_BAD_ARGS",
             "the verifier must be pinned (non-empty repo and commit / version key)"
         );
+        ensure!(
+            verifier.commit.trim() != LEGACY_VERIFIER,
+            "E_BAD_ARGS",
+            "the pre-hardening verifier can't be pinned again"
+        );
         crate::assert_safe_checks(&self.params, &self.geofence, &verifier);
         emit(
             "verifier_changed",

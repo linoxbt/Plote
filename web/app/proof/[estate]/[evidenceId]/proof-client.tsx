@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { clsx } from "clsx";
 import { EstateBanners } from "@/components/banners";
 import { AccountChip, StatusBadge } from "@/components/chain";
+import { EvidenceThumb } from "@/components/evidence-image";
 import { ProofChecklist } from "@/components/milestones";
 import { StaticMap } from "@/components/static-map";
 import { BracketCard, ChainLink, Collapsible, ErrorState, KV, LoadingCard, Page, explorerTxUrl } from "@/components/ui";
@@ -14,7 +15,7 @@ import { estateAccount, estateSlug } from "@/lib/estates";
 import { formatDateTime, formatDuration, nsToMs, shortHash } from "@/lib/format";
 import { hamming } from "@/lib/geo";
 import { useEstate, useEvidence, useEvidenceList, useMilestones } from "@/lib/hooks";
-import { reasonText, verdictSentence } from "@/lib/proof";
+import { reasonText, VERIFIER_BUILD_DOCS, verdictSentence, verifierPin } from "@/lib/proof";
 import { recentEvents, supabaseConfigured } from "@/lib/supabase";
 
 export function ProofClient({ slug, id }: { slug: string; id: string }) {
@@ -60,6 +61,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
   const aiModel = v?.ai_model?.trim() || null;
   // The model's own notes (SPEC 6.4 "observations"), stored with the verdict (INTERFACE `Verdict.ai_observations`).
   const notes = (v?.ai_observations ?? []).filter((o) => o.trim() !== "");
+  const pin = verifierPin(e.verifier, v ? v.worker_commit : null);
 
   return (
     <Page>
@@ -83,7 +85,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div className="min-w-0 space-y-6">
           <figure className={clsx("corners p-2", pass ? "corners-orange" : ev.status === "Pending" ? "corners-amber" : "corners-red")}>
-            <img src={ev.url} alt={`Site photo for ${m?.title ?? "the milestone"}`} className="w-full bg-surface-2 object-contain" />
+            <img src={ev.url} alt={`Site photo for ${m?.title ?? "the milestone"}`} className="w-full bg-surface-2 object-contain" decoding="async" />
             <figcaption className="mono mt-2 break-all text-xs text-muted">
               SHA-256 {ev.sha256} {v && !v.reasons.includes("hash_mismatch") ? <span className="text-orange">· hash matches on-chain commitment ✓</span> : null}
             </figcaption>
@@ -115,8 +117,8 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
                 <p className="mono break-words text-sm">Hamming distance {nearest.d}/64 <span className="text-muted">(reuse if ≤ {e.params.max_phash_distance})</span>{v ? <span className="text-muted"> · on-chain nearest {v.nearest_distance}/64</span> : null}</p>
                 {nearest.d < 16 ? (
                   <div className="grid grid-cols-2 gap-2">
-                    <img src={ev.url} alt="This photo" className="aspect-[4/3] w-full object-cover" />
-                    <Link href={`/proof/${estateSlug(account)}/${nearest.x.id}`}><img src={nearest.x.url} alt={`Previous photo #${nearest.x.id}`} className="aspect-[4/3] w-full object-cover" /></Link>
+                    <EvidenceThumb src={ev.url} alt="This photo" className="aspect-[4/3] w-full object-cover" sizes="(max-width: 1024px) 50vw, 360px" />
+                    <Link href={`/proof/${estateSlug(account)}/${nearest.x.id}`}><EvidenceThumb src={nearest.x.url} alt={`Previous photo #${nearest.x.id}`} className="aspect-[4/3] w-full object-cover" sizes="(max-width: 1024px) 50vw, 360px" /></Link>
                   </div>
                 ) : <p className="text-sm text-muted">Not similar to any earlier photo (#{nearest.x.id} is the closest).</p>}
               </div>
@@ -190,10 +192,27 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
       <div className="mt-6">
         <Collapsible title="How to verify this yourself">
           <dl>
-            <KV k="Worker repo">{e.verifier.repo ? (e.verifier.repo.startsWith("project:") ? <span className="mono">OutLayer project {e.verifier.repo.slice(8)}</span> : <a className="underline" href={e.verifier.repo} target="_blank" rel="noreferrer">{e.verifier.repo} ↗</a>) : "—"}</KV>
-            <KV k="Worker commit (estate)">{e.verifier.repo ? <a className="underline" href={`${e.verifier.repo.replace(/\/$/, "")}/tree/${e.verifier.commit}`} target="_blank" rel="noreferrer">{shortHash(e.verifier.commit, 8)} ↗</a> : shortHash(e.verifier.commit, 8)}</KV>
-            <KV k="Worker commit (verdict)">{v ? shortHash(v.worker_commit, 8) : "—"} {v && v.worker_commit !== e.verifier.commit ? <span className="text-amber">differs</span> : v ? <CheckCircle2 className="inline h-3.5 w-3.5 text-orange" aria-label="matches" /> : null}</KV>
+            <KV k="Verifier">
+              {pin.kind === "project" ? <span className="mono">OutLayer project {e.verifier.repo.slice("project:".length)}</span>
+                : pin.sourceUrl ? <a className="underline" href={pin.sourceUrl} target="_blank" rel="noreferrer">{e.verifier.repo} ↗</a>
+                : e.verifier.repo || "—"}
+            </KV>
+            <KV k={pin.kind === "project" ? "Pinned version (sha256 of the uploaded WASM)" : "Pinned commit"}>
+              <span className="break-all">{pin.pinned || "— (unpinned)"}</span>
+            </KV>
+            <KV k="Worker build in this verdict">
+              {v ? (
+                <span>
+                  <span className="break-all">{v.worker_commit || "—"}</span>{" "}
+                  {pin.match === "matches" ? <span className="text-orange"><CheckCircle2 className="inline h-3.5 w-3.5" aria-hidden /> matches pin</span>
+                    : pin.match === "differs" ? <span className="text-red">doesn&apos;t match the pin (the estate treats such a verdict as an error)</span>
+                    : pin.kind === "project" ? <span className="text-muted">(the git commit it was built from; OutLayer ran the pinned WASM version)</span>
+                    : null}
+                </span>
+              ) : "—"}
+            </KV>
             <KV k="Build target">{e.verifier.build_target}</KV>
+            {v?.ai_model ? <KV k="AI model">{v.ai_model}</KV> : null}
             <KV k="OutLayer execution / attestation">{v?.attestation ?? "—"}</KV>
             <KV k="Verdict source">{v?.source ?? "—"}</KV>
             <KV k="Raw response hash">{ev.raw_response_hash ?? "—"}</KV>
@@ -204,7 +223,17 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
           </dl>
           <ol className="mt-4 list-decimal space-y-1 pl-5">
             <li>Download the photo and run <span className="mono">sha256sum</span>; it must equal the SHA-256 above, which the contract stored before the check ran.</li>
-            <li>Open the worker repo at the commit above; OutLayer built that exact source inside an Intel TDX enclave.</li>
+            {pin.kind === "project" ? (
+              <li>
+                Rebuild the verifier yourself following the <a className="underline" href={VERIFIER_BUILD_DOCS} target="_blank" rel="noreferrer">reproducible build instructions ↗</a> and compare the
+                sha256 of your WASM with the pinned version above. OutLayer runs that version; its execution record is the attestation field.
+              </li>
+            ) : (
+              <li>
+                Check out the pinned commit{pin.sourceUrl ? <> (<a className="underline" href={pin.sourceUrl} target="_blank" rel="noreferrer">source ↗</a>)</> : null} and see the{" "}
+                <a className="underline" href={VERIFIER_BUILD_DOCS} target="_blank" rel="noreferrer">build instructions ↗</a>. The estate rejects any verdict whose worker build differs from the pin.
+              </li>
+            )}
             <li>Call <span className="mono">get_evidence {`{"id":"${ev.id}"}`}</span> on <span className="mono">{account}</span> to read this verdict straight from the chain.</li>
           </ol>
         </Collapsible>

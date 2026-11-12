@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { EstateBanners } from "@/components/banners";
 import { CountdownChip, MonoAmount, StatusBadge } from "@/components/chain";
 import { EstateHeader } from "@/components/estate-bits";
+import { EvidenceThumb } from "@/components/evidence-image";
 import { BracketCard, ErrorState, LoadingCard, Page } from "@/components/ui";
 import { estateAccount, estateSlug } from "@/lib/estates";
 import { bpsToPct, formatDate, formatDateTime, shareOf, toBig } from "@/lib/format";
@@ -60,7 +61,7 @@ export function MilestonesClient({ slug }: { slug: string }) {
                       {list.map((ev) => (
                         <li key={ev.id}>
                           <Link href={`/proof/${estateSlug(account)}/${ev.id}`} className="corners corners-hover flex items-center gap-2 bg-surface-2 p-1 pr-2">
-                            <img src={ev.url} alt={`Evidence #${ev.id}`} className="h-12 w-16 object-cover" loading="lazy" />
+                            <EvidenceThumb src={ev.url} alt={`Evidence #${ev.id}`} className="h-12 w-16 object-cover" width={128} height={96} sizes="64px" />
                             <StatusBadge kind="evidence" status={ev.status} />
                           </Link>
                         </li>

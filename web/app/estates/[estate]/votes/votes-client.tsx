@@ -48,9 +48,10 @@ export function VotesClient({ slug }: { slug: string }) {
       <div className="mb-6 space-y-2">
         <h2 className="text-2xl font-normal">Holder votes</h2>
         <p className="max-w-2xl text-sm text-muted">
-          Each allocation token votes once, cast by whoever holds it, weighted by what has been paid into its unit (in whole USDC, up to the price). A
-          proposal passes the moment yes is more than half of the total weight. Tokens allocated after a proposal opened can&apos;t vote on it. Proposals
-          opened before weighting count one vote per token.
+          Each allocation token allocated before a proposal opened votes once, cast by whoever holds it, weighted by the USDC paid into its unit (net of
+          refunds, in whole USDC, up to the price), and the total weight is fixed when the proposal opens. A veto passes when yes is more than half of
+          that weight. Every other kind also needs a majority of the distinct holders, and enough units sold to reach the quorum (at least 3 tokens and
+          a quarter of the units). Opening a proposal costs a 0.05 NEAR deposit, kept by the estate.
         </p>
         {isHolder ? <LoginKeyToggle contractId={account} /> : accountId ? <p className="text-sm text-muted">You don&apos;t hold a token in this estate, so you can&apos;t vote here.</p> : null}
       </div>
@@ -98,13 +99,20 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
   const expired = p.status === "Open" && nsToMs(p.expires_at) < now;
   const need = Math.floor(p.electorate / 2) + 1;
   const isVeto = !!p.kind && typeof p.kind === "object" && "Veto" in (p.kind as Record<string, unknown>);
-  const holdersRule = !isVeto && typeof p.holders_eligible === "number" && p.holders_eligible > 0;
+  const holdersRule = !isVeto && p.weighted && p.holders_eligible > 0;
+  const refreshProposal = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ["proposals", estate] }),
+      qc.invalidateQueries({ queryKey: ["votes-available", estate, p.id] }),
+      qc.invalidateQueries({ queryKey: ["vote-weight", estate, p.id] }),
+      qc.invalidateQueries({ queryKey: ["estate", estate] }),
+    ]);
   const vote = async (approve: boolean) => {
     if (!accountId) return connect();
     const r = await run(`Vote ${approve ? "yes" : "no"} on #${p.id}`, () => callNoPopup(accountId, E.vote(estate, p.id, approve)), {
       success: p.weighted && weight.data !== undefined ? `Your vote is recorded with a weight of ${fmt(weight.data)} USDC.` : `Your ${avail.data ?? ""} token vote(s) are recorded.`,
     });
-    if (r) qc.invalidateQueries({ queryKey: ["proposals", estate] });
+    if (r) await refreshProposal();
   };
   return (
     <li>
@@ -132,11 +140,11 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
         </div>
         {holdersRule ? (
           <p className="mono text-sm">
-            Holders yes {fmt(p.holders_yes ?? 0)} / {fmt(p.holders_eligible ?? 0)} <span className="text-muted">(needs {fmt(Math.floor((p.holders_eligible ?? 0) / 2) + 1)} distinct holders)</span>
+            Holders yes {fmt(p.holders_yes)} / {fmt(p.holders_eligible)} <span className="text-muted">(needs {fmt(Math.floor(p.holders_eligible / 2) + 1)} distinct holders)</span>
           </p>
         ) : null}
         <p className="mono text-xs text-muted">
-          {p.weighted ? "USDC-weighted: each token counts the whole USDC paid into its unit (up to the price)." : "One vote per token (opened before weighted votes)."}
+          {p.weighted ? "USDC-weighted: each token counts the whole USDC paid into its unit, net of refunds, up to the price." : "One vote per token (opened before weighted votes)."}
           {holdersRule ? " It also needs a majority of distinct holders, so one large holder can't pass it alone." : ""}
         </p>
         <details className="text-xs text-muted">
@@ -160,7 +168,7 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
           <Button size="sm" onClick={async () => {
             if (!accountId) return connect();
             const r = await run(`Expire #${p.id}`, () => callNoPopup(accountId, E.expireProposal(estate, p.id)));
-            if (r) qc.invalidateQueries({ queryKey: ["proposals", estate] });
+            if (r) await refreshProposal();
           }}>Mark as expired</Button>
         ) : null}
       </BracketCard>

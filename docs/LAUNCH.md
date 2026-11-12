@@ -23,7 +23,11 @@ hard stop: don't take a deposit until all of them are ticked and the evidence is
 
 - [ ] A mainnet parent account (e.g. `plote.near`) held in a **hardware wallet or a multisig**, never a key file.
 - [ ] Relayer account: a separate account, funded with only a few NEAR at a time, its key only in Vercel
-      (`RELAYER_PRIVATE_KEY`, sensitive). Rotate it on any suspicion; the relayer can't move user funds.
+      (`MAINNET_RELAYER_PRIVATE_KEY` on the mainnet build, sensitive). Rotate it on any suspicion; the relayer can't
+      move user funds. A mainnet build never falls back to the testnet `RELAYER_*` variables.
+- [ ] Reporter account (`REPORTER_ACCOUNT_ID` / `REPORTER_PRIVATE_KEY`): each estate's `verdict_relayer`, which signs
+      `submit_verdict` and `report_deposit`. Keep it separate from the relayer (it can book deposits, so it is the more
+      sensitive key); required on mainnet. On testnet it falls back to the relayer key when unset.
 - [ ] Surveyors use phone keys (`/qs/setup`): function-call only, allowance capped. Developers use the claim key from
       `/dev` for day-to-day calls.
 
@@ -42,48 +46,66 @@ hard stop: don't take a deposit until all of them are ticked and the evidence is
 2. `NEAR_ENV=mainnet` — publish the unit code (global, by hash), then deploy each estate with
    `config/estate.mainnet.example.json` as the starting point (real deadlines, real geofence, real surveyor).
 3. Publish the verifier on OutLayer mainnet; pin its version key in the config; store the NEAR AI key with
-   `scripts/outlayer-setup.ts`, which uses the condition `Predecessor(Whitelist[estate])` (only runs requested by
-   the estate contract can use it).
+   `scripts/outlayer-setup.ts` (mainnet usage: see `scripts/outlayer-setup.ts --help`), which uses the condition
+   `Predecessor(Whitelist[estate])` (only runs requested by the estate contract can use it). `NEAR_AI_API_KEY` is an
+   OutLayer secret only; the web app never reads it, so it doesn't go in Vercel.
 4. Run one OutLayer check on a throwaway capture to warm the build (yield/resume times out on a cold build).
 5. **Lock the code**: `pnpm tsx scripts/delete-estate-keys.ts <estate> --yes`. After this nobody, including Plote,
    can change the estate's code; `/status` shows "Code locked" green. If you'd rather keep an upgrade path, the only
    acceptable alternative is a multisig with a public timelock longer than the shortest veto window, documented here.
-6. Set `NEXT_PUBLIC_NETWORK=mainnet`, `NEXT_PUBLIC_ESTATES`, and the server variables in Vercel.
+6. Set `NEXT_PUBLIC_NETWORK=mainnet`, `NEXT_PUBLIC_ESTATES`, `NEXT_PUBLIC_APP_URL` (the https URL of that build) and
+   the server variables in Vercel. The reproducible-build workflow compares the estate WASM with
+   `config/estate-wasm.sha256`; update that file in the commit that deploys a new artifact.
 
 ## 4. Operations
 
 - [ ] Supabase migrations applied, in order: `supabase/migrations/0001_init.sql`, `0002_rate_limits.sql`,
       `0003_security.sql`, `0004_audit2.sql` (poller receipt index, upload size/deadline columns, paid-verdict store,
       1Click → family-wall copy), `0005_poll_schedule.sql` (pg_cron schedule for the poller; needs `POLL_SECRET` in
-      Vercel and the same value in Vault as `plote_poll_secret`). Point-in-time recovery on.
+      Vercel and the same value in Vault as `plote_poll_secret`), `0006_audit4.sql` (event key per receipt/log line,
+      `events.notified_at`, listing continuation + never-backwards cursor, the poller run lock, drops `gate_nonces`,
+      bucket JPEG/PNG only), `0007_poll_schedule_url.sql` (reschedules the poller with its URL from Vault
+      `plote_app_url`, default https://plote-vert.vercel.app). Apply 0006 before deploying the web build that uses it.
+      Point-in-time recovery on.
 - [ ] Server variables in Vercel (secrets in the dashboard, never in git):
 
       | Variable | Needed for |
       |---|---|
       | `SUPABASE_SERVICE_ROLE_KEY` | uploads, event cache, rate limits, single-use nonces |
-      | `RELAYER_ACCOUNT_ID`, `RELAYER_PRIVATE_KEY` | gasless surveyor calls; the estate's `verdict_relayer` |
-      | `CRON_SECRET` | the poller and the detailed `/api/health` view (header `x-cron-secret`) |
+      | `NEXT_PUBLIC_APP_URL` | links in emails, OG images, NFT reference. If unset, Vercel production falls back to `https://$VERCEL_PROJECT_PRODUCTION_URL` (never localhost); set it anyway |
+      | `RELAYER_ACCOUNT_ID`, `RELAYER_PRIVATE_KEY` (testnet) / `MAINNET_RELAYER_ACCOUNT_ID`, `MAINNET_RELAYER_PRIVATE_KEY` (mainnet) | gasless surveyor calls; mainnet requires both `MAINNET_*` (no fallback) |
+      | `RELAYER_ALLOWED_METHODS` (optional) | relayable methods, intersected with `open_capture,submit_evidence,qs_sign` (the default) |
+      | `RELAYER_MAX_GAS_TGAS` (optional) | gas cap per relayed call; whole number clamped to 1..300, default 300 |
+      | `REPORTER_ACCOUNT_ID`, `REPORTER_PRIVATE_KEY` | the estate's `verdict_relayer` / deposit reporter (`submit_verdict`, `report_deposit`); required on mainnet, testnet falls back to the relayer |
+      | `CRON_SECRET` | manual poller runs and the detailed `/api/health` view (header `x-cron-secret`) |
       | `POLL_SECRET` | the Supabase pg_cron call to the poller (same value as Vault `plote_poll_secret`) |
-      | `NOTIFY_SECRET` | signs email confirm/unsubscribe links (falls back to `CRON_SECRET` if unset; set it so the two secrets are independent — unsubscribe links already sent keep working) |
+      | `NOTIFY_SECRET` | signs email confirm/unsubscribe links; **required for emails** (no fallback to `CRON_SECRET` for signing). Unsubscribe links sent before it existed (signed with `CRON_SECRET`) keep working; new ones are valid for a year |
       | `RESEND_API_KEY` + `RESEND_FROM` | milestone emails; both required, `RESEND_FROM` must be on a domain verified in Resend (no default sender). `GET /api/notify/status` says whether emails are on |
       | `ALERT_WEBHOOK_URL` | Slack/Discord alerts from the poller |
       | `NEARBLOCKS_API_KEY` | the poller's receipt listing (the keyless tier rate-limits) |
       | `MONITOR_ACCOUNTS` (optional) | extra accounts to watch for < 0.5 NEAR |
-      | `STORAGE_CLEANUP_DELETE=1` (optional) | lets the poller delete flagged evidence files; unset = report only |
+      | `STORAGE_CLEANUP_DELETE` (optional) | the poller deletes flagged evidence files by default in production; `0` = report only |
       | `OUTLAYER_HTTPS_URL`, `OUTLAYER_PAYMENT_KEY` | only for `verify_mode: "https"` estates |
-      | `ONECLICK_JWT`, `MAINNET_UNIT_ACCOUNT`, `MAINNET_RELAYER_*` | mainnet 1Click build only |
+      | `ONECLICK_JWT`, `ONECLICK_BASE_URL` (optional, default `https://1click.chaindefuser.com`), `MAINNET_UNIT_ACCOUNT` | mainnet 1Click build only |
+      | `NEXT_PUBLIC_ROOT_ACCOUNT`, `NEXT_PUBLIC_FX_URL` (optional) | parent of estates not in `NEXT_PUBLIC_ESTATES`; the USD→NGN rate endpoint (its origin must be allowed by the CSP) |
 - [ ] `ALERT_WEBHOOK_URL` set; the poller posts when the relayer drops below 1 NEAR, an estate's verification
-      budget below 0.3 NEAR, a developer/payout account below 0.5 NEAR, an estate or a transaction can't be read, or a
-      run couldn't reach the previous cursor. When **every** estate fails the poller answers 502 (visible in
+      budget below 0.3 NEAR, a developer/payout/reporter account below 0.5 NEAR, an estate or a transaction can't be
+      read, a backlog is being continued over several runs, or emails failed. `/api/oneclick/status` posts when a
+      `report_deposit` didn't confirm (`plote:report-deposit-uncertain`; not retried automatically — check the unit's
+      paid amount before reporting again). When **every** estate fails the poller answers 502 (visible in
       `net._http_response` and the Vercel logs).
-- [ ] An uptime monitor on `/api/health`: `balances.ok`, `accounts.ok` and `photo_checks.ok` (false when the latest
-      verdicts all show `ai_unavailable` / `challenge_unverified` / `worker_error`, i.e. NEAR AI or the worker is down).
-- [ ] The 5-minute poller runs from Supabase pg_cron (`plote-poll`, migration 0005). GitHub's scheduled
-      `poll.yml` stays as a manual fallback (`workflow_dispatch`); GitHub does not reliably fire its schedule.
-- [ ] Rate limits and single-use nonces are shared across instances (Postgres). If the database can't answer they
-      fall back to per-instance memory and log `plote:rate-limit-fallback` / `plote:once-fallback`: alert on those in
-      the Vercel logs. Playground estates have hourly caps on uploads (5 per account, 50 in total) and relayed
-      captures (10 per account).
+- [ ] An uptime monitor on `/api/health`: `balances.ok`, `accounts.ok`, `photo_checks.ok` (false when the latest
+      verdicts all show `ai_unavailable` / `challenge_unverified` / `worker_error`, i.e. NEAR AI or the worker is down)
+      and `poller.ok` (false when an estate's cursor wasn't saved in the last 20 minutes).
+- [ ] The 5-minute poller runs from Supabase pg_cron only (`plote-poll`, migrations 0005 + 0007). `poll.yml` is
+      manual only (`workflow_dispatch`, no schedule). Runs never overlap: a run lock (`poll_lock`, 0006) makes a
+      second caller answer `{ skipped: true }`, and each run stops starting new work after 45 s.
+- [ ] Rate limits are shared across instances (Postgres); if the database can't answer they fall back to
+      per-instance memory and log `plote:rate-limit-fallback` / `plote:once-fallback` (NEP-413 nonces): alert on those
+      in the Vercel logs. Relayed delegates and gate passes **fail closed** instead (503 `REPLAY_CHECK_UNAVAILABLE`,
+      logged `plote:once-unavailable`). Relayed calls are counted per estate (300/min, 60/min on a playground), so the
+      public playground can't use up a real estate's quota; playground estates also have hourly caps per estate on
+      uploads (5 per account, 50 in total) and relayed captures and sign-offs (10 per account, 100 in total).
 - [ ] Gate passes are checked server-side (`POST /api/gate/verify`), single use across guard devices.
 
 ## 5. Incidents

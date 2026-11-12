@@ -5,7 +5,13 @@
 //! Verdict rules (from the input JSON): a URL containing "reuse" fails with `phash_reuse:3`,
 //! "offsite" fails `outside_geofence`, "stale" fails `exif_stale`; anything else passes.
 //! `worker_commit` echoes the pinned `source.GitHub.commit` (the estate rejects a verdict from any other
-//! commit), or `"mock"` for a `Project` source.
+//! commit), or `"mock"` for a `Project` source. `evidence_id` and `sha256` are echoed from the input, as the real
+//! worker does (an estate pinned to anything but the legacy build refuses to pass a verdict without them).
+//!
+//! Every verdict carries the warning `mock_verifier`, which the estate turns into a failing reason (audit round 4,
+//! finding 3), so a mock can never pass a check for an estate. The one exception is a sandbox in which the mock is
+//! deployed at the real OutLayer account (`outlayer.near` / `outlayer.testnet`, which nobody but OutLayer can deploy to
+//! on a real network): there it stands in for OutLayer end to end (tests/integration) and omits the warning.
 
 use near_sdk::serde_json::{self, json, Value};
 use near_sdk::{env, near, PanicOnDefault};
@@ -51,11 +57,19 @@ impl OutlayerMock {
         } else {
             vec![]
         };
+        let me = env::current_account_id();
+        let impersonating = me.as_str() == "outlayer.near" || me.as_str() == "outlayer.testnet";
+        let warnings: Vec<&str> = if impersonating {
+            vec![]
+        } else {
+            vec!["mock_verifier"]
+        };
         let verdict = json!({
             "evidence_id": input["evidence_id"],
+            "sha256": input["sha256"],
             "pass": reasons.is_empty(),
             "reasons": reasons,
-            "warnings": ["mock_verifier"],
+            "warnings": warnings,
             "phash": format!("{:016x}", env::block_height().wrapping_mul(0x9e3779b97f4a7c15)),
             "nearest_distance": 27,
             "exif_time": input["captured_at"],

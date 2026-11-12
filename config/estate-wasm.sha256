@@ -1,0 +1,6 @@
+# SHA-256 of the reproducible estate WASM (target/near/plote_estate/plote_estate.wasm) that the live estates run.
+# .github/workflows/reproducible.yml rebuilds it and fails when the build differs from this hash.
+# After a reviewed contract change: build with `cargo near build reproducible-wasm --manifest-path contracts/estate/Cargo.toml`
+# (or run the workflow), deploy that artifact (scripts/upgrade-estate-code.ts --expected-hash <sha256>), then replace
+# the line below with the new hash in the same commit. Only the first 64-hex line counts; lines starting with # are notes.
+fd1a7388b792149c6ea36d3b8b1bda3cef68553a434ac788de95f58fa3885484

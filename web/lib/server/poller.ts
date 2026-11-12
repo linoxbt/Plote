@@ -98,10 +98,11 @@ export async function collectWindow(
   list: PollDeps["listReceipts"],
   maxPages = MAX_PAGES,
   start: string | null = null,
-): Promise<{ refs: ReceiptRef[]; newest: number; reachedFloor: boolean; listed: number; next: string | null }> {
+): Promise<{ refs: ReceiptRef[]; newest: number; lowest: number; reachedFloor: boolean; listed: number; next: string | null }> {
   const refs = new Map<string, ReceiptRef>();
   let next: string | null = start;
   let newest = 0;
+  let lowest = Infinity;
   let listed = 0;
   for (let page = 0; page < maxPages; page++) {
     const p = await list(estate, next);
@@ -110,16 +111,17 @@ export async function collectWindow(
     for (const r of p.receipts) {
       const h = height(r);
       newest = Math.max(newest, h);
+      lowest = Math.min(lowest, h);
       if (h <= floor) {
         below = true;
         continue;
       }
       if (r.receiver_account_id === estate && r.receipt_id && r.transaction_hash) refs.set(r.receipt_id, toRef(r));
     }
-    if (below || !p.next || !p.receipts.length) return { refs: [...refs.values()], newest, reachedFloor: true, listed, next: null };
+    if (below || !p.next || !p.receipts.length) return { refs: [...refs.values()], newest, lowest, reachedFloor: true, listed, next: null };
     next = p.next;
   }
-  return { refs: [...refs.values()], newest, reachedFloor: false, listed, next };
+  return { refs: [...refs.values()], newest, lowest, reachedFloor: false, listed, next };
 }
 
 export function blockTime(ns: string | null): string {
@@ -182,7 +184,8 @@ export async function pollEstate(
   }
   const seen = await deps.store.seen(win.refs.map((r) => r.receiptId));
   const fresh = win.refs.filter((r) => !seen.has(r.receiptId)).sort((a, b) => a.height - b.height);
-  const gap = cursor > 0 && !win.reachedFloor;
+  // A gap only when the listing stopped above the cursor itself: the lookback below it was read in an earlier pass.
+  const gap = cursor > 0 && !win.reachedFloor && win.lowest > cursor;
   const report: EstatePollReport = {
     listed: win.listed, fresh: fresh.length, processed: 0, events: 0, inserted: 0,
     cursor: { from: cursor, to: cursor }, gap, resumed: !!resume, deferred: 0, errors: [],

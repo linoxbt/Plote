@@ -103,6 +103,19 @@ describe("/api/cron/poll status", () => {
     expect(r.status).toBe(200);
     expect((await r.json()).dryRun).toBe(true);
   });
+  it("exits early while another run holds the lock, and releases its own lock", async () => {
+    h.lockHeld = true;
+    const r = await call();
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ skipped: true });
+    expect(h.poll).not.toHaveBeenCalled();
+    h.lockHeld = false;
+    h.rpcs.length = 0;
+    h.poll.mockRejectedValue(new Error("x"));
+    await call();
+    expect(h.rpcs).toContain("poll_lock_acquire");
+    expect(h.rpcs).toContain("poll_lock_release");
+  });
   it("rejects a wrong secret", async () => {
     const r = await pollGET(new Request("http://x/api/cron/poll", { headers: { "x-cron-secret": "nope!!" } }));
     expect(r.status).toBe(401);

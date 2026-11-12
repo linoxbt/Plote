@@ -137,6 +137,8 @@ pub struct EvidenceView {
     pub verdict: Option<Verdict>,
     pub raw_response_hash: Option<String>,
     pub error: Option<String>,
+    /// The AI model the verdict named (`ai_model` in the worker output), if any. Stored outside `Evidence` (key `zm`).
+    pub ai_model: Option<String>,
 }
 
 #[near(serializers = [json])]
@@ -250,7 +252,8 @@ impl Estate {
                 exists: true,
                 status: Some(u.status),
                 holder: u.holder.clone(),
-                paid: U128(u.paid),
+                // Net equity (finding 5): what the holder has in and not taken back (`paid − refunded_out`).
+                paid: U128(Self::net_paid(u)),
                 released: U128(u.released),
                 price: U128(u.price),
                 label: Some(u.label.clone()),
@@ -378,9 +381,10 @@ impl Estate {
                     return ids.len().min(MAX_VOTE_TOKENS_PER_CALL) as u32;
                 }
                 ids.iter()
+                    .filter(|id| !self.nft_pending(id, now))
                     .take(MAX_VOTE_TOKENS_PER_CALL)
                     .filter_map(|id| self.units.get(id))
-                    .fold(0u32, |w, u| w.saturating_add(crate::votes::vote_weight(u)))
+                    .fold(0u32, |w, u| w.saturating_add(self.weight_for(u, p.created_at)))
             })
             .unwrap_or(0)
     }
@@ -424,7 +428,12 @@ impl Estate {
 }
 
 fn evidence_view(e: &Evidence) -> EvidenceView {
+    let ai_model = crate::ext::get::<String>(&crate::ext::key(
+        crate::ext::P_AI_MODEL,
+        &e.id.to_le_bytes(),
+    ));
     EvidenceView {
+        ai_model,
         id: U64(e.id),
         milestone: e.milestone,
         url: e.url.clone(),

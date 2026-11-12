@@ -1,3 +1,4 @@
+-- Superseded by 0007_poll_schedule_url.sql (same job, URL read from Vault secret plote_app_url). Kept as applied.
 -- Reliable 5-minute schedule for the event poller (/api/cron/poll), inside the stack. GitHub Actions' cron proved
 -- unreliable (it never fired the schedule), so pg_cron + pg_net call the endpoint from the database instead.
 -- The request carries POLL_SECRET, read from Supabase Vault at call time (never stored in this file or in cron.job).

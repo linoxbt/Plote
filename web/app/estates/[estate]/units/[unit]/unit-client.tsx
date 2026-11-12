@@ -18,7 +18,7 @@ import { nextRefundOpensAt } from "@/lib/default";
 import { estate as E } from "@/lib/estate";
 import { estateAccount, estateSlug } from "@/lib/estates";
 import { formatDate, formatDateTime, formatNear, formatUsd, toBig, unitDisplay } from "@/lib/format";
-import { useEstate, useEvidenceList, useMilestones, useNftToken, useUnit, useUsdcBalance } from "@/lib/hooks";
+import { useEstate, useEvidenceList, useGenuineEstate, useMilestones, useNftToken, usePendingLien, useUnit, useUsdcBalance } from "@/lib/hooks";
 import { sendTx, viewAccount } from "@/lib/near";
 import type { EstateView, MilestoneView, UnitView } from "@/lib/types";
 
@@ -31,6 +31,8 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
   const ms = useMilestones(account);
   const token = useNftToken(account, unitId, { enabled: !!unit.data && unit.data.status !== "Available" && unit.data.status !== "Reserved" });
   const evs = useEvidenceList(account);
+  const genuine = useGenuineEstate(account);
+  const pendingLien = usePendingLien(account, unitId);
   const { accountId } = useWallet();
   const [tab, setTab] = useState<Tab>("timeline");
   const s = estateSlug(account);
@@ -74,7 +76,19 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
         </div>
 
         <div className="space-y-6">
-          {u.status === "Available" ? (
+          {pendingLien.data && accountId && pendingLien.data.lender === accountId ? (
+            <BracketCard tone="accent" className="space-y-2">
+              <p className="font-display text-lg font-normal">You&apos;re named as lender on {unitDisplay(u.id)}.</p>
+              <p className="text-sm text-muted">The holder proposed a lien up to {formatUsd(pendingLien.data.cap)}. It only takes effect when you accept it.</p>
+              <LinkButton href={`/me/units/${s}/${u.id}#accept-lien`} variant="primary">Review and accept</LinkButton>
+            </BracketCard>
+          ) : null}
+          {genuine.data && !genuine.data.genuine ? null : u.status === "Available" && !u.ready ? (
+            <BracketCard tone="amber" className="space-y-2">
+              <p className="font-display text-xl font-normal">Being set up.</p>
+              <p className="text-sm text-muted">This unit&apos;s account isn&apos;t registered on USDC yet, so it can&apos;t be reserved or paid. The developer can retry the setup from the developer console.</p>
+            </BracketCard>
+          ) : u.status === "Available" ? (
             <BracketCard tone="orange" className="space-y-3">
               <p className="font-display text-xl font-normal">This unit is available.</p>
               <p className="text-sm text-muted">Reserve it for {Math.round(Number(e.params.reserve_ttl_ns) / 6e10)} minutes with a 0.05 NEAR storage deposit (refundable — storage, not price), then pay at least {e.params.min_initial_bps / 100}% of the price to get the allocation token.</p>
@@ -103,7 +117,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
           {taken && u.status !== "HandedOver" ? <RefundCard account={account} e={e} u={u} ms={ms.data} isHolder={holderIsMe} accountId={accountId} /> : null}
           {u.status === "Allocated" ? <DefaultCard estate={account} e={e} u={u} /> : null}
           <ListingCard estate={account} e={e} u={u} />
-          <PayFromOtherChain slug={s} u={u} />
+          {genuine.data?.genuine && u.ready ? <PayFromOtherChain slug={s} u={u} /> : null}
           <BracketCard>
             <h2 className="mb-3 text-lg font-normal">Build progress</h2>
             {ms.data ? <MilestoneTrack milestones={ms.data} detailed mobilisationBps={e.params.mobilisation_bps} /> : ms.error ? <ErrorState error={ms.error} /> : <LoadingCard lines={2} />}
@@ -147,12 +161,15 @@ function RefundCard({ account, e, u, ms, isHolder, accountId }: { account: strin
         </p>
         {isHolder ? (
           <>
-            <p className="text-sm text-muted">Your allocation token will be burned and the unit goes back on sale. This can&apos;t be undone.{toLender ? " A lender's lien is set, so the lender is repaid first, up to its cap." : ""}</p>
+            <p className="text-sm text-muted">Your allocation token will be burned once everything is refunded, and the unit goes back on sale. This can&apos;t be undone.</p>
+            {toLender ? <p className="text-sm text-amber">A lender&apos;s lien is set: the refund goes to the lender <span className="mono">{u.lien!.lender}</span> first, up to its cap of {formatUsd(u.lien!.cap)}, not to you.</p> : null}
             <Button variant="danger" onClick={async () => {
-              const msg = `Refund ${formatUsd(u.refundable_now)} ${toLender ? `(to the lender ${u.lien!.lender} first, up to its cap)` : `to ${accountId}`}?\n\nYour token for ${unitDisplay(u.id)} will be burned and the unit goes back on sale. This can't be undone.`;
+              const msg = toLender
+                ? `Refund ${formatUsd(u.refundable_now)}?\n\nA lien is set, so up to ${formatUsd(u.lien!.cap)} goes to the lender ${u.lien!.lender} first, not to you. Anything above the cap stays refundable to you afterwards.`
+                : `Refund ${formatUsd(u.refundable_now)} to ${accountId}?\n\nYour token for ${unitDisplay(u.id)} will be burned and the unit goes back on sale. This can't be undone.`;
               if (!window.confirm(msg)) return;
-              const r = await run("Get my money back", () => sendTx(E.refund(account, u.id)), { success: "Refund sent to your account." });
-              if (r) qc.invalidateQueries();
+              const r = await run("Get my money back", () => sendTx(E.refund(account, u.id)), { success: toLender ? `Refund sent to the lender ${u.lien!.lender} (up to its cap).` : "Refund sent to your account." });
+              if (r) await Promise.all([qc.invalidateQueries({ queryKey: ["unit", account, u.id] }), qc.invalidateQueries({ queryKey: ["units", account] }), qc.invalidateQueries({ queryKey: ["estate", account] }), qc.invalidateQueries({ queryKey: ["my-units"] })]);
             }}>Get my money back</Button>
           </>
         ) : <p className="text-xs text-muted">Only the holder of {unitDisplay(u.id)} can ask for this refund.</p>}

@@ -397,11 +397,11 @@ impl Estate {
                     }
                     return false;
                 }
-                // Finding 3: a verdict that doesn't say which evidence and which bytes it checked can't pass, except
-                // from the legacy pinned build that predates the echo (live testnet estates; `repin_verifier` moves
-                // them off it).
+                // Finding 3: a verdict that doesn't say which evidence and which bytes it checked can't pass. The
+                // pre-hardening build (`LEGACY_VERIFIER`, still pinned on the live testnet estates) doesn't echo them,
+                // so those estates must move to the hardened build with `repin_verifier` before a check can pass again.
                 let unbound = b.evidence_id.is_none() || b.sha256.is_none();
-                if unbound && self.verifier.commit.trim() != LEGACY_VERIFIER {
+                if unbound {
                     verdict.reasons.push("verdict_unbound".to_string());
                 }
                 if let Some(model) = b.ai_model {
