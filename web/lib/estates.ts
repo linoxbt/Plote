@@ -41,6 +41,18 @@ export function isKnownEstate(account: string): boolean {
   return ESTATES.includes(account);
 }
 
+/**
+ * A named account that belongs to the other network (`alice.near` on the testnet build, `alice.testnet` on the
+ * mainnet build). Returns a message to show, or null when it fits (implicit 64-hex and EVM-style accounts fit both).
+ */
+export function accountNetworkMismatch(accountId: string, network: "testnet" | "mainnet"): string | null {
+  const a = accountId.trim().toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(a) || /^0x[0-9a-f]{40}$/.test(a)) return null;
+  if (network === "testnet" && a.endsWith(".near")) return `${accountId} is a mainnet account, but this is the testnet site. Switch your wallet to testnet (an account ending in .testnet).`;
+  if (network === "mainnet" && a.endsWith(".testnet")) return `${accountId} is a testnet account, but this is the mainnet site. Switch your wallet to mainnet (an account ending in .near).`;
+  return null;
+}
+
 export type UnitRef = { estate: string; unit: string };
 
 /**

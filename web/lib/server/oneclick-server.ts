@@ -41,3 +41,20 @@ export function oneclickChipin(
   const amount = typeof amountOut === "string" && /^\d{1,30}$/.test(amountOut) ? amountOut : null;
   return { estate: row.estate, unit: row.unit, deposit_address: depositAddress, display_name: name, note, amount };
 }
+
+/**
+ * The estate and unit a 1Click quote pays, derived only from the recipient (a unit account is `<unit>.<estate>`), so a
+ * quote's family-wall note can't be filed under another unit. An `estate` (account or slug) or `unit` in the body is
+ * only cross-checked: if either disagrees with the recipient, the quote is refused.
+ */
+export function quoteTarget(recipient: string, body: { estate?: string; unit?: string } = {}): { ok: true; estate: string; unit: string } | { ok: false; message: string } {
+  const dot = recipient.indexOf(".");
+  if (dot <= 0 || dot === recipient.length - 1) return { ok: false, message: "The recipient must be a unit account (<unit>.<estate>)." };
+  const unit = recipient.slice(0, dot);
+  const estate = recipient.slice(dot + 1);
+  const be = body.estate?.trim().toLowerCase();
+  if (be && be !== estate && be !== estate.split(".")[0]) return { ok: false, message: "estate doesn't match the recipient unit account." };
+  const bu = body.unit?.trim().toLowerCase();
+  if (bu && bu !== unit) return { ok: false, message: "unit doesn't match the recipient unit account." };
+  return { ok: true, estate, unit };
+}

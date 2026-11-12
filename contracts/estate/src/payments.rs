@@ -30,7 +30,8 @@ pub trait FtContract {
 impl Estate {
     // ---------- reservations ----------
 
-    /// Available → Reserved for `reserve_ttl_ns`. Attach exactly 0.05 NEAR (storage, refunded on burn).
+    /// Available → Reserved for `reserve_ttl_ns`. Attach at least 0.05 NEAR (storage, refunded on burn); anything above
+    /// is returned at once.
     #[payable]
     pub fn reserve(&mut self, unit_id: String) {
         let deposit = env::attached_deposit();
@@ -245,17 +246,19 @@ impl Estate {
         self.read_balance(&unit).then(
             Self::ext(env::current_account_id())
                 .with_static_gas(GAS_ON_REPORT_FIRST)
-                .on_report_first(unit_id, amount, expected),
+                .on_report_first(unit_id, amount, expected, None),
         )
     }
 
-    /// First read of `report_deposit`: the books must be what they were when the report started; then read again.
+    /// First read of `report_deposit` (and of `finalize_surplus_booking`, `surplus: true`): the books must be what they
+    /// were when the report started; then read again.
     #[private]
     pub fn on_report_first(
         &mut self,
         unit_id: String,
         amount: U128,
         expected: U128,
+        surplus: Option<bool>,
     ) -> PromiseOrValue<U128> {
         let unit = self.unchanged_unit(&unit_id, expected.0);
         let first = read_balance_result().unwrap_or_else(|| {
@@ -272,12 +275,13 @@ impl Estate {
             self.read_balance(&unit).then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_ON_REPORT_SECOND)
-                    .on_report_second(unit_id, amount, expected, U128(first)),
+                    .on_report_second(unit_id, amount, expected, U128(first), surplus),
             ),
         )
     }
 
-    /// Second read of `report_deposit`: credits `min(amount, first − expected, second − expected)`.
+    /// Second read of `report_deposit`: credits `min(amount, first − expected, second − expected)`. With `surplus: true`
+    /// (`finalize_surplus_booking`) the same amount is booked as `unattributed` instead and the request ends.
     #[private]
     pub fn on_report_second(
         &mut self,
@@ -285,6 +289,7 @@ impl Estate {
         amount: U128,
         expected: U128,
         first: U128,
+        surplus: Option<bool>,
     ) -> U128 {
         let mut unit = self.unchanged_unit(&unit_id, expected.0);
         let second = read_balance_result().unwrap_or_else(|| {
@@ -299,14 +304,33 @@ impl Estate {
             ));
             return U128(0);
         }
+        if surplus.unwrap_or(false) {
+            crate::ext::del(&crate::ext::key(crate::ext::P_SURPLUS, unit_id.as_bytes()));
+            crate::ext::set(
+                &crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes()),
+                &Self::now(),
+            );
+            unit.unattributed += credit;
+            emit(
+                "surplus_booked",
+                json!({ "unit_id": unit_id, "amount": U128(credit), "unattributed": U128(unit.unattributed) }),
+            );
+            self.save(unit);
+            return U128(credit);
+        }
         if credit < amount.0 {
             env::log_str(&format!(
                 "reported {} but only {} is on unit {} above its books; credited {}",
                 amount.0, credit, unit_id, credit
             ));
         }
-        self.credit(&mut unit, credit, Self::now(), "report");
+        let now = Self::now();
+        self.credit(&mut unit, credit, now, "report");
         self.save(unit);
+        crate::ext::set(
+            &crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes()),
+            &now,
+        );
         U128(credit)
     }
 
@@ -348,9 +372,127 @@ impl Estate {
                 msg.chars().take(200).collect::<String>()
             ));
         }
+        // Finding 14: USDC credited the unit before this receipt ran, so a `report_deposit` that finished in between may
+        // already have booked this money from its balance reads (e.g. a retried report). Booking it again would put
+        // the books above the balance. Within `REPORT_SETTLE_NS` of a report that credited this unit, the deposit is
+        // accepted (the money stays on the unit) but not booked: it is a surplus the deposit reporter can book with
+        // `report_deposit` (two balance reads, never twice). Event `deposit_deferred`.
+        let last_report: Option<u64> =
+            crate::ext::get(&crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes()));
+        if last_report.is_some_and(|t| now < t.saturating_add(REPORT_SETTLE_NS)) {
+            env::log_str(&format!(
+                "deposit of {} from {} to {} accepted but not booked: a report_deposit just credited this unit; report it",
+                amount.0, sender_id, unit_id
+            ));
+            emit(
+                "deposit_deferred",
+                json!({ "unit_id": unit_id, "sender_id": sender_id, "amount": amount }),
+            );
+            return U128(0);
+        }
         self.credit(&mut unit, amount.0, now, "ft_transfer_call");
         self.save(unit);
         U128(0)
+    }
+
+    // ---------- unbooked surplus (finding 7) ----------
+    //
+    // USDC that reached a unit by plain transfer and was never reported (a 1Click delivery the reporter missed, a
+    // mistaken transfer) is on the unit but in no book, so nothing could ever move it. The developer or the recovery
+    // account can book it as `unattributed` (then `sweep_unattributed` sends it to the last reserver within
+    // `late_claim_ns`, else to `recovery_id`) in two steps: `request_surplus_booking` reads the balance and records the
+    // surplus seen; `finalize_surplus_booking`, at least `SURPLUS_DELAY_NS` (7 days) later, reads twice more like
+    // `report_deposit` and books `min(recorded, first − expected, second − expected)`. Only money above the books can be
+    // booked, never `paid`; a delivery reported meanwhile is credited to its payer first and shrinks the surplus.
+
+    /// Developer or `recovery_id`: record the unit's current surplus over its books (one balance read). Starts the 7-day
+    /// delay; a new request replaces the old one. Returns (via the promise) the surplus recorded.
+    pub fn request_surplus_booking(&mut self, unit_id: String) -> Promise {
+        self.assert_surplus_role();
+        let unit = self.unit(&unit_id);
+        ensure!(unit.ready, "E_UNIT_NOT_FOUND", "unit {} is still being created", unit_id);
+        ensure!(
+            unit.in_flight == 0,
+            "E_IN_FLIGHT",
+            "a transfer out of {} is pending",
+            unit_id
+        );
+        let expected = U128(Self::expected_balance(&unit));
+        self.read_balance(&unit).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_ON_BALANCE)
+                .on_surplus_request(unit_id, expected),
+        )
+    }
+
+    #[private]
+    pub fn on_surplus_request(&mut self, unit_id: String, expected: U128) -> U128 {
+        let _ = self.unchanged_unit(&unit_id, expected.0);
+        let balance = read_balance_result().unwrap_or_else(|| {
+            errors::fail("E_BALANCE_PENDING", "the balance read failed; request again")
+        });
+        let amount = balance.saturating_sub(expected.0);
+        ensure!(
+            amount > 0,
+            "E_NOTHING_TO_SWEEP",
+            "unit {} holds nothing above its books",
+            unit_id
+        );
+        let at = Self::now();
+        crate::ext::set(
+            &crate::ext::key(crate::ext::P_SURPLUS, unit_id.as_bytes()),
+            &crate::ext::SurplusRequest { at, amount },
+        );
+        emit(
+            "surplus_requested",
+            json!({ "unit_id": unit_id, "amount": U128(amount), "ready_at": U64(at.saturating_add(SURPLUS_DELAY_NS)) }),
+        );
+        U128(amount)
+    }
+
+    /// Developer or `recovery_id`, at least 7 days after `request_surplus_booking`: book the surplus still seen (two
+    /// reads, capped at what was recorded) as `unattributed`. `E_TIMELOCK` before then, `E_BAD_ARGS` without a request.
+    pub fn finalize_surplus_booking(&mut self, unit_id: String) -> Promise {
+        self.assert_surplus_role();
+        let unit = self.unit(&unit_id);
+        let req: crate::ext::SurplusRequest = crate::ext::get(&crate::ext::key(
+            crate::ext::P_SURPLUS,
+            unit_id.as_bytes(),
+        ))
+        .unwrap_or_else(|| errors::fail("E_BAD_ARGS", "no surplus booking was requested"));
+        let ready_at = req.at.saturating_add(SURPLUS_DELAY_NS);
+        ensure!(
+            Self::now() >= ready_at,
+            "E_TIMELOCK",
+            "the surplus of {} can be booked from {}",
+            unit_id,
+            ready_at
+        );
+        ensure!(
+            unit.in_flight == 0,
+            "E_IN_FLIGHT",
+            "a transfer out of {} is pending",
+            unit_id
+        );
+        let expected = U128(Self::expected_balance(&unit));
+        self.read_balance(&unit).then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_ON_REPORT_FIRST)
+                .on_report_first(unit_id, U128(req.amount), expected, Some(true)),
+        )
+    }
+
+    /// View: a pending surplus booking request, if any: `{ at, amount }` (`at` + 7 days = when it can be finalized).
+    pub fn get_surplus_request(&self, unit_id: String) -> Option<SurplusRequestView> {
+        crate::ext::get::<crate::ext::SurplusRequest>(&crate::ext::key(
+            crate::ext::P_SURPLUS,
+            unit_id.as_bytes(),
+        ))
+        .map(|r| SurplusRequestView {
+            at: U64(r.at),
+            amount: U128(r.amount),
+            ready_at: U64(r.at.saturating_add(SURPLUS_DELAY_NS)),
+        })
     }
 
     // ---------- money out ----------
@@ -377,6 +519,7 @@ impl Estate {
             "a transfer out of {} is pending",
             unit_id
         );
+        self.assert_no_nft_pending(&unit_id);
         let amount = self.refundable(&unit);
         ensure!(amount > 0, "E_NOTHING_TO_REFUND", "nothing left to refund");
         // A lender with a lien is repaid first, up to its cap.
@@ -400,6 +543,7 @@ impl Estate {
             "a transfer out of {} is pending",
             unit_id
         );
+        self.assert_no_nft_pending(&unit_id);
         // Never more than is still in the unit for the holder (a lender-first refund may have taken part of it).
         let amount = self.excess(&unit).min(self.refundable(&unit));
         ensure!(amount > 0, "E_NO_EXCESS", "nothing paid above the price");
@@ -535,6 +679,7 @@ impl Estate {
                 self.save(unit);
             }
             OutKind::Refund => {
+                let before = crate::votes::vote_weight(&unit);
                 unit.refunded_out += a;
                 self.total_refunded += a;
                 if let Some(l) = unit.lien.as_mut() {
@@ -552,6 +697,9 @@ impl Estate {
                 if self.refundable(&unit) == 0 {
                     self.burn_and_reset(&mut unit);
                     self.stats.units_refunded += 1;
+                } else {
+                    // A partial (lien-first) refund: the token lives on with less at stake (finding 2a/5).
+                    self.note_weight_change(&unit, before, Self::now());
                 }
                 self.save(unit);
             }
@@ -602,11 +750,11 @@ impl Estate {
         true
     }
 
-    /// Anyone with an owed balance (a resale payout that failed) pulls it.
+    /// Anyone with an owed balance (a resale payout that failed) pulls it. `E_NOTHING_OWED` if there is none.
     pub fn withdraw_owed(&mut self) -> Promise {
         let who = env::predecessor_account_id();
         let amount = self.owed.get(&who).copied().unwrap_or(0);
-        ensure!(amount > 0, "E_BAD_ARGS", "nothing owed to {}", who);
+        ensure!(amount > 0, "E_NOTHING_OWED", "nothing owed to {}", who);
         self.owed.remove(&who);
         self.pay_from_estate(who, amount, "owed")
     }
@@ -626,7 +774,23 @@ impl Estate {
     }
 }
 
+#[near(serializers = [json])]
+pub struct SurplusRequestView {
+    pub at: U64,
+    pub amount: U128,
+    pub ready_at: U64,
+}
+
 impl Estate {
+    fn assert_surplus_role(&self) {
+        let caller = env::predecessor_account_id();
+        ensure!(
+            caller == self.developer_id || caller == self.recovery_id,
+            "E_NOT_DEVELOPER",
+            "only the developer or the recovery account can book an unbooked surplus"
+        );
+    }
+
     pub(crate) fn read_balance(&self, unit: &Unit) -> Promise {
         ext_ft::ext(self.usdc_id.clone())
             .with_static_gas(GAS_FT_BALANCE)
@@ -660,6 +824,10 @@ impl Estate {
     /// else to `unattributed` (sweepable). Then allocate the token or cure a default. (Open proposals' electorates are
     /// fixed at creation: growing them with top-ups helped a flash-weight capture; see votes.rs.)
     pub(crate) fn credit(&mut self, unit: &mut Unit, amount: u128, now: u64, source: &str) {
+        let before = unit
+            .status
+            .has_token()
+            .then(|| crate::votes::vote_weight(unit));
         if Self::takes_payments(unit, now) {
             unit.paid += amount;
             self.total_paid_in += amount;
@@ -675,6 +843,10 @@ impl Estate {
         if unit.status == UnitStatus::InDefault && !self.overdue(unit, now) {
             unit.status = UnitStatus::Allocated;
             unit.listing = None;
+        }
+        // A top-up while proposals are open is remembered, so it can't add weight to them (finding 2b).
+        if let Some(b) = before {
+            self.note_weight_change(unit, b, now);
         }
     }
 
@@ -841,6 +1013,8 @@ impl Estate {
         unit.recovery = None;
         unit.lien = None;
         unit.approvals.clear();
+        self.clear_weight_history(&unit.id);
+        crate::ext::del(&crate::ext::key(crate::ext::P_PENDING_LIEN, unit.id.as_bytes()));
     }
 }
 

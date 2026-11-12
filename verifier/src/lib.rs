@@ -75,7 +75,9 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
     };
 
     let mut work = None;
-    let mut digest_seen = None;
+    // The sha256 echoed in the verdict. Never the digest of mismatching bytes: that
+    // would turn the worker into a hash oracle for whatever the URL serves.
+    let mut digest_echo = None;
     let observed = match bytes {
         Err(e) => {
             log(format!("fetch_failed: {e}"));
@@ -84,9 +86,12 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
         Ok(bytes) => {
             // 2. Integrity, over the exact bytes.
             let digest = hex::encode(Sha256::digest(&bytes));
-            digest_seen = Some(digest.clone());
+            // On a mismatch echo the committed hash, so the contract's binding check
+            // (echoed sha256 == committed) accepts this genuine `hash_mismatch`
+            // verdict instead of classifying it as `verdict_mismatch`.
+            digest_echo = Some(inp.sha256.trim().to_ascii_lowercase());
             if !digest.eq_ignore_ascii_case(inp.sha256.trim()) {
-                log(format!("hash_mismatch: got {digest}"));
+                log("hash_mismatch");
                 Observed::HashMismatch
             } else {
                 // 3. Decode.
@@ -139,7 +144,7 @@ pub fn run(raw: &str, ai_cfg: &ai::AiConfig, fetcher: &dyn Fetcher) -> Verdict {
         out
     };
     let mut v = checks::decide(inp, &parsed.known, &observed, &mut ai_call);
-    v.sha256 = digest_seen;
+    v.sha256 = digest_echo;
     v
 }
 
@@ -154,6 +159,8 @@ mod tests {
     const NOW: u64 = 1_793_743_600_000_000_000;
     const OPENED: u64 = 1_793_739_000_000_000_000;
     const EXIF_T: u64 = 1_793_739_420_000_000_000;
+    const PHOTO_URL: &str =
+        "https://oshxsrhnynauyxcraymy.supabase.co/storage/v1/object/public/evidence/harmattan-court/17.jpg";
 
     struct NoNet;
     impl Fetcher for NoNet {
@@ -232,6 +239,7 @@ mod tests {
         assert_eq!(v.ai_observations, vec!["trusses"]);
         assert_eq!(v.worker_commit, WORKER_COMMIT);
         assert_eq!(v.sha256, Some(hex::encode(Sha256::digest(&p))));
+        assert_eq!(v.ai_model.as_deref(), Some("mock"));
         // One JSON line.
         let line = serde_json::to_string(&v).unwrap();
         assert!(!line.contains('\n'));
@@ -244,7 +252,7 @@ mod tests {
         let url_input = |bytes: &[u8]| {
             input_for(bytes, |j| {
                 j.as_object_mut().unwrap().remove("image_base64");
-                j["url"] = "https://example.supabase.co/x.jpg".into();
+                j["url"] = PHOTO_URL.into();
             })
         };
         let v = run(&url_input(&p), &good_ai(), &Fixed(p.clone()));
@@ -258,8 +266,94 @@ mod tests {
         tampered[n - 10] ^= 1;
         let v = run(&url_input(&p), &good_ai(), &Fixed(tampered.clone()));
         assert_eq!(v.reasons, vec!["hash_mismatch"]);
-        // The digest reported is the one of the bytes actually seen.
-        assert_eq!(v.sha256, Some(hex::encode(Sha256::digest(&tampered))));
+        // The committed hash is echoed (so the contract binds the verdict), never the
+        // digest of the bytes that were served.
+        assert_eq!(v.sha256, Some(hex::encode(Sha256::digest(&p))));
+        let line = serde_json::to_string(&v).unwrap();
+        assert!(!line.contains(&hex::encode(Sha256::digest(&tampered))));
+        // Upper-case commitment: echoed lowercased.
+        let upper = url_input(&p).replace(
+            &hex::encode(Sha256::digest(&p)),
+            &hex::encode(Sha256::digest(&p)).to_ascii_uppercase(),
+        );
+        let v = run(&upper, &good_ai(), &Fixed(tampered));
+        assert_eq!(v.reasons, vec!["hash_mismatch"]);
+        assert_eq!(v.sha256, Some(hex::encode(Sha256::digest(&p))));
+    }
+
+    #[test]
+    fn e2e_url_not_allowed_never_fetches() {
+        struct Panics;
+        impl Fetcher for Panics {
+            fn get(&self, _: &str) -> Result<Vec<u8>, fetch::FetchError> {
+                panic!("must not fetch");
+            }
+        }
+        let p = photo(19, Some((6.447118, 3.474201)), Some(EXIF_T));
+        let with_url = |url: &str, prefix: Option<&str>| {
+            input_for(&p, |j| {
+                j.as_object_mut().unwrap().remove("image_base64");
+                j["url"] = url.into();
+                if let Some(px) = prefix {
+                    j["allowed_url_prefix"] = px.into();
+                }
+            })
+        };
+        for url in [
+            "https://example.supabase.co/storage/v1/object/public/evidence/x/17.jpg",
+            "https://169.254.169.254/latest/meta-data/iam/",
+            "https://localhost/x.jpg",
+            "http://oshxsrhnynauyxcraymy.supabase.co/storage/v1/object/public/evidence/a.jpg",
+            "https://oshxsrhnynauyxcraymy.supabase.co/rest/v1/units",
+            "https://oshxsrhnynauyxcraymy.supabase.co/storage/v1/object/public/evidence/../../../rest/v1/x",
+        ] {
+            let v = run(&with_url(url, None), &good_ai(), &Panics);
+            assert_eq!(v.reasons, vec!["url_not_allowed"], "{url}");
+            assert_eq!(v.evidence_id, Some(17));
+            assert_eq!(v.sha256, None);
+            assert!(!v.pass);
+        }
+        // The estate's extra prefix admits its own storage.
+        let v = run(
+            &with_url(
+                "https://cdn.example.org/plote/17.jpg",
+                Some("https://cdn.example.org/plote/"),
+            ),
+            &good_ai(),
+            &Fixed(p.clone()),
+        );
+        assert!(v.pass, "{v:?}");
+        // A bad extra prefix is bad input.
+        let v = run(
+            &with_url(
+                "https://10.0.0.1/plote/17.jpg",
+                Some("https://10.0.0.1/plote/"),
+            ),
+            &good_ai(),
+            &Panics,
+        );
+        assert_eq!(v.reasons, vec!["bad_input"]);
+    }
+
+    #[test]
+    fn e2e_device_gps_required_outside_demo_and_playground() {
+        // EXIF GPS on site, but the browser location was denied (device_gps null).
+        let p = photo(20, Some((6.447118, 3.474201)), Some(EXIF_T));
+        let no_dev = |j: &mut serde_json::Value| j["device_gps"] = serde_json::Value::Null;
+        let v = run(&input_for(&p, no_dev), &good_ai(), &NoNet);
+        assert!(!v.pass);
+        assert_eq!(v.reasons, vec!["gps_device_missing"]);
+        // Demo estate: a warning only.
+        let v = run(
+            &input_for(&p, |j| {
+                no_dev(j);
+                j["demo_mode"] = true.into();
+            }),
+            &good_ai(),
+            &NoNet,
+        );
+        assert!(v.pass, "{v:?}");
+        assert_eq!(v.warnings, vec!["gps_exif_only", "ai_mock"]);
     }
 
     #[test]
@@ -366,7 +460,7 @@ mod tests {
         let p = photo(18, Some((6.447118, 3.474201)), Some(EXIF_T));
         let raw = input_for(&p, |j| {
             j.as_object_mut().unwrap().remove("image_base64");
-            j["url"] = "https://example.supabase.co/x.jpg".into();
+            j["url"] = PHOTO_URL.into();
             j["geofence"]["radius_m"] = 0.into();
         });
         let v = run(&raw, &good_ai(), &Panics);

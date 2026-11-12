@@ -44,13 +44,57 @@ export const ESTATES: string[] = (clean(process.env.NEXT_PUBLIC_ESTATES) ?? d.es
 
 export const USDC_ID = clean(process.env.NEXT_PUBLIC_USDC_ID) ?? d.usdc;
 export const EXPLORER = (clean(process.env.NEXT_PUBLIC_EXPLORER) ?? d.explorer).replace(/\/$/, "");
-export const APP_URL = (clean(process.env.NEXT_PUBLIC_APP_URL) ?? "http://localhost:3000").replace(/\/$/, "");
+export type AppUrlEnv = {
+  NEXT_PUBLIC_APP_URL?: string;
+  NODE_ENV?: string;
+  VERCEL_ENV?: string;
+  VERCEL_PROJECT_PRODUCTION_URL?: string;
+  VERCEL_URL?: string;
+  /** window.location.origin in the browser. */
+  browserOrigin?: string;
+};
+
+const https = (host: string) => (/^https?:\/\//.test(host) ? host : `https://${host}`);
+
+/**
+ * The public URL of this deployment (emails, OG images, NFT reference, share links). NEXT_PUBLIC_APP_URL wins. Without
+ * it, a deployed build (NODE_ENV=production on Vercel) uses https://$VERCEL_PROJECT_PRODUCTION_URL (production) or
+ * https://$VERCEL_URL (preview), then the browser's own origin; never localhost. A Vercel production server with none
+ * of these throws. Only local dev and a local `next start` fall back to http://localhost:3000.
+ */
+export function resolveAppUrl(e: AppUrlEnv): string {
+  const explicit = clean(e.NEXT_PUBLIC_APP_URL);
+  if (explicit) return explicit.replace(/\/$/, "");
+  const vercelEnv = clean(e.VERCEL_ENV);
+  const prodHost = clean(e.VERCEL_PROJECT_PRODUCTION_URL);
+  const deployHost = clean(e.VERCEL_URL);
+  const deployed = e.NODE_ENV === "production" && (!!vercelEnv || !!prodHost || !!deployHost);
+  if (deployed) {
+    const host = vercelEnv === "preview" ? (deployHost ?? prodHost) : (prodHost ?? deployHost);
+    if (host) return https(host).replace(/\/$/, "");
+    if (e.browserOrigin) return e.browserOrigin.replace(/\/$/, "");
+    const msg = "NEXT_PUBLIC_APP_URL is not set and no Vercel URL is available: set NEXT_PUBLIC_APP_URL (e.g. https://plote-vert.vercel.app)";
+    if (vercelEnv === "production") throw new Error(msg);
+    console.error("plote:app-url-missing", msg);
+  }
+  return (e.browserOrigin && e.NODE_ENV === "production" ? e.browserOrigin : "http://localhost:3000").replace(/\/$/, "");
+}
+
+// Literal reads so Next inlines the NEXT_PUBLIC_* values into client bundles (Vercel exposes NEXT_PUBLIC_VERCEL_*).
+export const APP_URL = resolveAppUrl({
+  NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  NODE_ENV: process.env.NODE_ENV,
+  VERCEL_ENV: process.env.VERCEL_ENV ?? process.env.NEXT_PUBLIC_VERCEL_ENV,
+  VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL,
+  VERCEL_URL: process.env.VERCEL_URL ?? process.env.NEXT_PUBLIC_VERCEL_URL,
+  browserOrigin: typeof window !== "undefined" ? window.location.origin : undefined,
+});
 export const SUPABASE_URL = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
 export const SUPABASE_ANON_KEY = clean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 /** Parent account of estates that aren't listed in NEXT_PUBLIC_ESTATES (e.g. `plote.testnet`). */
 export const ROOT_ACCOUNT = clean(process.env.NEXT_PUBLIC_ROOT_ACCOUNT) ?? d.root;
 /** Optional public link to the repo, used in footer/landing. */
-export const GITHUB_URL = clean(process.env.NEXT_PUBLIC_GITHUB_URL) ?? "https://github.com/";
+export const GITHUB_URL = clean(process.env.NEXT_PUBLIC_GITHUB_URL) ?? "https://github.com/linoxbt/Plote";
 /** The mainnet-demo build URL (footer network switch). */
 export const MAINNET_APP_URL = clean(process.env.NEXT_PUBLIC_MAINNET_APP_URL);
 export const TESTNET_APP_URL = clean(process.env.NEXT_PUBLIC_TESTNET_APP_URL);
@@ -78,7 +122,6 @@ export const TABLES = {
   oneclickQuotes: "oneclick_quotes",
   chipins: "chipins",
   notifySubscriptions: "notify_subscriptions",
-  gateNonces: "gate_nonces",
 } as const;
 
 export const FX_URL = clean(process.env.NEXT_PUBLIC_FX_URL) ?? "https://open.er-api.com/v6/latest/USD";

@@ -54,11 +54,16 @@ fn needs_quorum(kind: &ProposalKind) -> bool {
     !matches!(kind, ProposalKind::Veto { .. })
 }
 
-/// A token's vote weight: `min(paid, price)` in whole USDC, rounded up (an allocated token always weighs ≥ 1).
+/// A token's vote weight now: its net equity `min(paid − refunded_out, price)` in whole USDC, rounded up (audit round 4,
+/// finding 2a: a lien-first or partial refund lowers it at once; an excess withdrawal doesn't, it only took money above
+/// the price).
 pub(crate) fn vote_weight(unit: &Unit) -> u32 {
-    let at_stake = unit.paid.min(unit.price);
+    let at_stake = Estate::net_paid(unit).min(unit.price);
     at_stake.div_ceil(VOTE_WEIGHT_UNIT).min(u32::MAX as u128) as u32
 }
+
+/// Weight-history entries kept per unit (copy-on-write snapshots, see `note_weight_change`).
+pub(crate) const MAX_WEIGHT_HISTORY: usize = 8;
 
 /// Distinct holders: eligible for a proposal, and among them those whose tokens voted yes / no.
 pub(crate) struct HolderTally {
@@ -142,24 +147,8 @@ impl Estate {
                 new_deadline,
             } => {
                 let i = self.assert_valid_milestone(*milestone);
-                ensure!(
-                    new_deadline.0 > now,
-                    "E_DEADLINES",
-                    "new deadline must be in the future"
-                );
-                if i > 0 {
-                    ensure!(
-                        new_deadline.0 > self.milestones[i - 1].deadline,
-                        "E_DEADLINES",
-                        "must stay after the previous milestone"
-                    );
-                }
-                if i + 1 < self.milestones.len() {
-                    ensure!(
-                        new_deadline.0 < self.milestones[i + 1].deadline,
-                        "E_DEADLINES",
-                        "must stay before the next milestone"
-                    );
+                if let Err(e) = self.extension_valid(i, new_deadline.0, now) {
+                    errors::fail("E_DEADLINES", e);
                 }
                 // Allowed after a miss too: it is the recovery path (refunds close, releases resume), so like every
                 // kind but Veto it needs the quorum and a paid-weighted majority.
@@ -228,6 +217,9 @@ impl Estate {
         }
         let id = self.next_proposal_id;
         self.next_proposal_id += 1;
+        // Weight changes while this proposal is open are recorded per unit from now on (`note_weight_change`).
+        let horizon = self.proposal_horizon().max(expires_at);
+        crate::ext::set(crate::ext::K_PROPOSAL_HORIZON, &horizon);
         emit(
             "proposal_created",
             json!({ "proposal_id": U64(id), "kind": kind.name(), "proposer": caller, "expires_at": U64(expires_at) }),
@@ -272,6 +264,15 @@ impl Estate {
             "proposal expired; call expire_proposal"
         );
         let mut eligible = self.eligible_tokens(&p, &caller);
+        // A token mid-`nft_transfer_call` can't vote: the receiver could vote with it and hand it back (finding 12).
+        let before_pending = eligible.len();
+        eligible.retain(|id| !self.nft_pending(id, now));
+        if eligible.is_empty() && before_pending > 0 {
+            errors::fail(
+                "E_NFT_PENDING",
+                "your eligible tokens are in a pending nft_transfer_call; vote after it resolves",
+            );
+        }
         if eligible.is_empty() {
             let any_old_enough = !self.snapshot_tokens(&p, &caller).is_empty();
             if any_old_enough {
@@ -292,7 +293,9 @@ impl Estate {
             eligible
                 .iter()
                 .filter_map(|id| self.units.get(id))
-                .fold(0u32, |w, u| w.saturating_add(vote_weight(u)))
+                .fold(0u32, |w, u| {
+                    w.saturating_add(self.weight_for(u, p.created_at))
+                })
         } else {
             n // a proposal opened before weighted voting keeps counting tokens
         };
@@ -443,8 +446,110 @@ impl Estate {
         match kind {
             ProposalKind::StepIn { .. } => self.step_in_allowed(now),
             ProposalKind::Unfreeze => self.frozen.is_some(),
+            // Re-checked at execution (finding 8): two extensions of neighbouring milestones, or one that the clock
+            // overtook, must not leave deadlines out of order, in the past or shorter than they are now.
+            ProposalKind::ExtendDeadline {
+                milestone,
+                new_deadline,
+            } => self
+                .extension_valid(*milestone as usize, new_deadline.0, now)
+                .is_ok(),
             _ => true,
         }
+    }
+
+    /// An `ExtendDeadline` to `new_deadline` for milestone `i`: in the future, later than its current deadline (an
+    /// extension never shortens), and strictly between its neighbours' deadlines.
+    pub(crate) fn extension_valid(&self, i: usize, new_deadline: u64, now: u64) -> Result<(), String> {
+        if i >= self.milestones.len() {
+            return Err("no such milestone".into());
+        }
+        if new_deadline <= now {
+            return Err("new deadline must be in the future".into());
+        }
+        if new_deadline <= self.milestones[i].deadline {
+            return Err("an extension must move the deadline later, never earlier".into());
+        }
+        if i > 0 && new_deadline <= self.milestones[i - 1].deadline {
+            return Err("must stay after the previous milestone".into());
+        }
+        if i + 1 < self.milestones.len() && new_deadline >= self.milestones[i + 1].deadline {
+            return Err("must stay before the next milestone".into());
+        }
+        Ok(())
+    }
+
+    /// The latest `expires_at` of any proposal (0: none). Stored by `propose` (`zx`); an estate upgraded with
+    /// proposals already open finds them with a scan bounded like `check_recent_proposals` until the first `propose`
+    /// or `migrate` stores it.
+    pub(crate) fn proposal_horizon(&self) -> u64 {
+        if let Some(h) = crate::ext::get::<u64>(crate::ext::K_PROPOSAL_HORIZON) {
+            return h;
+        }
+        let period = self.params.proposal_period_ns.0;
+        let now = Self::now();
+        let mut h = 0u64;
+        let mut id = self.next_proposal_id;
+        while id > 1 {
+            id -= 1;
+            let Some(p) = self.proposals.get(&id) else {
+                continue;
+            };
+            if p.created_at.saturating_add(period) <= now {
+                break;
+            }
+            h = h.max(p.expires_at);
+        }
+        h
+    }
+
+    /// Copy-on-write weight snapshot (finding 2b). Called after a unit's weight changed from `before` to its current
+    /// value at `now`. While any proposal may still be open, it appends `(now, before)` to the unit's history, so `vote`
+    /// can find the weight a token had when a proposal opened: the `before` of the first change at or after that time.
+    /// Entries older than one proposal period are dropped (every proposal created before them has expired), and past
+    /// `MAX_WEIGHT_HISTORY` the two oldest merge into `(later time, smaller weight)`, which can only under-count.
+    /// Cost: bounded, and only paid while proposals are open.
+    pub(crate) fn note_weight_change(&mut self, unit: &Unit, before: u32, now: u64) {
+        let after = vote_weight(unit);
+        if after == before || now >= self.proposal_horizon() {
+            return;
+        }
+        let k = crate::ext::key(crate::ext::P_WEIGHT_HISTORY, unit.id.as_bytes());
+        let mut h: Vec<(u64, u32)> = crate::ext::get(&k).unwrap_or_default();
+        let period = self.params.proposal_period_ns.0;
+        h.retain(|(at, _)| at.saturating_add(period) > now);
+        h.push((now, before));
+        while h.len() > MAX_WEIGHT_HISTORY {
+            let (_, w0) = h.remove(0);
+            h[0].1 = h[0].1.min(w0);
+        }
+        crate::ext::set(&k, &h);
+    }
+
+    /// The weight `unit` had when a proposal created at `created_at` opened, if it changed since (see above).
+    pub(crate) fn weight_at(&self, unit_id: &str, created_at: u64) -> Option<u32> {
+        let k = crate::ext::key(crate::ext::P_WEIGHT_HISTORY, unit_id.as_bytes());
+        let h: Vec<(u64, u32)> = crate::ext::get(&k)?;
+        h.into_iter()
+            .find(|(at, _)| *at >= created_at)
+            .map(|(_, w)| w)
+    }
+
+    /// What a token votes with on a proposal opened at `created_at`: its weight now, but never more than it had then
+    /// (a top-up after a proposal opened adds nothing; a refund since lowers it at once).
+    pub(crate) fn weight_for(&self, unit: &Unit, created_at: u64) -> u32 {
+        let now = vote_weight(unit);
+        match self.weight_at(&unit.id, created_at) {
+            Some(then) => now.min(then),
+            None => now,
+        }
+    }
+
+    pub(crate) fn clear_weight_history(&mut self, unit_id: &str) {
+        crate::ext::del(&crate::ext::key(
+            crate::ext::P_WEIGHT_HISTORY,
+            unit_id.as_bytes(),
+        ));
     }
 
     fn execute(&mut self, kind: ProposalKind, now: u64) {

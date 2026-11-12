@@ -6,10 +6,11 @@
 import { useQuery, useQueries, type UseQueryOptions } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ESTATES } from "./config";
-import { estate as E } from "./estate";
+import { checkedViews as V, estate as E } from "./estate";
+import { isGenuineEstate } from "./genuine";
 import { getFxRate } from "./format";
 import { usdc } from "./usdc";
-import type { CaptureView, EstateView, EvidenceView, MilestoneView, NftToken, ProposalView, UnitView } from "./types";
+import type { CaptureView, EstateView, EvidenceView, MilestoneView, NftToken, PendingLien, ProposalView, UnitView } from "./types";
 
 /** `poll` may be a function of the latest data, so a page can stop polling once what it waits for is final. */
 type Opts<T = unknown> = { poll?: number | false | ((data: T | undefined) => number | false); enabled?: boolean };
@@ -33,24 +34,36 @@ const UNITS_MAX_PAGES = 50; // 5,000 units: far beyond any estate, but a hard st
 export async function listAllUnits(e: string): Promise<UnitView[]> {
   const out: UnitView[] = [];
   for (let page = 0; page < UNITS_MAX_PAGES; page++) {
-    const batch = (await E.listUnits(e, page * UNITS_PAGE, UNITS_PAGE)) ?? [];
+    const batch = (await V.listUnits(e, page * UNITS_PAGE, UNITS_PAGE)) ?? [];
     out.push(...batch);
     if (batch.length < UNITS_PAGE) break;
   }
   return out;
 }
 
-export const useEstate = (e: string, o?: Opts<EstateView>) => useQuery(base<EstateView>(["estate", e], () => E.getEstate(e), o));
+export const useEstate = (e: string, o?: Opts<EstateView>) => useQuery(base<EstateView>(["estate", e], () => V.getEstate(e), o));
 export const useUnits = (e: string, o?: Opts<UnitView[]>) => useQuery(base<UnitView[]>(["units", e], () => listAllUnits(e), o));
-export const useUnit = (e: string, id: string, o?: Opts<UnitView | null>) => useQuery(base<UnitView | null>(["unit", e, id], () => E.getUnit(e, id), o));
-export const useMilestones = (e: string, o?: Opts<MilestoneView[]>) => useQuery(base<MilestoneView[]>(["milestones", e], () => E.getMilestones(e), o));
+export const useUnit = (e: string, id: string, o?: Opts<UnitView | null>) => useQuery(base<UnitView | null>(["unit", e, id], () => V.getUnit(e, id), o));
+export const useMilestones = (e: string, o?: Opts<MilestoneView[]>) => useQuery(base<MilestoneView[]>(["milestones", e], () => V.getMilestones(e), o));
 export const useEvidence = (e: string, id: string, o?: Opts<EvidenceView | null>) =>
-  useQuery(base<EvidenceView | null>(["evidence", e, id], () => E.getEvidence(e, id), o));
+  useQuery(base<EvidenceView | null>(["evidence", e, id], () => V.getEvidence(e, id), o));
 export const useEvidenceList = (e: string, milestone?: number, o?: Opts<EvidenceView[]>) =>
-  useQuery(base<EvidenceView[]>(["evidence-list", e, milestone ?? "all"], () => E.listEvidence(e, { milestone, limit: 50 }), o));
-export const useProposals = (e: string, o?: Opts<ProposalView[]>) => useQuery(base<ProposalView[]>(["proposals", e], () => E.listProposals(e, 0, 50), o));
+  useQuery(base<EvidenceView[]>(["evidence-list", e, milestone ?? "all"], () => V.listEvidence(e, { milestone, limit: 50 }), o));
+export const useProposals = (e: string, o?: Opts<ProposalView[]>) => useQuery(base<ProposalView[]>(["proposals", e], () => V.listProposals(e, 0, 50), o));
 export const useCapture = (e: string, milestone: number | null, o?: Opts<CaptureView | null>) =>
-  useQuery(base<CaptureView | null>(["capture", e, milestone], () => (milestone === null ? Promise.resolve(null) : E.getCapture(e, milestone)), o));
+  useQuery(base<CaptureView | null>(["capture", e, milestone], () => (milestone === null ? Promise.resolve(null) : V.getCapture(e, milestone)), o));
+
+/** Is `e` a genuine Plote estate (configured, or a root subaccount running a published estate build)? */
+export const useGenuineEstate = (e: string) =>
+  useQuery({ queryKey: ["genuine", e], queryFn: () => isGenuineEstate(e), staleTime: 300_000, retry: 1 });
+
+/** A lien on this unit that its lender hasn't accepted yet. Null when none (or when the estate predates the view). */
+export const usePendingLien = (e: string, unitId: string, o?: Opts<PendingLien | null>) =>
+  useQuery(base<PendingLien | null>(["pending-lien", e, unitId], () => E.getPendingLien(e, unitId).catch((err) => {
+    // Estates deployed before two-step liens have no such view: that just means "no pending lien".
+    if (/MethodNotFound|method.*not found|CodeDoesNotExist|BAD_VIEW/i.test(String((err as Error)?.message ?? err) + String((err as { raw?: string })?.raw ?? ""))) return null;
+    throw err;
+  }), o));
 export const useNftToken = (e: string, id: string, o?: Opts<NftToken | null>) => useQuery(base<NftToken | null>(["nft", e, id], () => E.nftToken(e, id), o));
 
 export const useUsdcBalance = (account: string | null | undefined, o?: Opts<string>) =>
@@ -60,12 +73,12 @@ export const useUsdcRegistered = (account: string | null | undefined, o?: Opts<b
 
 /** All configured estates' get_estate, each succeeding or failing on its own. */
 export function useAllEstates(estates: string[] = ESTATES) {
-  const qs = useQueries({ queries: estates.map((e) => base<EstateView>(["estate", e], () => E.getEstate(e))) });
+  const qs = useQueries({ queries: estates.map((e) => base<EstateView>(["estate", e], () => V.getEstate(e))) });
   return estates.map((account, i) => ({ account, q: qs[i] }));
 }
 
 export function useAllMilestones(estates: string[] = ESTATES) {
-  const qs = useQueries({ queries: estates.map((e) => base<MilestoneView[]>(["milestones", e], () => E.getMilestones(e))) });
+  const qs = useQueries({ queries: estates.map((e) => base<MilestoneView[]>(["milestones", e], () => V.getMilestones(e))) });
   return estates.map((account, i) => ({ account, q: qs[i] }));
 }
 
@@ -83,7 +96,7 @@ export function useMyUnits(account: string | null | undefined, estates: string[]
         estates.map(async (e) => {
           try {
             const toks = (await E.nftTokensForOwner(e, account!)) ?? [];
-            const units = await Promise.all(toks.map((t) => E.getUnit(e, t.token_id).catch(() => null)));
+            const units = await Promise.all(toks.map((t) => V.getUnit(e, t.token_id).catch(() => null)));
             toks.forEach((t, i) => out.push({ estate: e, token: t, unit: units[i] }));
           } catch (err) {
             errors.push({ estate: e, error: err instanceof Error ? err.message : String(err) });
@@ -92,6 +105,36 @@ export function useMyUnits(account: string | null | undefined, estates: string[]
       );
       if (errors.length === estates.length && estates.length > 0) throw new Error(errors[0].error);
       return { units: out, errors };
+    },
+  });
+}
+
+/**
+ * What else an account has across the configured estates: active reservations (so a reserver sees the unit they
+ * still have to pay for) and owed balances (failed resale payouts / reservation refunds, `withdraw_owed`).
+ */
+export function useMyPositions(account: string | null | undefined, estates: string[] = ESTATES) {
+  return useQuery({
+    queryKey: ["my-positions", account, estates.join(",")],
+    enabled: !!account,
+    retry: 1,
+    staleTime: 5000,
+    queryFn: async () => {
+      const reservations: { estate: string; unit: UnitView }[] = [];
+      const owed: { estate: string; amount: string }[] = [];
+      const errors: { estate: string; error: string }[] = [];
+      await Promise.all(
+        estates.map(async (e) => {
+          try {
+            const [units, o] = await Promise.all([listAllUnits(e), E.owedOf(e, account!).catch(() => "0")]);
+            for (const u of units) if (u.status === "Reserved" && u.reservation?.by === account) reservations.push({ estate: e, unit: u });
+            if (typeof o === "string" && /^\d+$/.test(o) && BigInt(o) > 0n) owed.push({ estate: e, amount: o });
+          } catch (err) {
+            errors.push({ estate: e, error: err instanceof Error ? err.message : String(err) });
+          }
+        }),
+      );
+      return { reservations, owed, errors };
     },
   });
 }

@@ -62,6 +62,7 @@ impl Estate {
         memo: Option<String>,
     ) {
         assert_one_yocto();
+        self.assert_no_nft_pending(&token_id);
         let mut unit = self.unit(&token_id);
         let sender = env::predecessor_account_id();
         let owner = self.authorize_transfer(&unit, &sender, approval_id);
@@ -80,6 +81,7 @@ impl Estate {
         msg: String,
     ) -> PromiseOrValue<bool> {
         assert_one_yocto();
+        self.assert_no_nft_pending(&token_id);
         let mut unit = self.unit(&token_id);
         let sender = env::predecessor_account_id();
         let owner = self.authorize_transfer(&unit, &sender, approval_id);
@@ -92,6 +94,12 @@ impl Estate {
         let _ = memo;
         self.move_token(&mut unit, &owner, &receiver_id, true);
         self.save(unit);
+        // Until `nft_resolve_transfer` runs, the token's money and vote methods are closed (finding 12): the receiver
+        // could otherwise refund, withdraw excess, hand over or vote with it and then hand it back.
+        crate::ext::set(
+            &crate::ext::key(crate::ext::P_NFT_PENDING, token_id.as_bytes()),
+            &env::block_timestamp(),
+        );
         ext_nft_receiver::ext(receiver_id.clone())
             .with_static_gas(GAS_NFT_ON_TRANSFER)
             .nft_on_transfer(sender, owner.clone(), token_id.clone(), msg)
@@ -121,6 +129,10 @@ impl Estate {
         approved_account_ids: Option<HashMap<AccountId, u64>>,
         previous_safety: Option<SafetySnapshot>,
     ) -> bool {
+        crate::ext::del(&crate::ext::key(
+            crate::ext::P_NFT_PENDING,
+            token_id.as_bytes(),
+        ));
         let keep = match result_bytes(0, 64) {
             Some(b) => near_sdk::serde_json::from_slice::<bool>(&b)
                 .map(|r| !r)
@@ -290,6 +302,25 @@ impl Estate {
 }
 
 impl Estate {
+    /// Is an `nft_transfer_call` of this token waiting for its resolve callback? (Expires after `NFT_PENDING_MAX_NS`
+    /// so a callback that never ran can't lock the token for good.)
+    pub(crate) fn nft_pending(&self, token_id: &str, now: u64) -> bool {
+        crate::ext::get::<u64>(&crate::ext::key(
+            crate::ext::P_NFT_PENDING,
+            token_id.as_bytes(),
+        ))
+        .is_some_and(|t| now < t.saturating_add(NFT_PENDING_MAX_NS))
+    }
+
+    pub(crate) fn assert_no_nft_pending(&self, token_id: &str) {
+        ensure!(
+            !self.nft_pending(token_id, env::block_timestamp()),
+            "E_NFT_PENDING",
+            "token {} is in a pending nft_transfer_call; try again after it resolves",
+            token_id
+        );
+    }
+
     pub(crate) fn add_token(&mut self, owner: &AccountId, id: &str) {
         let mut v = self.owner_tokens.get(owner).cloned().unwrap_or_default();
         if !v.iter().any(|x| x == id) {
@@ -382,6 +413,11 @@ impl Estate {
         unit.recovery = None;
         unit.guardians.clear();
         unit.beneficiary = None;
+        // A lien the previous holder offered and the lender hasn't accepted is void.
+        crate::ext::del(&crate::ext::key(
+            crate::ext::P_PENDING_LIEN,
+            unit.id.as_bytes(),
+        ));
         if unit
             .listing
             .as_ref()
@@ -419,14 +455,15 @@ impl Estate {
             approved,
             total,
             status: svg::status_text(unit.status),
-            paid: unit.paid,
+            // Net of refunds (finding 5): a lien-first refund shrinks what the token represents.
+            paid: Self::net_paid(unit),
             price: unit.price,
         });
         let extra = json!({
             "estate": env::current_account_id(),
             "unit_account": unit.account,
             "price": U128(unit.price),
-            "paid": U128(unit.paid),
+            "paid": U128(Self::net_paid(unit)),
             "status": unit.status,
             "milestones_approved": approved,
         });

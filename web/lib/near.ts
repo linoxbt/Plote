@@ -1,7 +1,8 @@
 // Chain access: JSON-RPC views with failover between two RPCs and a 5 s cache,
 // plus call/transaction helpers through the connected wallet (near-connect).
 
-import { APP_URL, NETWORK, RPC_URLS } from "./config";
+import type { ZodType } from "zod";
+import { APP_URL, NETWORK, RPC_URLS, USDC_ID } from "./config";
 import { PloteError, parseErrorCode } from "./errors";
 import { parseEventLogs, type PloteEventLog } from "./events";
 
@@ -106,12 +107,23 @@ export async function rpc<T>(method: string, params: unknown, opts: { timeoutMs?
 const VIEW_TTL_MS = 5000;
 const viewCache = new Map<string, { at: number; p: Promise<unknown> }>();
 
+/**
+ * Right after the user's own transaction, read at "optimistic" finality so the page shows what they just did instead
+ * of the state 1–2 blocks earlier. Everyone else (and the same user later) reads "final".
+ */
+const OPTIMISTIC_AFTER_TX_MS = 30_000;
+let optimisticUntil = 0;
+
+export function viewFinality(now = Date.now()): "final" | "optimistic" {
+  return now < optimisticUntil ? "optimistic" : "final";
+}
+
 type CallFunctionResult = { result?: number[]; logs?: string[]; error?: string; block_height?: number };
 
 export async function viewUncached<T>(contractId: string, method: string, args: Record<string, unknown> = {}): Promise<T> {
   const r = await rpc<CallFunctionResult>("query", {
     request_type: "call_function",
-    finality: "final",
+    finality: viewFinality(),
     account_id: contractId,
     method_name: method,
     args_base64: utf8ToBase64(JSON.stringify(args)),
@@ -146,6 +158,59 @@ export function view<T>(contractId: string, method: string, args: Record<string,
 export function clearViewCache(contractId?: string) {
   if (!contractId) return viewCache.clear();
   for (const k of viewCache.keys()) if (k.startsWith(contractId + "|")) viewCache.delete(k);
+}
+
+/** `a-4b.harmattan-court.plote.testnet` → `harmattan-court.plote.testnet` (null for a top-level account). */
+function parentAccount(account: string): string | null {
+  const i = account.indexOf(".");
+  return i > 0 && account.indexOf(".", i + 1) > 0 ? account.slice(i + 1) : null;
+}
+
+/**
+ * Contracts whose cached views a transaction can change: its receiver; for USDC calls the token receiver
+ * (`ft_transfer_call` to a unit books the payment on the unit's estate, to an estate it buys a listing); for a call
+ * on a unit account its estate; and USDC itself whenever an estate or unit moves money out.
+ */
+export function accountsTouchedBy(spec: TxSpec): string[] {
+  const out = new Set<string>([spec.receiverId]);
+  const parent = parentAccount(spec.receiverId);
+  if (parent) out.add(parent);
+  for (const a of spec.actions) {
+    for (const k of ["receiver_id", "account_id"] as const) {
+      const v = a.args?.[k];
+      if (typeof v === "string" && v) {
+        out.add(v);
+        const p = parentAccount(v);
+        if (p) out.add(p);
+      }
+    }
+  }
+  if (spec.receiverId !== USDC_ID) out.add(USDC_ID);
+  return [...out];
+}
+
+/** After the user's own transaction: drop cached views it may have changed and read optimistic state for a while. */
+export function afterOwnTx(specs: TxSpec | TxSpec[]) {
+  for (const s of Array.isArray(specs) ? specs : [specs]) for (const a of accountsTouchedBy(s)) clearViewCache(a);
+  optimisticUntil = Date.now() + OPTIMISTIC_AFTER_TX_MS;
+}
+
+/**
+ * Check a view's JSON against a schema (lib/schemas.ts). A shape the app doesn't understand fails with code
+ * BAD_VIEW and a message naming the field, never as a silent `undefined` later.
+ */
+export function parseView<T>(data: unknown, schema: ZodType<unknown>, where: string): T {
+  const r = schema.safeParse(data);
+  if (r.success) return r.data as T;
+  const issue = r.error.issues[0];
+  const path = issue?.path?.length ? issue.path.join(".") : "(root)";
+  const detail = `${path}: ${issue?.message ?? "invalid"}`;
+  throw new PloteError("BAD_VIEW", `${where} returned an unexpected shape at ${detail}`, `${where} returned data this site doesn't understand (${detail}). The contract may be a different version than this site expects.`);
+}
+
+/** `view` plus a runtime shape check. */
+export function viewChecked<T>(contractId: string, method: string, args: Record<string, unknown>, schema: ZodType<unknown>, opts: { fresh?: boolean } = {}): Promise<T> {
+  return view<unknown>(contractId, method, args, opts).then((d) => parseView<T>(d, schema, `${contractId} ${method}`));
 }
 
 export type AccessKeyView = {
@@ -315,7 +380,7 @@ function toConnectorActions(spec: TxSpec): ConnectorAction[] {
 export async function sendTx(spec: TxSpec): Promise<TxResult> {
   const w = await getWallet();
   const out = await w.signAndSendTransaction({ receiverId: spec.receiverId, actions: toConnectorActions(spec) });
-  clearViewCache(spec.receiverId);
+  afterOwnTx(spec);
   return parseOutcome(out);
 }
 
@@ -334,38 +399,41 @@ export async function sendTxs(specs: TxSpec[]): Promise<TxResult[]> {
     outs = [];
     for (const s of specs) outs.push(await w.signAndSendTransaction({ receiverId: s.receiverId, actions: toConnectorActions(s) }));
   }
-  specs.forEach((s) => clearViewCache(s.receiverId));
+  afterOwnTx(specs);
   return outs.map(parseOutcome);
 }
 
 // ---------------------------------------------------------------------------
 // Function-call keys the app holds in this browser (SPEC §4 "Keys on each account", §9.1).
 //  - "login": added during sign-in (near-connect `addFunctionCallKey`) or later from the votes page, for the
-//    frequent non-payable estate calls (vote, propose, sync, qs_sign, submit_evidence, declare_default…).
-//  - "dev": the developer's day-to-day key for claim_release / propose (deadline extensions), added from /dev.
+//    frequent non-payable estate calls (vote, sync, qs_sign, submit_evidence, declare_default…).
+//  - "dev": the developer's day-to-day key for claim_release, added from /dev.
 // Each key is created in the browser and added to the user's account by one wallet approval (function-call
 // permission for one contract, 0.25 NEAR allowance).
 //
-// Where the browser has WebCrypto Ed25519, the private key is generated NON-extractable and kept in IndexedDB as a
-// CryptoKey (like lib/phone-key.ts): page scripts can sign with it but can never read it. Browsers without it keep
-// the older path, a near-api-js secret in localStorage. Keys an older build left in localStorage are moved into
-// IndexedDB the first time they're used (imported non-extractable, checked to sign for the same public key, and only
-// then deleted from localStorage), so signed-in users keep working with the key already on their account.
+// The private key is always generated NON-extractable with WebCrypto Ed25519 and kept in IndexedDB as a CryptoKey
+// (like lib/phone-key.ts): page scripts can sign with it but can never read it. Browsers without WebCrypto Ed25519
+// get no app key at all (every call opens the wallet); there is no plaintext fallback. Keys an older build left in
+// localStorage are moved into IndexedDB the first time they're seen (imported non-extractable and checked to sign for
+// the same public key) and the plaintext copy is deleted either way.
 
 const FCK_PREFIX = "plote:fck:";
 export const LOGIN_KEY_ALLOWANCE = "250000000000000000000000"; // 0.25 NEAR
 
 export type AppKeyRole = "login" | "dev";
-/** localStorage record (fallback path and legacy builds). */
-type StoredSecret = { sk: string; methods: string[] | null; pk?: string };
+/** localStorage record written by older builds (read once, then deleted). */
+type LegacySecret = { sk: string; methods: string[] | null; pk?: string };
 /** IndexedDB record: the private key is a non-extractable CryptoKey. */
 type StoredCryptoKey = { kind: "webcrypto"; publicKey: string; privateKey: CryptoKey; methods: string[] | null; createdAt: number };
-type AppKey =
-  | { kind: "webcrypto"; publicKey: string; privateKey: CryptoKey; methods: string[] | null }
-  | { kind: "secret"; publicKey: string | null; secret: string; methods: string[] | null };
+type AppKey = { publicKey: string; privateKey: CryptoKey; methods: string[] | null };
 
 function fckKey(accountId: string, contractId: string, role: AppKeyRole = "login") {
   return `${FCK_PREFIX}${NETWORK}:${accountId}:${contractId}${role === "login" ? "" : `:${role}`}`;
+}
+
+/** Every slot of this account on this network starts with this (any contract, any role). */
+export function appKeySlotPrefix(accountId: string) {
+  return `${FCK_PREFIX}${NETWORK}:${accountId}:`;
 }
 
 // IndexedDB: same database and store as lib/phone-key.ts ("plote" / "keys"), different slot names.
@@ -403,7 +471,7 @@ async function readCryptoKey(slot: string): Promise<StoredCryptoKey | null> {
   }
 }
 
-function readSecret(slot: string): StoredSecret | null {
+function readLegacySecret(slot: string): LegacySecret | null {
   let raw: string | null = null;
   try {
     raw = window.localStorage.getItem(slot);
@@ -413,14 +481,14 @@ function readSecret(slot: string): StoredSecret | null {
   if (!raw) return null;
   if (raw.startsWith("ed25519:")) return { sk: raw, methods: null }; // legacy: bare secret, methods unknown
   try {
-    const j = JSON.parse(raw) as Partial<StoredSecret>;
+    const j = JSON.parse(raw) as Partial<LegacySecret>;
     return typeof j.sk === "string" ? { sk: j.sk, methods: Array.isArray(j.methods) ? j.methods : null, pk: j.pk } : null;
   } catch {
     return null;
   }
 }
 
-function removeSecret(slot: string) {
+function removeLegacySecret(slot: string) {
   try {
     window.localStorage.removeItem(slot);
   } catch {
@@ -437,8 +505,8 @@ async function secretPublicKey(secret: string): Promise<string | null> {
   }
 }
 
-/** Move a localStorage secret into IndexedDB as a non-extractable key. Returns the new record, or null to keep the old one. */
-async function migrateSecret(slot: string, k: StoredSecret): Promise<StoredCryptoKey | null> {
+/** Move a legacy localStorage secret into IndexedDB as a non-extractable key. Returns the new record, or null. */
+async function migrateSecret(slot: string, k: LegacySecret): Promise<StoredCryptoKey | null> {
   const { ed25519WebCryptoSupported, importSecretNonExtractable } = await import("./webcrypto-ed25519");
   if (typeof indexedDB === "undefined" || !(await ed25519WebCryptoSupported())) return null;
   const publicKey = k.pk ?? (await secretPublicKey(k.sk));
@@ -451,57 +519,50 @@ async function migrateSecret(slot: string, k: StoredSecret): Promise<StoredCrypt
   } catch {
     return null;
   }
-  // Only forget the plaintext copy once the stored CryptoKey reads back for the same public key.
   const back = await readCryptoKey(slot);
-  if (!back || back.publicKey !== publicKey) return null;
-  removeSecret(slot);
-  return back;
+  return back && back.publicKey === publicKey ? back : null;
 }
 
-/** The app key for (account, contract, role) on this device, migrating a legacy localStorage key on the way. */
+/** The app key for (account, contract, role) on this device. A legacy plaintext key is migrated or dropped, never used. */
 async function loadAppKey(accountId: string, contractId: string, role: AppKeyRole): Promise<AppKey | null> {
   if (typeof window === "undefined") return null;
   const slot = fckKey(accountId, contractId, role);
   const ck = await readCryptoKey(slot);
-  if (ck) return { kind: "webcrypto", publicKey: ck.publicKey, privateKey: ck.privateKey, methods: ck.methods };
-  const sk = readSecret(slot);
-  if (!sk) return null;
-  const moved = await migrateSecret(slot, sk).catch(() => null);
-  if (moved) return { kind: "webcrypto", publicKey: moved.publicKey, privateKey: moved.privateKey, methods: moved.methods };
-  return { kind: "secret", publicKey: sk.pk ?? null, secret: sk.sk, methods: sk.methods };
+  if (ck) {
+    removeLegacySecret(slot);
+    return { publicKey: ck.publicKey, privateKey: ck.privateKey, methods: ck.methods };
+  }
+  const legacy = readLegacySecret(slot);
+  if (!legacy) return null;
+  const moved = await migrateSecret(slot, legacy).catch(() => null);
+  // Either way the plaintext copy goes: a key this browser can't hold non-extractably isn't kept.
+  removeLegacySecret(slot);
+  return moved ? { publicKey: moved.publicKey, privateKey: moved.privateKey, methods: moved.methods } : null;
 }
 
-/**
- * A new key pair for an app key. Call `save` only after the AddKey was approved. Non-extractable WebCrypto where
- * available; otherwise a near-api-js secret kept in localStorage.
- */
+/** Thrown when this browser can't keep a non-extractable key; callers fall back to wallet approvals. */
+export const APP_KEY_UNSUPPORTED = "APP_KEY_UNSUPPORTED";
+
+/** A new non-extractable key pair for an app key. Call `save` only after the AddKey was approved. */
 async function createAppKey(): Promise<{ publicKey: string; save: (accountId: string, contractId: string, role: AppKeyRole, methods: string[]) => Promise<void> }> {
   const { ed25519WebCryptoSupported, generateNonExtractable } = await import("./webcrypto-ed25519");
-  if (typeof indexedDB !== "undefined" && (await ed25519WebCryptoSupported())) {
-    const { privateKey, publicKey } = await generateNonExtractable();
-    return {
-      publicKey,
-      save: async (accountId, contractId, role, methods) => {
-        const slot = fckKey(accountId, contractId, role);
-        try {
-          await keyDb("readwrite", (s) => s.put({ kind: "webcrypto", publicKey, privateKey, methods, createdAt: Date.now() } satisfies StoredCryptoKey, slot));
-          removeSecret(slot); // a key this one replaces
-        } catch {
-          /* if storage is blocked the key just isn't remembered; calls fall back to the wallet */
-        }
-      },
-    };
+  if (typeof indexedDB === "undefined" || !(await ed25519WebCryptoSupported())) {
+    throw new PloteError(
+      APP_KEY_UNSUPPORTED,
+      "WebCrypto Ed25519 or IndexedDB unavailable",
+      "This browser can't keep a key that scripts can't read (it lacks WebCrypto Ed25519), so Plote won't store one here. Your wallet will ask you to approve each action instead. A current Chrome, Edge, Safari or Firefox supports it.",
+    );
   }
-  const { KeyPair } = await import("near-api-js");
-  const kp = KeyPair.fromRandom("ed25519");
-  const publicKey = kp.getPublicKey().toString();
+  const { privateKey, publicKey } = await generateNonExtractable();
   return {
     publicKey,
     save: async (accountId, contractId, role, methods) => {
+      const slot = fckKey(accountId, contractId, role);
       try {
-        window.localStorage.setItem(fckKey(accountId, contractId, role), JSON.stringify({ sk: kp.toString(), methods, pk: publicKey } satisfies StoredSecret));
+        await keyDb("readwrite", (s) => s.put({ kind: "webcrypto", publicKey, privateKey, methods, createdAt: Date.now() } satisfies StoredCryptoKey, slot));
+        removeLegacySecret(slot); // a key this one replaces
       } catch {
-        /* if storage is blocked the key just isn't remembered */
+        /* if storage is blocked the key just isn't remembered; calls fall back to the wallet */
       }
     },
   };
@@ -510,14 +571,7 @@ async function createAppKey(): Promise<{ publicKey: string; save: (accountId: st
 /** Public key of a stored app key ("ed25519:…"), for checking it on-chain with `viewAccessKey`. */
 export async function appKeyPublic(accountId: string, contractId: string, role: AppKeyRole = "login"): Promise<string | null> {
   const k = await loadAppKey(accountId, contractId, role);
-  if (!k) return null;
-  return k.publicKey ?? (k.kind === "secret" ? secretPublicKey(k.secret) : null);
-}
-
-/** How a stored app key is held on this device (for the UI): "device" = non-extractable key, "local" = localStorage secret. */
-export async function appKeyStorage(accountId: string, contractId: string, role: AppKeyRole = "login"): Promise<"device" | "local" | null> {
-  const k = await loadAppKey(accountId, contractId, role);
-  return k ? (k.kind === "webcrypto" ? "device" : "local") : null;
+  return k?.publicKey ?? null;
 }
 
 export async function addLoginKey(accountId: string, contractId: string, methodNames: string[], role: AppKeyRole = "login"): Promise<string> {
@@ -543,13 +597,46 @@ export async function addLoginKey(accountId: string, contractId: string, methodN
 export async function forgetLoginKey(accountId: string, contractId: string, role: AppKeyRole = "login"): Promise<void> {
   if (typeof window === "undefined") return;
   const slot = fckKey(accountId, contractId, role);
-  removeSecret(slot);
+  removeLegacySecret(slot);
   if (typeof indexedDB === "undefined") return;
   try {
     await keyDb("readwrite", (s) => s.delete(slot));
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Forget every app key of `accountId` on this device (every contract and role, both stores): run on wallet
+ * disconnect, so the next person on this browser can't sign with the previous user's keys. The keys stay on the
+ * account (0.25 NEAR allowance each, scoped to one contract) until removed with the wallet.
+ */
+export async function forgetAllAppKeys(accountId: string): Promise<number> {
+  if (typeof window === "undefined") return 0;
+  const prefix = appKeySlotPrefix(accountId);
+  let n = 0;
+  try {
+    const ls = window.localStorage;
+    const doomed: string[] = [];
+    for (let i = 0; i < ls.length; i++) {
+      const k = ls.key(i);
+      if (k && k.startsWith(prefix)) doomed.push(k);
+    }
+    doomed.forEach((k) => ls.removeItem(k));
+    n += doomed.length;
+  } catch {
+    /* storage blocked */
+  }
+  if (typeof indexedDB === "undefined") return n;
+  try {
+    const keys = await keyDb<IDBValidKey[]>("readonly", (s) => s.getAllKeys());
+    const mine = (keys ?? []).filter((k): k is string => typeof k === "string" && k.startsWith(prefix));
+    for (const k of mine) await keyDb("readwrite", (s) => s.delete(k));
+    n += mine.length;
+  } catch {
+    /* ignore */
+  }
+  return n;
 }
 
 /** Delete an app key from the account (one wallet approval) and forget it locally. */
@@ -564,16 +651,16 @@ export async function removeAppKey(accountId: string, contractId: string, role: 
 
 /**
  * Sign in through near-connect and, when the chosen wallet supports it, ask for the login function-call key
- * for `contractId` in the same step (SPEC §9.1). Wallets without `signInWithFunctionCallKey` sign in normally;
- * the votes page still offers to add the key afterwards. Returns the signed-in account and whether a key was asked for.
+ * for `contractId` in the same step (SPEC §9.1). Wallets without `signInWithFunctionCallKey`, and browsers that
+ * can't keep a non-extractable key, sign in normally. Returns the signed-in account and whether a key was asked for.
  */
 export async function signInWithLoginKey(contractId: string | null, methodNames: string[]): Promise<{ wallet: NearWalletBase; accountId: string | null; keyRequested: boolean }> {
   const c = await getConnector();
   const walletId = await c.selectWallet();
   const manifest = c.availableWallets.find((w) => w.manifest.id === walletId)?.manifest;
   const supportsKey = !!contractId && !!manifest?.features?.signInWithFunctionCallKey;
-  if (supportsKey) {
-    const key = await createAppKey();
+  const key = supportsKey ? await createAppKey().catch(() => null) : null;
+  if (key) {
     try {
       const wallet = await c.connect({
         walletId,
@@ -586,7 +673,7 @@ export async function signInWithLoginKey(contractId: string | null, methodNames:
       });
       const accounts = await wallet.getAccounts();
       const accountId = accounts[0]?.accountId ?? null;
-      // Kept locally; `callNoPopup` falls back to the wallet if the wallet didn't actually add it.
+      // Kept locally; `callNoPopup` checks it's on the account before using it and otherwise asks the wallet.
       if (accountId) await key.save(accountId, contractId!, "login", methodNames);
       return { wallet, accountId, keyRequested: true };
     } catch (e) {
@@ -601,8 +688,7 @@ export async function signInWithLoginKey(contractId: string | null, methodNames:
 }
 
 async function signerFor(k: AppKey) {
-  const { KeyPairSigner, PublicKey, Signer } = await import("near-api-js");
-  if (k.kind === "secret") return KeyPairSigner.fromSecretKey(k.secret as `ed25519:${string}`);
+  const { PublicKey, Signer } = await import("near-api-js");
   const { signWith } = await import("./webcrypto-ed25519");
   const { publicKey, privateKey } = k;
   class DeviceKeySigner extends Signer {
@@ -616,51 +702,101 @@ async function signerFor(k: AppKey) {
   return new DeviceKeySigner();
 }
 
+/** The app key can't be used for this call; nothing was broadcast, so the wallet may be asked instead. */
+export class KeyUnusableError extends PloteError {
+  constructor(reason: string) {
+    super("APP_KEY_UNUSABLE", reason, `This browser's app key can't send this call (${reason}).`);
+  }
+}
+
+/**
+ * Errors from broadcasting with an app key that prove the transaction was rejected before it ran (an invalid
+ * transaction: the key isn't on the account, its allowance is spent, or its permission doesn't cover the call).
+ * Only these may fall back to the wallet: anything else (a timeout, a dropped connection, an RPC error after the
+ * transaction was sent) may mean it is already on its way, and asking the wallet would send it twice.
+ */
+const KEY_ERROR_RE =
+  /InvalidAccessKey|AccessKeyNotFound|AccessKeyDoesNotExist|access key .{0,80}does not exist|NotEnoughAllowance|MethodNameMismatch|ReceiverMismatch|RequiresFullAccess|DepositWithFunctionCall|key not found/i;
+
+export function isKeyError(e: unknown): boolean {
+  if (e instanceof KeyUnusableError) return true;
+  if (e instanceof PloteError && e.code.startsWith("E_")) return false; // the contract answered
+  const parts: string[] = [];
+  if (e instanceof Error) parts.push(e.name, e.message);
+  if (e && typeof e === "object") {
+    const o = e as Record<string, unknown>;
+    for (const k of ["type", "code", "raw"]) if (typeof o[k] === "string") parts.push(o[k] as string);
+    try {
+      parts.push(JSON.stringify(e));
+    } catch {
+      /* circular */
+    }
+  } else parts.push(String(e));
+  return KEY_ERROR_RE.test(parts.join(" "));
+}
+
+/** Rough upper bound of what a call costs the key's allowance: attached gas × 0.1 Ggas price ceiling (yocto). */
+function gasCostCeiling(spec: TxSpec): bigint {
+  return spec.actions.reduce((n, a) => n + BigInt(a.gas), 0n) * 1_000_000_000n;
+}
+
+/** Phase 1 (nothing broadcast yet): the stored key must be on the account and allowed to make this call. */
+async function preflightKey(accountId: string, key: AppKey, spec: TxSpec): Promise<void> {
+  const ak = await viewAccessKey(accountId, key.publicKey).catch(() => {
+    throw new KeyUnusableError("couldn't read the key from the chain");
+  });
+  if (!ak) throw new KeyUnusableError("key not found on the account");
+  if (ak.permission === "FullAccess") return;
+  const fc = ak.permission.FunctionCall;
+  if (fc.receiver_id !== spec.receiverId) throw new KeyUnusableError("key is for another contract");
+  if (fc.method_names.length && !spec.actions.every((a) => fc.method_names.includes(a.method))) throw new KeyUnusableError("method not covered by the key");
+  if (fc.allowance !== null && BigInt(fc.allowance) < gasCostCeiling(spec)) throw new KeyUnusableError("NotEnoughAllowance");
+}
+
 async function sendWithKey(accountId: string, key: AppKey, spec: TxSpec): Promise<TxResult> {
+  await preflightKey(accountId, key, spec);
   const { Account, JsonRpcProvider, actions } = await import("near-api-js");
   const provider = new JsonRpcProvider({ url: RPC_URLS[0] });
-  const account = new Account(accountId, provider, await signerFor(key));
-  const res = await account.signAndSendTransaction({
-    receiverId: spec.receiverId,
-    actions: spec.actions.map((a) => actions.functionCall(a.method, a.args, BigInt(a.gas), BigInt(a.deposit))),
-    throwOnFailure: false,
-  });
-  clearViewCache(spec.receiverId);
+  let signed: Awaited<ReturnType<InstanceType<typeof Account>["createSignedTransaction"]>>;
+  try {
+    const account = new Account(accountId, provider, await signerFor(key));
+    signed = await account.createSignedTransaction({
+      receiverId: spec.receiverId,
+      actions: spec.actions.map((a) => actions.functionCall(a.method, a.args, BigInt(a.gas), BigInt(a.deposit))),
+    });
+  } catch (e) {
+    // Building or signing failed locally: nothing left this browser.
+    throw new KeyUnusableError(e instanceof Error ? e.message : String(e));
+  }
+  // Phase 2: broadcast. From here on only a proven invalid-transaction rejection may fall back (see isKeyError).
+  const res = await provider.sendTransaction(signed);
+  afterOwnTx(spec);
   return parseOutcome(res);
 }
 
 /**
  * Non-payable call: uses an app function-call key for this contract when one is stored (the developer key first
- * for the methods it covers, then the login key), otherwise falls back to the wallet (one popup).
+ * for the methods it covers, then the login key), otherwise the wallet (one popup). It falls back to the wallet only
+ * when the key couldn't be used and nothing was sent, or the network rejected the transaction as invalid for the
+ * key; never after a timeout or any error that may come after a broadcast.
  */
-export async function callNoPopup(accountId: string, spec: TxSpec): Promise<TxResult> {
+export async function callNoPopup(accountId: string, spec: TxSpec, deps: { load?: typeof loadAppKey; send?: typeof sendWithKey; wallet?: typeof sendTx } = {}): Promise<TxResult> {
+  const load = deps.load ?? loadAppKey;
+  const send = deps.send ?? sendWithKey;
+  const wallet = deps.wallet ?? sendTx;
   if (isNonPayable(spec)) {
     const methods = spec.actions.map((a) => a.method);
     for (const role of ["dev", "login"] as const) {
-      const k = await loadAppKey(accountId, spec.receiverId, role).catch(() => null);
+      const k = await load(accountId, spec.receiverId, role).catch(() => null);
       if (!k) continue;
       if (k.methods && !methods.every((m) => k.methods!.includes(m))) continue;
       try {
-        return await sendWithKey(accountId, k, spec);
+        return await send(accountId, k, spec);
       } catch (e) {
-        // A contract panic is a real answer; key problems fall back to the next key / the wallet.
-        if (e instanceof PloteError && e.code.startsWith("E_")) throw e;
+        if (isKeyError(e)) continue;
+        throw e;
       }
     }
   }
-  return sendTx(spec);
-}
-
-// ---------------------------------------------------------------------------
-// tx status (used by the poller and status pages)
-
-export async function txStatus(hash: string, senderId: string): Promise<TxResult & { raw: unknown }> {
-  const raw = await rpc<unknown>("EXPERIMENTAL_tx_status", { tx_hash: hash, sender_account_id: senderId, wait_until: "NONE" });
-  try {
-    return { ...parseOutcome(raw), raw };
-  } catch {
-    const o = (raw ?? {}) as OutcomeLike;
-    const logs = (o.receipts_outcome ?? []).flatMap((r) => r.outcome?.logs ?? []);
-    return { hash, logs, events: parseEventLogs(logs), returnValue: undefined, raw };
-  }
+  return wallet(spec);
 }

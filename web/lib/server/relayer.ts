@@ -1,5 +1,6 @@
 // NEP-366 relayer: decode a SignedDelegate, check it against the allowlist, wrap it in a transaction
-// from the relayer account and send it. Also lets the server call public methods (sync) itself.
+// from the relayer account and send it. Also holds the reporter key: the estate's verdict_relayer / deposit reporter,
+// which signs submit_verdict (/api/verify) and report_deposit (/api/oneclick/status).
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -34,11 +35,12 @@ export type DelegateCheck = { ok: true; methods: string[] } | { ok: false; code:
 /**
  * Methods the relayer will ever pay for, whatever RELAYER_ALLOWED_METHODS says: the surveyor's on-site calls
  * (the phone key has no NEAR). Public methods (sync, sync_deposits, sweep_unattributed) are not relayed — anyone
- * can call them with their own gas, and the server calls sync_deposits itself after a 1Click payment.
+ * can call them with their own gas. After a 1Click payment the server books it with report_deposit, signed by the
+ * reporter key (not relayed).
  */
 export const RELAYABLE_METHODS = ["open_capture", "submit_evidence", "qs_sign"] as const;
 
-/** Receiver must be a configured estate (or one of its unit accounts, for the server's own sync_deposits). */
+/** Receiver is a configured estate or one of its unit accounts (the 1Click status route's recipient check). */
 export function isAllowedReceiver(receiverId: string, estates: string[] = ESTATES): boolean {
   if (estates.includes(receiverId)) return true;
   const dot = receiverId.indexOf(".");
@@ -146,36 +148,63 @@ export async function verifyDelegate(sd: PlainDelegate, methods: string[], chain
   return { ok: true, methods };
 }
 
-export function relayerCredentials(network: string = NETWORK): { accountId: string; key: string } | null {
-  if (network === "mainnet") {
-    const accountId = serverEnv.mainnetRelayerAccountId();
-    const key = serverEnv.mainnetRelayerPrivateKey() ?? serverEnv.relayerPrivateKey();
-    return accountId && key ? { accountId, key } : null;
-  }
-  const accountId = serverEnv.relayerAccountId();
-  const key = serverEnv.relayerPrivateKey();
+export type Credentials = { accountId: string; key: string };
+
+/**
+ * The relayer key for this build's network. Mainnet: MAINNET_RELAYER_ACCOUNT_ID + MAINNET_RELAYER_PRIVATE_KEY, both
+ * required (no fallback to the testnet RELAYER_* variables: a mainnet build never signs with a testnet key or name).
+ * Testnet: RELAYER_ACCOUNT_ID + RELAYER_PRIVATE_KEY.
+ */
+export function relayerCredentials(network: string = NETWORK): Credentials | null {
+  const [accountId, key] =
+    network === "mainnet"
+      ? [serverEnv.mainnetRelayerAccountId(), serverEnv.mainnetRelayerPrivateKey()]
+      : [serverEnv.relayerAccountId(), serverEnv.relayerPrivateKey()];
   return accountId && key ? { accountId, key } : null;
 }
 
-function relayerAccount(): Account | null {
-  const c = relayerCredentials();
+/** Env variable names the relayer needs on this network (for NOT_CONFIGURED messages). */
+export function relayerEnvNames(network: string = NETWORK): string[] {
+  return network === "mainnet" ? ["MAINNET_RELAYER_ACCOUNT_ID", "MAINNET_RELAYER_PRIVATE_KEY"] : ["RELAYER_ACCOUNT_ID", "RELAYER_PRIVATE_KEY"];
+}
+
+/**
+ * The reporter key: the estate's verdict_relayer, which signs submit_verdict and report_deposit. REPORTER_ACCOUNT_ID +
+ * REPORTER_PRIVATE_KEY (a separate hot key from the one paying for relayed surveyor calls). On testnet only, it falls
+ * back to the relayer key; a mainnet build without REPORTER_* has no reporter (routes answer NOT_CONFIGURED).
+ */
+export function reporterCredentials(network: string = NETWORK): Credentials | null {
+  const accountId = serverEnv.reporterAccountId();
+  const key = serverEnv.reporterPrivateKey();
+  if (accountId || key) return accountId && key ? { accountId, key } : null; // half-configured: fail closed
+  return network === "mainnet" ? null : relayerCredentials(network);
+}
+
+export function reporterEnvNames(network: string = NETWORK): string[] {
+  return network === "mainnet" ? ["REPORTER_ACCOUNT_ID", "REPORTER_PRIVATE_KEY"] : ["REPORTER_ACCOUNT_ID / RELAYER_ACCOUNT_ID", "REPORTER_PRIVATE_KEY / RELAYER_PRIVATE_KEY"];
+}
+
+function accountFor(c: Credentials | null): Account | null {
   if (!c) return null;
   const provider = new JsonRpcProvider({ url: RPC_URLS[0] });
   return new Account(c.accountId, provider, KeyPairSigner.fromSecretKey(c.key as `ed25519:${string}`));
 }
 
 export async function relaySignedDelegate(sd: PlainDelegate): Promise<TxResult> {
-  const acct = relayerAccount();
+  const acct = accountFor(relayerCredentials());
   if (!acct) throw new Error("relayer not configured");
   // The plain borsh object serialises identically to near-api-js' SignedDelegate class.
   const res = await acct.relayMetaTransaction(sd as unknown as Parameters<Account["relayMetaTransaction"]>[0]);
   return parseOutcome(res);
 }
 
-/** The relayer itself calls a public, zero-deposit method (e.g. unit.sync_deposits after a 1Click SUCCESS). */
-export async function callAsRelayer(spec: TxSpec): Promise<TxResult> {
-  const acct = relayerAccount();
-  if (!acct) throw new Error("relayer not configured");
+/**
+ * The reporter (the estate's verdict_relayer) calls a zero-deposit method: estate.submit_verdict (/api/verify) or
+ * estate.report_deposit after a 1Click SUCCESS (/api/oneclick/status). Throws on a failed transaction.
+ */
+export async function callAsReporter(spec: TxSpec): Promise<TxResult> {
+  const acct = accountFor(reporterCredentials());
+  if (!acct) throw new Error("reporter not configured");
   const res = await acct.signAndSendTransaction({
     receiverId: spec.receiverId,
     actions: spec.actions.map((a) => actions.functionCall(a.method, a.args, BigInt(a.gas), 0n)),

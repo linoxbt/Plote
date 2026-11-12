@@ -1,12 +1,13 @@
 // POST /api/gate/verify — server-side gate pass check (SPEC §9.5). Body: { estate, pass } where `pass` is the QR text.
 // Verifies the NEP-413 signature, that the key is a full-access key of the holder, that the holder owns the unit's
 // token and the unit is handed over, then claims the pass nonce once in Postgres (claim_once, 2-minute TTL), so the
-// same pass is accepted at most once across every guard device. Public (no login), rate limited per IP.
+// same pass is accepted at most once across every guard device. Public (no login), rate limited per IP. If Postgres
+// can't answer the single-use claim, no pass is accepted: 503 REPLAY_CHECK_UNAVAILABLE (fail closed).
 
 import { z } from "zod";
 import { ESTATES } from "@/lib/config";
 import { estateAccount } from "@/lib/estates";
-import { verifyGatePassServer } from "@/lib/server/gate";
+import { ReplayCheckUnavailable, verifyGatePassServer } from "@/lib/server/gate";
 import { clientIp, jsonError, ok, parseJson } from "@/lib/server/http";
 import { rateLimitShared } from "@/lib/server/rate-limit";
 
@@ -25,7 +26,8 @@ export async function POST(req: Request) {
     const r = await verifyGatePassServer(p.data.pass, estate);
     // 200 either way: a rejected pass is a normal answer for the guard screen, not a server error.
     return ok(r, { headers: { "cache-control": "no-store" } });
-  } catch {
+  } catch (e) {
+    if (e instanceof ReplayCheckUnavailable) return jsonError("REPLAY_CHECK_UNAVAILABLE", "Couldn't check this pass for replays right now. Try again in a moment.", 503);
     return jsonError("RPC_UNAVAILABLE", "Couldn't reach NEAR to check the pass.", 503);
   }
 }

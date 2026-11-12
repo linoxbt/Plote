@@ -5,41 +5,62 @@ import { APP_URL } from "../config";
 import { serverEnv } from "./env";
 
 /**
- * HMAC key for the links: NOTIFY_SECRET, or CRON_SECRET while NOTIFY_SECRET is unset (links sent before NOTIFY_SECRET
- * existed were signed with CRON_SECRET). Empty when neither is set: then no token can be made or read.
+ * HMAC key that signs new links: NOTIFY_SECRET only (kept apart from CRON_SECRET, which also authorises the poller).
+ * Empty when unset: then no link can be made and emails are off (notifyConfigured() is false).
  */
 export function notifySecret(): string {
-  return serverEnv.notifySecret() ?? serverEnv.cronSecret() ?? "";
+  return serverEnv.notifySecret() ?? "";
 }
 
 /**
- * Keys a token may be signed with. Unsubscribe links in emails already sent never expire, so after NOTIFY_SECRET is
- * set they still verify against the old CRON_SECRET; confirm links (48 h) only against the current key.
+ * Keys a token may be verified with. Unsubscribe links in emails sent before NOTIFY_SECRET existed were signed with
+ * CRON_SECRET; they still verify against it (read-only fallback, nothing new is signed with it). Confirm links (48 h)
+ * only verify against NOTIFY_SECRET.
  */
 function verifyKeys(kind: "any" | "unsubscribe"): string[] {
   const keys = [notifySecret()];
   const legacy = serverEnv.cronSecret();
-  if (kind === "unsubscribe" && serverEnv.notifySecret() && legacy) keys.push(legacy);
+  if (kind === "unsubscribe" && legacy && legacy !== keys[0]) keys.push(legacy);
   return keys.filter(Boolean);
 }
 
 function sign(body: string): string {
   const key = notifySecret();
-  if (!key) throw new Error("NOTIFY_SECRET (or CRON_SECRET) is not set");
+  if (!key) throw new Error("NOTIFY_SECRET is not set");
   return createHmac("sha256", key).update(body).digest("base64url");
 }
 
 /**
- * True when emails can be sent (RESEND_API_KEY and RESEND_FROM set), links can be signed (NOTIFY_SECRET or CRON_SECRET)
- * and subscriptions can be stored (Supabase service role).
+ * True when emails can be sent (RESEND_API_KEY and RESEND_FROM set), links can be signed (NOTIFY_SECRET) and
+ * subscriptions can be stored (Supabase service role).
  */
 export function notifyConfigured(): boolean {
   return !!serverEnv.resendApiKey() && !!serverEnv.resendFrom() && !!notifySecret() && !!serverEnv.supabaseUrl() && !!serverEnv.supabaseServiceKey();
 }
 
-export function unsubscribeToken(account: string, estate: string, unit: string): string {
-  const body = Buffer.from(JSON.stringify([account, estate, unit])).toString("base64url");
+/** Unsubscribe links issued from now on stop working after a year (each email carries a fresh one). */
+export const UNSUBSCRIBE_TTL_MS = 365 * 86_400_000;
+
+export function unsubscribeToken(account: string, estate: string, unit: string, tsMs: number = Date.now()): string {
+  const body = Buffer.from(JSON.stringify(["unsubscribe", account, estate, unit, tsMs])).toString("base64url");
   return `${body}.${sign(body)}`;
+}
+
+/**
+ * The subscription an unsubscribe link names, "expired", or null when it isn't valid. Accepts the current format
+ * (`["unsubscribe", account, estate, unit, issuedMs]`, valid UNSUBSCRIBE_TTL_MS) and links sent before it
+ * (`[account, estate, unit]`, no expiry, so links already in inboxes keep working).
+ */
+export function readUnsubscribeToken(t: string, now: number = Date.now()): { account: string; estate: string; unit: string } | "expired" | null {
+  const tok = readToken(t, "unsubscribe");
+  if (!tok) return null;
+  const strs = (xs: unknown[]) => xs.every((x) => typeof x === "string" && x.length > 0 && x.length <= 200);
+  if (tok.length === 3 && strs(tok)) return { account: tok[0] as string, estate: tok[1] as string, unit: tok[2] as string };
+  if (tok.length === 5 && tok[0] === "unsubscribe" && strs(tok.slice(1, 4)) && typeof tok[4] === "number") {
+    if (now - tok[4] > UNSUBSCRIBE_TTL_MS) return "expired";
+    return { account: tok[1] as string, estate: tok[2] as string, unit: tok[3] as string };
+  }
+  return null;
 }
 
 /** Read a token made by confirmToken/unsubscribeToken; null if the signature doesn't match. */
@@ -69,6 +90,7 @@ export function confirmToken(account: string, estate: string, unit: string, emai
   return `${body}.${sign(body)}`;
 }
 
+/** Throws when NOTIFY_SECRET is unset (callers check notifyConfigured() first). */
 export function unsubscribeUrl(account: string, estate: string, unit: string): string {
   return `${APP_URL}/api/notify?u=${encodeURIComponent(unsubscribeToken(account, estate, unit))}`;
 }

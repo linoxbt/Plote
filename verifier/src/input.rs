@@ -36,11 +36,19 @@ pub struct Input {
     pub evidence_id: u64,
     #[serde(default)]
     pub url: Option<String>,
+    /// Optional extra storage location the estate allows photos from, besides the
+    /// compiled-in `fetch::ALLOWED_PHOTO_PREFIXES`: a strict `https://host/path/`
+    /// prefix ending in `/` (no IP literals or local names). Empty means none.
+    #[serde(default)]
+    pub allowed_url_prefix: Option<String>,
     /// Offline/testing: use these bytes instead of fetching `url`. The sha256
     /// check still binds them to the on-chain commitment.
     #[serde(default)]
     pub image_base64: Option<String>,
     pub sha256: String,
+    /// The app's capture time (its own EXIF read, else the submit time). Not trusted
+    /// for freshness (EXIF `DateTimeOriginal` is); a gap of more than 30 min to the
+    /// EXIF time adds the `captured_at_mismatch` warning.
     #[serde(default, deserialize_with = "de_opt_u64")]
     pub captured_at: Option<u64>,
     #[serde(default)]
@@ -114,7 +122,19 @@ pub fn sniff_evidence_id(raw: &str) -> Option<u64> {
 }
 
 pub fn parse(raw: &str) -> Result<Parsed, String> {
-    let input: Input = serde_json::from_str(raw).map_err(|e| format!("json: {e}"))?;
+    let mut input: Input = serde_json::from_str(raw).map_err(|e| format!("json: {e}"))?;
+    if input
+        .allowed_url_prefix
+        .as_deref()
+        .is_some_and(|p| p.trim().is_empty())
+    {
+        input.allowed_url_prefix = None;
+    }
+    if let Some(p) = &input.allowed_url_prefix {
+        if !crate::fetch::valid_prefix(p) {
+            return Err("allowed_url_prefix must be an https://host/path/ prefix".into());
+        }
+    }
     let mut known = Vec::with_capacity(input.known_phashes.len());
     for h in &input.known_phashes {
         known.push(parse_phash(h).ok_or_else(|| format!("known_phashes: bad entry {h:?}"))?);
@@ -163,6 +183,35 @@ mod tests {
         assert!(parse(&bad_hash).is_err());
         assert_eq!(sniff_evidence_id(r#"{"evidence_id":5}"#), Some(5));
         assert_eq!(sniff_evidence_id("nope"), None);
+    }
+
+    #[test]
+    fn allowed_url_prefix_validated() {
+        let with = |p: &str| {
+            MIN.replace(
+                "\"milestone\"",
+                &format!("\"allowed_url_prefix\":{p},\"milestone\""),
+            )
+        };
+        assert_eq!(parse(MIN).unwrap().input.allowed_url_prefix, None);
+        assert_eq!(parse(&with("\"\"")).unwrap().input.allowed_url_prefix, None);
+        assert_eq!(parse(&with("null")).unwrap().input.allowed_url_prefix, None);
+        assert_eq!(
+            parse(&with("\"https://cdn.example.org/plote/\""))
+                .unwrap()
+                .input
+                .allowed_url_prefix
+                .as_deref(),
+            Some("https://cdn.example.org/plote/")
+        );
+        for bad in [
+            "\"http://cdn.example.org/plote/\"",
+            "\"https://127.0.0.1/\"",
+            "\"https://cdn.example.org/plote\"",
+            "42",
+        ] {
+            assert!(parse(&with(bad)).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -20,6 +20,7 @@ impl Estate {
     #[payable]
     pub fn list_for_sale(&mut self, unit_id: String, ask: U128) {
         assert_one_yocto();
+        self.assert_no_nft_pending(&unit_id);
         let mut unit = self.unit(&unit_id);
         self.assert_holder(&unit);
         ensure!(
@@ -154,7 +155,9 @@ impl Estate {
         if self.frozen.is_some() {
             return Err("E_FROZEN: estate is frozen".into());
         }
-        if unit.lien.is_some() {
+        // A lien set before the default doesn't block the default sale (finding 6): the lender is paid first from the
+        // proceeds (below). A voluntary listing can't coexist with a lien (set_lien/accept_lien clear it).
+        if unit.lien.is_some() && listing.kind != ListingKind::Default {
             return Err("E_LIEN: a lien blocks the sale".into());
         }
         if unit.in_flight > 0 {
@@ -173,6 +176,7 @@ impl Estate {
         } else {
             0
         };
+        let lien = unit.lien.take();
         self.move_token(&mut unit, &seller, buyer, false);
         if listing.kind == ListingKind::Default {
             unit.status = UnitStatus::Allocated;
@@ -195,8 +199,21 @@ impl Estate {
             json!({ "unit_id": unit.id, "from": seller, "to": buyer, "price": U128(ask) }),
         );
         self.save(unit);
-        if ask > penalty {
-            self.pay_from_estate(seller, ask - penalty, "sale").detach();
+        let mut proceeds = ask - penalty;
+        if let Some(l) = lien {
+            // Lender first, up to its cap; the lien ends with the sale (the buyer takes the token free of it).
+            let to_lender = proceeds.min(l.cap.0);
+            if to_lender > 0 {
+                self.pay_from_estate(l.lender.clone(), to_lender, "lien").detach();
+                proceeds -= to_lender;
+            }
+            emit(
+                "lien_settled",
+                json!({ "unit_id": m.buy, "lender": l.lender, "amount": U128(to_lender) }),
+            );
+        }
+        if proceeds > 0 {
+            self.pay_from_estate(seller, proceeds, "sale").detach();
         }
         if penalty > 0 {
             self.pay_from_estate(self.payout_account(), penalty, "default-penalty")

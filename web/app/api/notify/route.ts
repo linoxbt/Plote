@@ -2,8 +2,11 @@
 //  POST (JSON, NEP-413 signed by the holder) emails a confirmation link to the address; nothing is stored yet.
 //  GET ?c=<token> / ?u=<token> show a confirm / unsubscribe button (so mail scanners that follow links change nothing);
 //  POST ?c=<token> stores the subscription, POST ?u=<token> deletes it.
+// Links are signed with NOTIFY_SECRET (required); unsubscribe links sent before it existed (signed with CRON_SECRET,
+// no expiry) still work, and new ones are valid for a year. When a unit changes hands, the poller deletes the old
+// holder's subscriptions (lib/server/follow-ups.ts).
 
-import { CONFIRM_TTL_MS, confirmToken, notifyConfigured, readToken, sendEmail } from "@/lib/server/notify";
+import { CONFIRM_TTL_MS, confirmToken, notifyConfigured, readToken, readUnsubscribeToken, sendEmail } from "@/lib/server/notify";
 import { z } from "zod";
 import { APP_URL, ESTATES, TABLES } from "@/lib/config";
 import { estate as E } from "@/lib/estate";
@@ -50,9 +53,12 @@ export async function POST(req: Request) {
   } catch {
     return jsonError("RPC_UNAVAILABLE", "Couldn't reach NEAR.", 503);
   }
-  // Confirmation emails go to an address the holder typed: a few per hour per account is plenty.
-  const rl = await rateLimitShared(`notify:${b.accountId}`, 5, 3600_000);
-  if (!rl.ok) return jsonError("RATE_LIMITED", "Too many confirmation emails. Try again later.", 429);
+  // Confirmation emails go to an address the holder typed: a few per hour per account, and per address (so many
+  // holder accounts can't be used to flood one inbox).
+  for (const [key, limit] of [[`notify:${b.accountId}`, 5], [`notify-to:${b.email.trim().toLowerCase()}`, 3]] as const) {
+    const rl = await rateLimitShared(key, limit, 3600_000);
+    if (!rl.ok) return jsonError("RATE_LIMITED", "Too many confirmation emails. Try again later.", 429);
+  }
   const link = `${APP_URL}/api/notify?c=${encodeURIComponent(confirmToken(b.accountId, b.estate, b.unit, b.email))}`;
   const unitLabel = b.unit.toUpperCase();
   const sent = await sendEmail(
@@ -68,8 +74,9 @@ export async function GET(req: Request) {
   const q = new URL(req.url).searchParams;
   const kind = q.has("c") ? "c" : q.has("u") ? "u" : null;
   const t = kind ? (q.get(kind) ?? "") : "";
-  const tok = kind ? readToken(t, kind === "u" ? "unsubscribe" : "any") : null;
+  const tok = kind === "c" ? readToken(t) : kind === "u" ? readUnsubscribeToken(t) : null;
   if (!kind || !tok) return page("That link isn't valid.", null, 400);
+  if (tok === "expired") return page("That unsubscribe link has expired. Use the link in a newer email, or turn emails off on your unit page.", null, 410);
   return kind === "c"
     ? page("Confirm milestone emails for this address?", { action: `/api/notify?c=${encodeURIComponent(t)}`, label: "Confirm" })
     : page("Stop milestone emails and delete this address?", { action: `/api/notify?u=${encodeURIComponent(t)}`, label: "Unsubscribe" });
@@ -88,10 +95,11 @@ async function confirm(sb: Admin, t: string) {
 }
 
 async function unsubscribe(sb: Admin, t: string) {
-  const tok = readToken(t, "unsubscribe");
-  if (!tok || tok.length !== 3) return page("That unsubscribe link isn't valid.", null, 400);
-  const [account, estate, unit] = tok as string[];
-  await sb.from(TABLES.notifySubscriptions).delete().match({ account, estate, unit });
+  const tok = readUnsubscribeToken(t);
+  if (!tok) return page("That unsubscribe link isn't valid.", null, 400);
+  if (tok === "expired") return page("That unsubscribe link has expired. Use the link in a newer email, or turn emails off on your unit page.", null, 410);
+  const { error } = await sb.from(TABLES.notifySubscriptions).delete().match({ account: tok.account, estate: tok.estate, unit: tok.unit });
+  if (error) return page("Couldn't unsubscribe right now. Try the link again later.", null, 502);
   return page("You're unsubscribed. Your email address was deleted.", null);
 }
 

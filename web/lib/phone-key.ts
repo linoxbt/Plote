@@ -1,19 +1,33 @@
 // Surveyor phone key (SPEC §9.3). An ed25519 key generated in the phone browser:
 //  - WebCrypto Ed25519, non-extractable, kept in IndexedDB (where supported), else
-//  - a near-api-js key encrypted with a PIN (AES-GCM, PBKDF2) in IndexedDB.
+//  - a near-api-js key encrypted with a PIN of at least 6 digits (AES-GCM, PBKDF2-SHA256 with 600,000 iterations,
+//    OWASP 2023) in IndexedDB. Keys stored by older builds record no iteration count and keep their 210,000.
 // The phone signs NEP-366 delegate actions with it; /api/relay submits them and pays gas.
 
 
 import bs58 from "bs58";
 import { NETWORK, RPC_URLS } from "./config";
-import { bytesToBase64, clearViewCache, type TxResult, type TxSpec } from "./near";
+import { afterOwnTx, bytesToBase64, type TxResult, type TxSpec } from "./near";
 import { hashNep413, type Nep413Payload } from "./nep413";
 import { PloteError } from "./errors";
 import { parseEventLogs } from "./events";
 
 type StoredKey =
   | { kind: "webcrypto"; accountId: string; publicKey: string; keyPair: CryptoKeyPair; createdAt: number }
-  | { kind: "pin"; accountId: string; publicKey: string; salt: string; iv: string; ciphertext: string; createdAt: number };
+  | { kind: "pin"; accountId: string; publicKey: string; salt: string; iv: string; ciphertext: string; createdAt: number; iterations?: number };
+
+/** PBKDF2 iterations for new PIN keys (OWASP 2023, PBKDF2-HMAC-SHA256). */
+export const PIN_PBKDF2_ITERATIONS = 600_000;
+/** What builds before the iteration count was stored used. */
+const LEGACY_PBKDF2_ITERATIONS = 210_000;
+export const PIN_MIN_DIGITS = 6;
+
+/** A PIN is at least 6 digits. Returns an error message, or null when it's acceptable. */
+export function pinProblem(pin: string | undefined): string | null {
+  if (!pin || !/^\d+$/.test(pin)) return `Choose a PIN of at least ${PIN_MIN_DIGITS} digits.`;
+  if (pin.length < PIN_MIN_DIGITS) return `The PIN must be at least ${PIN_MIN_DIGITS} digits.`;
+  return null;
+}
 
 const DB = "plote";
 const STORE = "keys";
@@ -69,10 +83,10 @@ export async function webCryptoEd25519Supported(): Promise<boolean> {
   }
 }
 
-async function pinKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
+async function pinKey(pin: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: salt as BufferSource, iterations: 210_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: salt as BufferSource, iterations, hash: "SHA-256" },
     base,
     { name: "AES-GCM", length: 256 },
     false,
@@ -88,16 +102,18 @@ export async function createPhoneKey(accountId: string, pin?: string): Promise<s
     const raw = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
     stored = { kind: "webcrypto", accountId, publicKey: "ed25519:" + bs58.encode(raw), keyPair, createdAt: Date.now() };
   } else {
-    if (!pin || pin.length < 4) throw new Error("This browser can't keep a non-exportable key. Choose a PIN of at least 4 digits.");
+    const problem = pinProblem(pin);
+    if (problem || !pin) throw new Error(`This browser can't keep a non-exportable key, so the key is encrypted with a PIN. ${problem ?? ""}`.trim());
     const { KeyPair } = await import("near-api-js");
     const kp = KeyPair.fromRandom("ed25519");
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await pinKey(pin, salt);
+    const key = await pinKey(pin, salt, PIN_PBKDF2_ITERATIONS);
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(kp.toString())));
     stored = {
       kind: "pin", accountId, publicKey: kp.getPublicKey().toString(),
       salt: bytesToBase64(salt), iv: bytesToBase64(iv), ciphertext: bytesToBase64(ct), createdAt: Date.now(),
+      iterations: PIN_PBKDF2_ITERATIONS,
     };
   }
   await idb("readwrite", (s) => s.put(stored, slot(accountId)));
@@ -111,7 +127,7 @@ export async function unlockPhoneKey(accountId: string, pin: string): Promise<vo
   if (!k || k.kind !== "pin") return;
   const b = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   try {
-    const key = await pinKey(pin, b(k.salt));
+    const key = await pinKey(pin, b(k.salt), k.iterations ?? LEGACY_PBKDF2_ITERATIONS);
     const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b(k.iv) }, key, b(k.ciphertext));
     unlocked.set(accountId, new TextDecoder().decode(pt));
   } catch {
@@ -174,7 +190,7 @@ export async function relayWithPhoneKey(accountId: string, spec: TxSpec): Promis
   });
   const j = (await res.json().catch(() => ({}))) as { code?: string; message?: string; hash?: string; logs?: string[]; returnValue?: unknown };
   if (!res.ok) throw new PloteError(j.code ?? "UNKNOWN", j.message ?? `relay HTTP ${res.status}`, j.code?.startsWith("E_") ? undefined : j.message);
-  clearViewCache(spec.receiverId);
+  afterOwnTx(spec);
   const logs = j.logs ?? [];
   return { hash: j.hash ?? "", logs, events: parseEventLogs(logs), returnValue: j.returnValue };
 }

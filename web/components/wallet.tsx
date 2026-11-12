@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { LogOut, Wallet as WalletIcon } from "lucide-react";
+import { NETWORK } from "@/lib/config";
 import { explainError } from "@/lib/errors";
 import { LOGIN_KEY_METHODS } from "@/lib/estate";
-import { loginKeyContract } from "@/lib/estates";
-import { getConnector, signInWithLoginKey } from "@/lib/near";
+import { accountNetworkMismatch, loginKeyContract } from "@/lib/estates";
+import { forgetAllAppKeys, getConnector, signInWithLoginKey } from "@/lib/near";
 import { truncateAccount } from "@/lib/format";
 import { useTx } from "./toast";
 import { Button } from "./ui";
@@ -40,14 +41,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const { push } = useTx();
 
+  /** Accept an account only when it belongs to this build's network; otherwise sign the wallet out again. */
+  const adopt = useCallback((id: string | null, name: string | null): boolean => {
+    const mismatch = id ? accountNetworkMismatch(id, NETWORK) : null;
+    if (mismatch) {
+      setAccountId(null);
+      setWalletName(null);
+      setError(mismatch);
+      void getConnector().then((c) => c.disconnect()).catch(() => undefined);
+      return false;
+    }
+    setAccountId(id);
+    setWalletName(name);
+    return true;
+  }, []);
+
   useEffect(() => {
     let alive = true;
     getConnector()
       .then(async (c) => {
         c.on("wallet:signIn", (t) => {
           if (!alive) return;
-          setAccountId(t.accounts[0]?.accountId ?? null);
-          setWalletName(t.wallet?.manifest?.name ?? null);
+          adopt(t.accounts[0]?.accountId ?? null, t.wallet?.manifest?.name ?? null);
         });
         c.on("wallet:signOut", () => {
           if (!alive) return;
@@ -56,10 +71,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         });
         try {
           const { wallet, accounts } = await c.getConnectedWallet();
-          if (alive) {
-            setAccountId(accounts[0]?.accountId ?? null);
-            setWalletName(wallet.manifest?.name ?? null);
-          }
+          if (alive) adopt(accounts[0]?.accountId ?? null, wallet.manifest?.name ?? null);
         } catch {
           /* no wallet connected yet: the normal signed-out state */
         }
@@ -70,7 +82,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [adopt]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -78,8 +90,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       // SPEC §9.1: sign-in also asks for the login function-call key for the estate in view (when the wallet supports it).
       const { wallet, accountId } = await signInWithLoginKey(loginKeyContract(window.location.pathname), LOGIN_KEY_METHODS);
-      setAccountId(accountId);
-      setWalletName(wallet.manifest?.name ?? null);
+      if (!adopt(accountId, wallet.manifest?.name ?? null)) {
+        if (accountId) await forgetAllAppKeys(accountId);
+        push({ state: "error", title: "Wrong network", message: accountNetworkMismatch(accountId ?? "", NETWORK) ?? undefined });
+      }
     } catch (e) {
       if (!isUserCancel(e)) {
         const x = explainError(e);
@@ -89,18 +103,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setConnecting(false);
     }
-  }, [push]);
+  }, [push, adopt]);
 
   const disconnect = useCallback(async () => {
+    const was = accountId;
     try {
       const c = await getConnector();
       await c.disconnect();
     } catch {
       /* already disconnected */
     }
+    // Signing out of the site also forgets the app keys this browser holds for the account, so whoever uses the
+    // browser next can't sign with them. (They stay on the account, scoped and capped, until removed with the wallet.)
+    if (was) await forgetAllAppKeys(was).catch(() => 0);
     setAccountId(null);
     setWalletName(null);
-  }, []);
+  }, [accountId]);
 
   const value = useMemo(
     () => ({ accountId, walletName, ready, connecting, error, connect, disconnect }),

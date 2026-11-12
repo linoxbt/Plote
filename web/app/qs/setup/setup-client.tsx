@@ -64,7 +64,7 @@ export function SetupClient({ account: qAccount, pk: qPk, estate: qEstate }: { a
             {ESTATES.map((e) => <option key={e} value={e}>{e}</option>)}
           </select>
         </Field>
-        {needsPin ? <Field label="PIN (this browser can't keep a non-exportable key)" htmlFor="qs-pin"><input id="qs-pin" type="password" inputMode="numeric" className="input" value={pin} onChange={(e) => setPin(e.target.value)} /></Field> : <p className="text-xs text-muted">This browser supports non-exportable Ed25519 keys: the private key never leaves secure storage.</p>}
+        {needsPin ? <Field label="PIN, at least 6 digits (this browser can't keep a non-exportable key)" htmlFor="qs-pin" hint="Unlocking takes a second or two: the PIN is stretched 600,000 times so a stolen copy is slow to guess."><input id="qs-pin" type="password" inputMode="numeric" autoComplete="new-password" minLength={6} pattern="[0-9]*" className="input" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} /></Field> : <p className="text-xs text-muted">This browser supports non-exportable Ed25519 keys: the private key never leaves secure storage.</p>}
         {pub ? (
           <div className="space-y-2">
             <p className="mono break-all text-xs">Public key: {pub}</p>

@@ -1,6 +1,7 @@
 // Single-use claims in Postgres (supabase/migrations/0003_security.sql), so they hold across serverless instances.
-// If the database is missing or slow, each falls back to a per-instance claim rather than failing the request, and
-// logs `plote:once-fallback` (scope only, never the key) so a fail-open protection shows up in the logs.
+// Low-risk claims (NEP-413 nonces for uploads/notify) fall back to a per-instance claim when the database is missing
+// or slow, and log `plote:once-fallback` (scope only, never the key). Claims that guard money or physical access
+// (relayed delegates, gate passes) use claimOnceStrict: no database answer, no claim (the route answers 503).
 
 import { markOnce, warnFallback } from "./rate-limit";
 import { supabaseAdmin } from "./supabase-admin";
@@ -30,7 +31,20 @@ export async function claimOnceShared(scope: string, key: string, ttlMs: number)
   return { ok: markOnce(`${scope}:${key}`, ttlMs), shared: false };
 }
 
-/** True the first time `key` is seen in `scope` within `ttlMs` (NEP-413 nonces, relayed delegates, gate passes). */
+export type StrictClaim = { ok: boolean; unavailable: boolean };
+
+/**
+ * Fail-closed single-use claim: `ok` only when Postgres answered that this is the first claim. When the database is
+ * missing, slow or erroring, `{ ok: false, unavailable: true }` (logged as `plote:once-unavailable`), never a local claim.
+ */
+export async function claimOnceStrict(scope: string, key: string, ttlMs: number): Promise<StrictClaim> {
+  const r = await rpcRow<boolean>("claim_once", { p_scope: scope, p_nonce: key, p_ttl_seconds: Math.max(1, Math.ceil(ttlMs / 1000)) });
+  if (typeof r.row === "boolean") return { ok: r.row, unavailable: false };
+  warnFallback("plote:once-unavailable", scope, r.why);
+  return { ok: false, unavailable: true };
+}
+
+/** True the first time `key` is seen in `scope` within `ttlMs` (NEP-413 nonces; fails open to a per-instance claim). */
 export async function claimOnce(scope: string, key: string, ttlMs: number): Promise<boolean> {
   return (await claimOnceShared(scope, key, ttlMs)).ok;
 }

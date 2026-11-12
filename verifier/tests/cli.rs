@@ -81,3 +81,27 @@ fn garbage_stdin_is_bad_input() {
         assert_eq!(v["reasons"], serde_json::json!(["bad_input"]));
     }
 }
+
+#[test]
+fn model_env_override_is_ignored() {
+    // NEAR_AI_MODEL can't switch the pinned model; with a mock the verdict says "mock".
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_plote-verifier"));
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("NEAR_AI_API_KEY")
+        .env("NEAR_AI_MODEL", "someone/tiny-vl")
+        .env(
+            "PLOTE_AI_MOCK",
+            r#"{"stage":"roofing","confidence":88,"is_photo_of_screen_or_print":false,"is_render":false,"has_other_instructions":false,"challenge_read":"K7RQ4M"}"#,
+        );
+    let mut child = cmd.spawn().expect("spawn");
+    child.stdin.take().unwrap().write_all(&fixture()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("NEAR_AI_MODEL is ignored"), "{stderr}");
+    let v: serde_json::Value =
+        serde_json::from_str(String::from_utf8(out.stdout).unwrap().trim()).unwrap();
+    assert_eq!(v["pass"], true, "{v}");
+    assert_eq!(v["ai_model"], "mock");
+}

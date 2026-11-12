@@ -38,6 +38,7 @@ export type EstateView = {
   totals: { paid: string; released: string; refunded: string; in_escrow: string };
   stats: DevStats;
   verification_budget: string;
+  refunds_open: boolean;                // a missed deadline + grace, or a Freeze with refunds
   now: string;                          // block timestamp at view time
 };
 
@@ -45,6 +46,7 @@ export type UnitStatus = "Available" | "Reserved" | "Allocated" | "InDefault" | 
 
 export type UnitView = {
   id: string; account: string; label: string; price: string; status: UnitStatus;
+  ready: boolean;            // account created and registered on USDC (else reserve/pay are refused; see retry_unit_setup)
   holder: string | null; allocated_at: string | null;
   reservation: { by: string; expires_at: string } | null;
   last_reservation: { by: string; expires_at: string } | null;
@@ -74,6 +76,7 @@ export type MilestoneStatus = "Open" | "Checking" | "Verified" | "Approved" | "V
 export type MilestoneView = {
   index: number; key: string; title: string; bps: number; deadline: string;
   status: MilestoneStatus;              // Missed is computed at view time
+  late: boolean;                        // deadline + grace passed without a timely sign-off (refunds open)
   evidence_ids: string[]; verified_at: string | null; signed_at: string | null;
   veto_until: string | null; veto_passed: boolean;   // Approved and veto window over
   refunds_open_at: string;             // deadline + grace
@@ -87,10 +90,11 @@ export type Verdict = {
   exif_time: string | null; gps: [number, number] | null; gps_source: "exif" | "device" | null;
   distance_m: number | null; ai_stage: string | null; ai_confidence: number | null;
   challenge_read: string | null; ai_chat_id: string | null; ai_observations?: string[];
-  /** The NEAR AI model id that judged the stage, when the worker records it (needed for the signature/attestation links). */
+  /** The NEAR AI model id that judged the stage. Added by newer verifier builds; absent on older verdicts. */
   ai_model?: string | null;
   worker_commit: string; attestation: string | null;
-  source: "outlayer" | "https";
+  /** Absent on verdicts stored before the field existed (the contract keeps it as an Option). */
+  source?: "outlayer" | "https" | null;
 };
 
 export type EvidenceStatus = "Pending" | "Pass" | "Fail" | "Error";
@@ -111,10 +115,13 @@ export type ProposalView = {
   /** With `weighted`: whole USDC of min(paid, price) per token; otherwise token counts (proposals opened before the rule). */
   electorate: number; yes: number; no: number;
   voted: string[]; status: ProposalStatus;
-  weighted?: boolean;
+  weighted: boolean;
   /** Every kind but Veto also needs a strict majority of distinct eligible holders (audit 3): holders_yes * 2 > holders_eligible. */
-  holders_eligible?: number; holders_yes?: number; holders_no?: number;
+  holders_eligible: number; holders_yes: number; holders_no: number;
 };
+
+/** A lien the holder set that the lender hasn't accepted yet (`get_pending_lien`). */
+export type PendingLien = { lender: string; cap: string };
 
 export type DevStats = {
   milestones_due: number; milestones_on_time: number; units_sold: number; units_refunded: number;

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { clsx } from "clsx";
 import { AlertTriangle, ChevronDown, Clock, Inbox } from "lucide-react";
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import { EXPLORER, IS_MAINNET } from "@/lib/config";
 import { explainError } from "@/lib/errors";
 
@@ -42,12 +42,41 @@ export function btnClass(variant: BtnVariant = "ghost", size: "md" | "sm" = "md"
   return clsx("btn", `btn-${variant}`, size === "sm" && "btn-sm", extra);
 }
 
+/**
+ * A button that can't be double-submitted: while `loading` is set, or while the promise its `onClick` returned is
+ * pending (every transaction button returns one), it is disabled and shows a spinner, and further clicks are dropped
+ * even before React re-renders.
+ */
 export function Button({
-  variant = "ghost", size = "md", className, loading, children, ...rest
-}: ComponentProps<"button"> & { variant?: BtnVariant; size?: "md" | "sm"; loading?: boolean }) {
+  variant = "ghost", size = "md", className, loading, children, disabled, onClick, type, ...rest
+}: Omit<ComponentProps<"button">, "onClick"> & {
+  variant?: BtnVariant; size?: "md" | "sm"; loading?: boolean;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => unknown;
+}) {
+  const [pending, setPending] = useState(false);
+  const busy = useRef(false);
+  const isLoading = !!loading || pending;
+  const handle = (e: MouseEvent<HTMLButtonElement>) => {
+    if (busy.current || isLoading) {
+      e.preventDefault();
+      return;
+    }
+    const r = onClick?.(e);
+    if (r && typeof (r as Promise<unknown>).then === "function") {
+      busy.current = true;
+      setPending(true);
+      (r as Promise<unknown>).then(
+        () => undefined,
+        () => undefined,
+      ).finally(() => {
+        busy.current = false;
+        setPending(false);
+      });
+    }
+  };
   return (
-    <button type="button" className={btnClass(variant, size, className)} disabled={rest.disabled || loading} aria-busy={loading || undefined} {...rest}>
-      {loading ? <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : null}
+    <button {...rest} type={type ?? "button"} className={btnClass(variant, size, className)} disabled={!!disabled || isLoading} aria-busy={isLoading || undefined} onClick={handle}>
+      {isLoading ? <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden /> : null}
       {children}
     </button>
   );

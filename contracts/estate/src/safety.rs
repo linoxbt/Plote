@@ -112,33 +112,77 @@ impl Estate {
         self.save(unit);
     }
 
-    /// A lien blocks transfer and listing; refunds go to the lender first, up to `cap`.
+    /// The holder offers a lien to `lender` (audit round 4, finding 2c: liens need the lender's consent). It is stored
+    /// as **pending** (replacing any earlier offer) and does nothing until the lender calls `accept_lien`. Once active,
+    /// a lien blocks transfer and listing, and refunds go to the lender first, up to `cap`.
     #[payable]
     pub fn set_lien(&mut self, unit_id: String, lender: AccountId, cap: U128) {
         assert_one_yocto();
-        let mut unit = self.unit(&unit_id);
+        let unit = self.unit(&unit_id);
         let holder = self.assert_holder(&unit);
-        ensure!(
-            lender != holder,
-            "E_BAD_ARGS",
-            "the holder can't be the lender"
+        self.assert_lien_allowed(&unit, &holder, &lender);
+        crate::ext::set(
+            &crate::ext::key(crate::ext::P_PENDING_LIEN, unit_id.as_bytes()),
+            &crate::ext::PendingLien {
+                lender: lender.clone(),
+                cap: cap.0,
+                holder,
+            },
         );
-        ensure!(unit.lien.is_none(), "E_LIEN", "a lien is already set");
-        // A defaulter must not escape the default listing by pledging the unit (the old code cleared any listing).
-        ensure!(
-            matches!(unit.status, UnitStatus::Allocated | UnitStatus::HandedOver)
-                && unit
-                    .listing
-                    .as_ref()
-                    .map(|l| l.kind != ListingKind::Default)
-                    .unwrap_or(true),
-            "E_LISTING",
-            "a unit in default can't take a lien; it can only change hands by sale"
+        crate::events::emit(
+            "lien_offered",
+            near_sdk::serde_json::json!({ "unit_id": unit_id, "lender": lender, "cap": cap }),
         );
-        unit.lien = Some(Lien { lender, cap });
+    }
+
+    /// The lender named in a pending lien activates it. Attach 1 yocto. The offer must still come from the current
+    /// holder (it is void once the token changes hands) and the unit must still be able to take a lien.
+    #[payable]
+    pub fn accept_lien(&mut self, unit_id: String) {
+        assert_one_yocto();
+        self.assert_no_nft_pending(&unit_id);
+        let k = crate::ext::key(crate::ext::P_PENDING_LIEN, unit_id.as_bytes());
+        let pending: crate::ext::PendingLien = crate::ext::get(&k)
+            .unwrap_or_else(|| errors::fail("E_LIEN", "no pending lien on this unit"));
+        let caller = env::predecessor_account_id();
+        ensure!(
+            pending.lender == caller,
+            "E_NOT_LENDER",
+            "only the lender named in the pending lien can accept it"
+        );
+        let mut unit = self.unit(&unit_id);
+        ensure!(
+            unit.status.has_token() && unit.holder.as_ref() == Some(&pending.holder),
+            "E_LIEN",
+            "the lien was offered by an earlier holder; it is void"
+        );
+        self.assert_lien_allowed(&unit, &pending.holder, &pending.lender);
+        crate::ext::del(&k);
+        unit.lien = Some(Lien {
+            lender: pending.lender.clone(),
+            cap: U128(pending.cap),
+        });
         // Only a voluntary listing can be open here; a lien blocks selling, so it goes.
         unit.listing = None;
         self.save(unit);
+        crate::events::emit(
+            "lien_accepted",
+            near_sdk::serde_json::json!({ "unit_id": unit_id, "lender": pending.lender, "cap": U128(pending.cap) }),
+        );
+    }
+
+    /// View: the lien the holder offered and the lender hasn't accepted yet (`{ lender, cap }`), if any.
+    pub fn get_pending_lien(&self, unit_id: String) -> Option<Lien> {
+        let p: crate::ext::PendingLien = crate::ext::get(&crate::ext::key(
+            crate::ext::P_PENDING_LIEN,
+            unit_id.as_bytes(),
+        ))?;
+        let unit = self.units.get(&unit_id)?;
+        // An offer from an earlier holder is void (move_token deletes it; this also hides any stale one).
+        (unit.holder.as_ref() == Some(&p.holder)).then(|| Lien {
+            lender: p.lender,
+            cap: U128(p.cap),
+        })
     }
 
     #[payable]
@@ -156,5 +200,28 @@ impl Estate {
         );
         unit.lien = None;
         self.save(unit);
+    }
+}
+
+impl Estate {
+    /// Who may be a lender, and when a unit can take a lien (checked when the lien is offered and when it is accepted).
+    fn assert_lien_allowed(&self, unit: &Unit, holder: &AccountId, lender: &AccountId) {
+        ensure!(
+            lender != holder,
+            "E_BAD_ARGS",
+            "the holder can't be the lender"
+        );
+        ensure!(unit.lien.is_none(), "E_LIEN", "a lien is already set");
+        // A defaulter must not escape the default listing by pledging the unit (the old code cleared any listing).
+        ensure!(
+            matches!(unit.status, UnitStatus::Allocated | UnitStatus::HandedOver)
+                && unit
+                    .listing
+                    .as_ref()
+                    .map(|l| l.kind != ListingKind::Default)
+                    .unwrap_or(true),
+            "E_LISTING",
+            "a unit in default can't take a lien; it can only change hands by sale"
+        );
     }
 }

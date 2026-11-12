@@ -21,6 +21,14 @@ pub const MAX_RADIUS_M: f64 = 5000.0;
 /// EXIF GPS and the app's device GPS may disagree by at most this much, metres.
 pub const MAX_GPS_GAP_M: f64 = 100.0;
 
+/// EXIF capture time and the app's `captured_at` may disagree by this much before
+/// the verdict carries the `captured_at_mismatch` warning.
+pub const CAPTURED_AT_TOLERANCE_NS: u64 = 30 * NS_PER_MIN;
+
+/// Input-level failure: the photo URL is not on an allowed storage host/prefix
+/// (`fetch::photo_url_allowed`). Checked before anything is fetched.
+pub const URL_NOT_ALLOWED: &str = "url_not_allowed";
+
 /// Input-level failure: the geofence is unusable. Only the playground may turn
 /// the location check off (radius 0); everywhere else radius 0, or a radius over
 /// `MAX_RADIUS_M`, is refused before anything is fetched.
@@ -50,7 +58,13 @@ pub struct Verdict {
     /// Lowercase hex SHA-256 of the bytes the worker fetched and checked (equal to
     /// the input `sha256` unless the verdict is `hash_mismatch`); `null` when nothing
     /// was fetched. Lets the contract bind the verdict to the committed photo.
+    /// On `hash_mismatch` this is the committed input `sha256` (lowercased): the
+    /// digest of the bytes actually served is never echoed.
     pub sha256: Option<String>,
+    /// The model that answered the stage check: the provider's reported model id
+    /// when it sent one, else the pinned `ai::MODEL`; `"mock"` for mocked answers;
+    /// `null` when the model wasn't asked or didn't answer.
+    pub ai_model: Option<String>,
 }
 
 impl Verdict {
@@ -74,6 +88,7 @@ impl Verdict {
             worker_commit: crate::WORKER_COMMIT.to_string(),
             attestation: None,
             sha256: None,
+            ai_model: None,
         }
     }
 
@@ -168,13 +183,26 @@ pub fn geofence_ok(input: &Input) -> bool {
     (r > 0.0 || input.playground) && r <= MAX_RADIUS_M
 }
 
+/// The photo comes from an allowed storage location, or inline bytes (which the
+/// sha256 check binds to the commitment) are given instead of a URL.
+pub fn url_ok(input: &Input) -> bool {
+    input.image_base64.is_some()
+        || input.url.as_deref().is_some_and(|u| {
+            crate::fetch::photo_url_allowed(u, input.allowed_url_prefix.as_deref())
+        })
+}
+
 /// Input-level refusal, checked before anything is fetched.
 pub fn reject_input(input: &Input) -> Option<Verdict> {
-    if geofence_ok(input) {
+    let code = if !geofence_ok(input) {
+        BAD_GEOFENCE
+    } else if !url_ok(input) {
+        URL_NOT_ALLOWED
+    } else {
         return None;
-    }
+    };
     let mut v = Verdict::empty(Some(input.evidence_id));
-    v.reasons.push(BAD_GEOFENCE.into());
+    v.reasons.push(code.into());
     Some(v)
 }
 
@@ -243,12 +271,30 @@ pub fn decide(
     if r.failed() {
         return r.finish();
     }
+    // `captured_at` is the app's own reading of the capture time (the browser's EXIF
+    // parse, else the submit time), so it is only cross-checked, never trusted: a
+    // large gap to the EXIF time is surfaced as a warning on the proof page.
+    if let (Some(exif), Some(app)) = (facts.exif_time, input.captured_at) {
+        if exif.abs_diff(app) > CAPTURED_AT_TOLERANCE_NS {
+            r.v.warnings.push("captured_at_mismatch".into());
+        }
+    }
 
     // 5. Location (skipped entirely when radius_m == 0, which `reject_input` only
     // allows in the playground; nothing is reported so a playground photo never
     // publishes where the judge stood).
     if input.geofence.radius_m > 0.0 {
         let device = input.device_gps.map(|[lat, lon]| (lat, lon));
+        // The app's device location is what the EXIF GPS is cross-checked against;
+        // without it a forged EXIF position would go unchallenged. A real estate
+        // therefore requires it; the playground and demo estates only warn.
+        if device.is_none() {
+            if !(input.playground || input.demo_mode) {
+                r.flag("gps_device_missing");
+            } else if facts.exif_gps.is_some() {
+                r.v.warnings.push("gps_exif_only".into());
+            }
+        }
         // Both sources present: they must agree. A photo whose EXIF says one
         // place while the app says another was not simply taken on site.
         if let (Some((elat, elon)), Some((dlat, dlon))) = (facts.exif_gps, device) {
@@ -300,9 +346,14 @@ pub fn decide(
         }
         AiOutcome::Answer {
             chat_id,
+            model,
             answer,
             mocked,
         } => {
+            r.v.ai_model = Some(model.clone());
+            if !*mocked && !crate::ai::is_pinned_model(model) {
+                r.v.warnings.push("ai_model_mismatch".into());
+            }
             r.v.ai_stage = Some(answer.stage.clone());
             r.v.ai_confidence = Some(answer.confidence);
             r.v.challenge_read = answer.challenge_read.clone();
@@ -367,7 +418,7 @@ mod tests {
     fn input_json() -> serde_json::Value {
         serde_json::json!({
             "evidence_id": 17,
-            "url": "https://example.supabase.co/storage/v1/object/public/evidence/hc/17.jpg",
+            "url": "https://oshxsrhnynauyxcraymy.supabase.co/storage/v1/object/public/evidence/hc/17.jpg",
             "sha256": "00".repeat(32),
             "captured_at": 1_793_740_000_000_000_000u64,
             "device_gps": [6_447_123, 3_474_190],
@@ -404,6 +455,7 @@ mod tests {
     fn good_answer() -> AiOutcome {
         AiOutcome::Answer {
             chat_id: Some("chatcmpl-1".into()),
+            model: crate::ai::MODEL.into(),
             answer: AiAnswer {
                 stage: "roofing".into(),
                 confidence: 88,
@@ -470,6 +522,10 @@ mod tests {
         assert_eq!(v.ai_confidence, Some(88));
         assert_eq!(v.challenge_read.as_deref(), Some("K7RQ4M"));
         assert_eq!(v.ai_chat_id.as_deref(), Some("chatcmpl-1"));
+        assert_eq!(
+            v.ai_model.as_deref(),
+            Some("Qwen/Qwen3-VL-30B-A3B-Instruct")
+        );
         assert_eq!(
             v.ai_observations,
             vec!["roof trusses in place", "paper with code"]
@@ -579,7 +635,7 @@ mod tests {
             good_answer(),
         );
         assert!(!c);
-        assert_eq!(v.reasons, vec!["outside_geofence"]);
+        assert_eq!(v.reasons, vec!["gps_device_missing", "outside_geofence"]);
         assert_eq!(v.distance_m, Some(1112));
         // Fallback to device GPS (inside): passes, with a warning.
         let (v, _) = run(noop, img(|f| f.exif_gps = None), good_answer());
@@ -602,8 +658,151 @@ mod tests {
             img(|f| f.exif_gps = None),
             good_answer(),
         );
-        assert_eq!(v.reasons, vec!["gps_missing"]);
+        assert_eq!(v.reasons, vec!["gps_device_missing", "gps_missing"]);
         assert_eq!(v.gps_source, None);
+        // Nothing at all on a demo estate: only gps_missing.
+        let (v, _) = run(
+            |j| {
+                j["device_gps"] = serde_json::Value::Null;
+                j["demo_mode"] = true.into();
+            },
+            img(|f| f.exif_gps = None),
+            good_answer(),
+        );
+        assert_eq!(v.reasons, vec!["gps_missing"]);
+        assert!(v.warnings.is_empty());
+    }
+
+    #[test]
+    fn device_gps_required_outside_playground_and_demo() {
+        // Location denied in the browser + EXIF GPS (possibly forged) on site: a real
+        // estate fails, since nothing cross-checks the EXIF position. The AI is never asked.
+        let no_dev = |j: &mut serde_json::Value| j["device_gps"] = serde_json::Value::Null;
+        let (v, c) = run(no_dev, img(|_| {}), good_answer());
+        assert!(!c);
+        assert!(!v.pass);
+        assert_eq!(v.reasons, vec!["gps_device_missing"]);
+        // The EXIF position is still reported.
+        assert_eq!(v.gps_source, Some("exif"));
+        assert_eq!(v.distance_m, Some(26));
+        // Demo estate and playground (with a fence): warning gps_exif_only, pass.
+        for (demo, pg) in [(true, false), (false, true), (true, true)] {
+            let (v, _) = run(
+                |j| {
+                    no_dev(j);
+                    j["demo_mode"] = demo.into();
+                    j["playground"] = pg.into();
+                },
+                img(|_| {}),
+                good_answer(),
+            );
+            assert!(v.pass, "demo={demo} pg={pg}: {v:?}");
+            assert_eq!(v.warnings, vec!["gps_exif_only"], "demo={demo} pg={pg}");
+        }
+        // Playground with no fence: location is skipped entirely, no warning.
+        let (v, _) = run(
+            |j| {
+                no_dev(j);
+                j["playground"] = true.into();
+                j["geofence"]["radius_m"] = 0.into();
+            },
+            img(|_| {}),
+            good_answer(),
+        );
+        assert!(v.pass && v.warnings.is_empty(), "{v:?}");
+        // With device GPS present nothing changes (and the mismatch check still runs).
+        let (v, _) = run(noop, img(|_| {}), good_answer());
+        assert!(v.pass && v.warnings.is_empty(), "{v:?}");
+    }
+
+    #[test]
+    fn captured_at_cross_check_is_a_warning() {
+        // EXIF_T vs the fixture's captured_at: ~10 min apart, fine.
+        let (v, _) = run(noop, img(|_| {}), good_answer());
+        assert!(v.warnings.is_empty());
+        // 31 min apart either way: warning, still passes.
+        for app in [EXIF_T + 31 * M, EXIF_T - 31 * M] {
+            let (v, _) = run(
+                |j| j["captured_at"] = app.into(),
+                img(|_| {}),
+                good_answer(),
+            );
+            assert!(v.pass, "{v:?}");
+            assert_eq!(v.warnings, vec!["captured_at_mismatch"]);
+        }
+        // Exactly the tolerance: fine. Missing captured_at: nothing to compare.
+        let (v, _) = run(
+            |j| j["captured_at"] = (EXIF_T + 30 * M).into(),
+            img(|_| {}),
+            good_answer(),
+        );
+        assert!(v.warnings.is_empty());
+        let (v, _) = run(
+            |j| j["captured_at"] = serde_json::Value::Null,
+            img(|_| {}),
+            good_answer(),
+        );
+        assert!(v.pass && v.warnings.is_empty());
+        // Never softens a failure: a stale photo is still stale.
+        let (v, _) = run(
+            |j| j["captured_at"] = NOW.into(),
+            img(|f| f.exif_time = Some(NOW - 73 * H)),
+            good_answer(),
+        );
+        assert_eq!(v.reasons, vec!["exif_stale"]);
+    }
+
+    #[test]
+    fn url_must_be_allowed() {
+        for url in [
+            "https://example.supabase.co/storage/v1/object/public/evidence/hc/17.jpg",
+            "https://127.0.0.1/storage/v1/object/public/evidence/hc/17.jpg",
+            "http://oshxsrhnynauyxcraymy.supabase.co/storage/v1/object/public/evidence/hc/17.jpg",
+        ] {
+            let (v, c) = run(|j| j["url"] = url.into(), img(|_| {}), good_answer());
+            assert!(!c);
+            assert_eq!(v.reasons, vec![URL_NOT_ALLOWED], "{url}");
+        }
+        // In every mode.
+        let (v, _) = run(
+            |j| {
+                j["url"] = "https://evil.example.com/a.jpg".into();
+                j["playground"] = true.into();
+                j["demo_mode"] = true.into();
+            },
+            img(|_| {}),
+            good_answer(),
+        );
+        assert_eq!(v.reasons, vec![URL_NOT_ALLOWED]);
+        // Inline bytes need no URL.
+        let (v, _) = run(
+            |j| {
+                j["url"] = serde_json::Value::Null;
+                j["image_base64"] = "AA==".into();
+            },
+            img(|_| {}),
+            good_answer(),
+        );
+        assert!(v.pass, "{v:?}");
+    }
+
+    #[test]
+    fn ai_model_recorded() {
+        let (v, _) = run(noop, img(|_| {}), good_answer());
+        assert_eq!(v.ai_model.as_deref(), Some(crate::ai::MODEL));
+        assert!(v.warnings.is_empty());
+        // A provider reporting another model: echoed, with a warning.
+        let mut o = good_answer();
+        if let AiOutcome::Answer { model, .. } = &mut o {
+            *model = "someone/small-vl".into();
+        }
+        let (v, _) = run(noop, img(|_| {}), o);
+        assert!(v.pass);
+        assert_eq!(v.ai_model.as_deref(), Some("someone/small-vl"));
+        assert_eq!(v.warnings, vec!["ai_model_mismatch"]);
+        // No answer: null.
+        let (v, _) = run(noop, img(|_| {}), unavailable());
+        assert_eq!(v.ai_model, None);
     }
 
     #[test]
@@ -868,6 +1067,7 @@ mod tests {
             good_answer(),
         );
         assert_eq!(v.reasons, vec!["outside_geofence"]);
+        assert_eq!(v.warnings, vec!["gps_exif_only"]);
     }
 
     #[test]
@@ -888,7 +1088,12 @@ mod tests {
         assert!(v.pass, "{v:?}");
         assert_eq!(
             v.warnings,
-            vec!["outside_geofence", "ai_stage_mismatch", "ai_low_confidence"]
+            vec![
+                "gps_exif_only",
+                "outside_geofence",
+                "ai_stage_mismatch",
+                "ai_low_confidence"
+            ]
         );
         // Freshness and a missing location are never softened (SPEC 6.1 lists only stage,
         // confidence and geofence for the playground).
@@ -917,7 +1122,7 @@ mod tests {
                 a.challenge_read = Some("ZZZZZZ".into());
             }),
         );
-        assert_eq!(v.warnings, vec!["ai_stage_mismatch"]);
+        assert_eq!(v.warnings, vec!["gps_exif_only", "ai_stage_mismatch"]);
         assert_eq!(v.reasons, vec!["challenge_mismatch"]);
         // Screen photo stays hard.
         let (v, _) = run(
@@ -1025,14 +1230,17 @@ mod tests {
             "worker_commit",
             "attestation",
             "sha256",
+            "ai_model",
         ] {
             assert!(keys.contains(&k), "missing {k}");
         }
-        assert_eq!(keys.len(), 18);
-        // New fields are appended: the original 17 keep their order on the wire.
+        assert_eq!(keys.len(), 19);
+        // New fields are appended: the earlier ones keep their order on the wire.
         let line = serde_json::to_string(&v).unwrap();
         assert!(
-            line.contains(r#""attestation":null,"sha256":null}"#),
+            line.ends_with(
+                r#""attestation":null,"sha256":null,"ai_model":"Qwen/Qwen3-VL-30B-A3B-Instruct"}"#
+            ),
             "{line}"
         );
         assert!(j["ai_observations"].is_array());

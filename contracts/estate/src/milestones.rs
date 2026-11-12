@@ -13,6 +13,7 @@ const MAX_VERDICT_BYTES: usize = 16 * 1024;
 /// The model returns up to 4 short observations (SPEC 6.4); keep what is stored bounded.
 const MAX_OBSERVATIONS: usize = 4;
 const MAX_OBSERVATION_CHARS: usize = 160;
+const MAX_AI_MODEL_CHARS: usize = 64;
 
 pub(crate) fn make_code(seed: &[u8]) -> String {
     let h = env::sha256(seed);
@@ -74,28 +75,40 @@ pub(crate) fn extract_verdict(v: &Value, depth: u8) -> Option<(Verdict, Option<S
     }
 }
 
-/// `evidence_id` and `sha256` the worker echoes next to its verdict (review L3), from the same object
-/// `extract_verdict` accepts. Absent fields (older worker builds) are `None`.
-pub(crate) fn verdict_binding(v: &Value, depth: u8) -> (Option<u64>, Option<String>) {
+/// What the worker echoes next to its verdict (review L3, audit round 4): `evidence_id`, `sha256` (lowercased) and the
+/// optional `ai_model`, from the same object `extract_verdict` accepts. Absent fields (older worker builds) are `None`.
+#[derive(Default, Debug, PartialEq)]
+pub(crate) struct Binding {
+    pub evidence_id: Option<u64>,
+    pub sha256: Option<String>,
+    pub ai_model: Option<String>,
+}
+
+pub(crate) fn verdict_binding(v: &Value, depth: u8) -> Binding {
     if depth > 4 {
-        return (None, None);
+        return Binding::default();
     }
     match v {
         Value::String(s) => serde_json::from_str::<Value>(s.trim())
             .map(|inner| verdict_binding(&inner, depth + 1))
-            .unwrap_or((None, None)),
+            .unwrap_or_default(),
         Value::Object(map) => {
             if map.get("pass").map(|p| p.is_boolean()).unwrap_or(false) {
-                let id = match map.get("evidence_id") {
-                    Some(Value::Number(n)) => n.as_u64(),
-                    Some(Value::String(s)) => s.parse().ok(),
-                    _ => None,
+                return Binding {
+                    evidence_id: match map.get("evidence_id") {
+                        Some(Value::Number(n)) => n.as_u64(),
+                        Some(Value::String(s)) => s.parse().ok(),
+                        _ => None,
+                    },
+                    sha256: map
+                        .get("sha256")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_ascii_lowercase()),
+                    ai_model: map
+                        .get("ai_model")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.chars().take(MAX_AI_MODEL_CHARS).collect()),
                 };
-                let sha = map
-                    .get("sha256")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s.to_ascii_lowercase());
-                return (id, sha);
             }
             for key in [
                 "output",
@@ -109,16 +122,58 @@ pub(crate) fn verdict_binding(v: &Value, depth: u8) -> (Option<u64>, Option<Stri
                 "execution",
             ] {
                 if let Some(inner) = map.get(key) {
-                    let r = verdict_binding(inner, depth + 1);
-                    if r.0.is_some() || r.1.is_some() {
-                        return r;
+                    if extract_verdict(inner, depth + 1).is_some() {
+                        return verdict_binding(inner, depth + 1);
                     }
                 }
             }
-            (None, None)
+            Binding::default()
         }
-        _ => (None, None),
+        _ => Binding::default(),
     }
+}
+
+/// `submit_verdict`'s `verdict` argument: the worker's stdout as the relayer got it. The stored `Verdict` (inside
+/// `Evidence`, so its borsh layout is frozen) plus what the worker echoes about the evidence it checked; those fields
+/// exist only in the argument, never in state (`ai_model` goes to its own map, `zm`).
+#[near(serializers = [json])]
+pub struct VerdictArg {
+    #[serde(flatten)]
+    pub verdict: Verdict,
+    #[serde(default)]
+    pub evidence_id: Option<Value>,
+    #[serde(default)]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub ai_model: Option<String>,
+}
+
+impl From<Verdict> for VerdictArg {
+    fn from(verdict: Verdict) -> Self {
+        VerdictArg {
+            verdict,
+            evidence_id: None,
+            sha256: None,
+            ai_model: None,
+        }
+    }
+}
+
+/// Failing reasons that only say the check couldn't run (the model or the worker was down), not that the photo is bad.
+/// A verdict failing for these alone is recorded as an Error and refunds the verification budget (finding 10).
+/// `challenge_unverified` counts only next to `ai_unavailable` (the code couldn't be read because the model was down).
+pub(crate) fn infra_only(v: &Verdict) -> bool {
+    if v.reasons.is_empty() {
+        return false;
+    }
+    let ai_down = v
+        .reasons
+        .iter()
+        .chain(v.warnings.iter())
+        .any(|r| r == "ai_unavailable");
+    v.reasons.iter().all(|r| {
+        r == "ai_unavailable" || r == "worker_error" || (r == "challenge_unverified" && ai_down)
+    })
 }
 
 fn attestation_ref(map: &serde_json::Map<String, Value>) -> Option<String> {
@@ -163,6 +218,7 @@ impl Estate {
             milestone,
             st
         );
+        self.assert_previous_approved(i);
         let now = Self::now();
         let by = env::predecessor_account_id();
         // On the playground anyone may open a capture; nobody but the surveyor may replace someone else's live one,
@@ -219,8 +275,10 @@ impl Estate {
             milestone,
             st
         );
+        self.assert_previous_approved(i);
         let caller = env::predecessor_account_id();
         let now = Self::now();
+        self.playground_rate_limit(&caller, now);
         let capture = self.captures.get(&milestone).cloned().unwrap_or_else(|| {
             errors::fail(
                 "E_NO_CHALLENGE",
@@ -302,7 +360,10 @@ impl Estate {
     #[private]
     pub fn on_verdict(&mut self, evidence_id: u64) -> bool {
         let Some(bytes) = result_bytes(0, MAX_VERDICT_BYTES) else {
-            self.set_error(evidence_id, "OutLayer call failed or timed out");
+            // The call failed, so its deposit came back to the estate: so does the budget (finding 10).
+            if self.set_error(evidence_id, "OutLayer call failed or timed out") {
+                self.refund_check(evidence_id);
+            }
             return false;
         };
         let raw_hash = hex_lower(&env::sha256(&bytes));
@@ -314,16 +375,16 @@ impl Estate {
                     verdict.attestation = att;
                 }
                 // A verdict must be about this evidence and these exact bytes, when the worker says which.
-                let (bound_id, bound_sha) = parsed
+                let b = parsed
                     .as_ref()
                     .map(|v| verdict_binding(v, 0))
-                    .unwrap_or((None, None));
+                    .unwrap_or_default();
                 let committed = self
                     .evidence
                     .get(&evidence_id)
                     .map(|e| e.sha256.to_ascii_lowercase());
-                let mismatch = bound_id.is_some_and(|id| id != evidence_id)
-                    || matches!((&bound_sha, &committed), (Some(a), Some(b)) if a != b);
+                let mismatch = b.evidence_id.is_some_and(|id| id != evidence_id)
+                    || matches!((&b.sha256, &committed), (Some(a), Some(c)) if a != c);
                 if mismatch {
                     self.set_error_with(
                         evidence_id,
@@ -335,6 +396,22 @@ impl Estate {
                         self.evidence.insert(evidence_id, ev);
                     }
                     return false;
+                }
+                // Finding 3: a verdict that doesn't say which evidence and which bytes it checked can't pass, except
+                // from the legacy pinned build that predates the echo (live testnet estates; `repin_verifier` moves
+                // them off it).
+                let unbound = b.evidence_id.is_none() || b.sha256.is_none();
+                if unbound && self.verifier.commit.trim() != LEGACY_VERIFIER {
+                    verdict.reasons.push("verdict_unbound".to_string());
+                }
+                if let Some(model) = b.ai_model {
+                    crate::ext::set(
+                        &crate::ext::key(crate::ext::P_AI_MODEL, &evidence_id.to_le_bytes()),
+                        &model,
+                    );
+                }
+                if infra_only(&verdict) {
+                    return self.infra_error(evidence_id, verdict, Some(raw_hash));
                 }
                 self.apply_verdict(evidence_id, verdict, "outlayer", Some(raw_hash))
             }
@@ -358,7 +435,8 @@ impl Estate {
 
     /// HTTPS fallback (SPEC 6.6): the relayer passes through a verdict it fetched from OutLayer's API.
     /// Only for estates in `verify_mode: "https"`; an OutLayer-mode estate takes verdicts from OutLayer only.
-    pub fn submit_verdict(&mut self, evidence_id: U64, verdict: Verdict) -> bool {
+    /// The verdict must echo this `evidence_id` and the committed `sha256` (finding 3), else `E_VERDICT_MISMATCH`.
+    pub fn submit_verdict(&mut self, evidence_id: U64, verdict: VerdictArg) -> bool {
         ensure!(
             self.verdict_relayer.as_ref() == Some(&env::predecessor_account_id()),
             "E_NOT_RELAYER",
@@ -381,7 +459,38 @@ impl Estate {
             "evidence {} already has a verdict",
             evidence_id.0
         );
-        self.apply_verdict(evidence_id.0, verdict, "https", None)
+        let echoed_id = match &verdict.evidence_id {
+            Some(Value::Number(n)) => n.as_u64(),
+            Some(Value::String(s)) => s.parse().ok(),
+            _ => None,
+        };
+        ensure!(
+            echoed_id == Some(evidence_id.0),
+            "E_VERDICT_MISMATCH",
+            "the verdict must echo evidence_id {}",
+            evidence_id.0
+        );
+        ensure!(
+            verdict
+                .sha256
+                .as_deref()
+                .is_some_and(|s| s.eq_ignore_ascii_case(&ev.sha256)),
+            "E_VERDICT_MISMATCH",
+            "the verdict must echo the committed sha256 of evidence {}",
+            evidence_id.0
+        );
+        if let Some(model) = verdict.ai_model {
+            let model: String = model.chars().take(MAX_AI_MODEL_CHARS).collect();
+            crate::ext::set(
+                &crate::ext::key(crate::ext::P_AI_MODEL, &evidence_id.0.to_le_bytes()),
+                &model,
+            );
+        }
+        // No budget was spent in https mode, so an infrastructure failure is just an Error (milestone reopens).
+        if infra_only(&verdict.verdict) {
+            return self.infra_error(evidence_id.0, verdict.verdict, None);
+        }
+        self.apply_verdict(evidence_id.0, verdict.verdict, "https", None)
     }
 
     /// Anyone: reopen a milestone stuck in Checking because no verdict arrived for its latest evidence within
@@ -437,6 +546,7 @@ impl Estate {
             "milestone {} has no passed evidence",
             milestone
         );
+        self.assert_previous_approved(i);
         let now = Self::now();
         let veto_until = now + self.params.veto_window_ns.0;
         let m = &mut self.milestones[i];
@@ -455,6 +565,7 @@ impl Estate {
     #[payable]
     pub fn handover(&mut self, unit_id: String) {
         assert_one_yocto();
+        self.assert_no_nft_pending(&unit_id);
         let mut unit = self.unit(&unit_id);
         self.assert_holder(&unit);
         ensure!(
@@ -469,6 +580,14 @@ impl Estate {
                 && last.veto_until.map(|v| now >= v).unwrap_or(false),
             "E_HANDOVER",
             "the handover milestone isn't approved yet"
+        );
+        // Every stage, not just the last (finding 15): an earlier one vetoed after a later sign-off blocks handover.
+        ensure!(
+            self.milestones
+                .iter()
+                .all(|m| m.status == MilestoneStatus::Approved),
+            "E_HANDOVER",
+            "every milestone must be approved before handover"
         );
         unit.status = UnitStatus::HandedOver;
         unit.listing = None;
@@ -582,17 +701,19 @@ impl Estate {
     }
 
     /// Mark a Pending (or earlier Error) evidence as Error and reopen its milestone, so the surveyor can resubmit.
-    fn set_error(&mut self, evidence_id: u64, msg: &str) {
-        self.set_error_with(evidence_id, msg, "worker_error");
+    /// Returns whether it was Pending (the check's first outcome).
+    fn set_error(&mut self, evidence_id: u64, msg: &str) -> bool {
+        self.set_error_with(evidence_id, msg, "worker_error")
     }
 
-    fn set_error_with(&mut self, evidence_id: u64, msg: &str, reason: &str) {
+    fn set_error_with(&mut self, evidence_id: u64, msg: &str, reason: &str) -> bool {
         let Some(mut ev) = self.evidence.get(&evidence_id).cloned() else {
-            return;
+            return false;
         };
         if !matches!(ev.status, EvidenceStatus::Pending | EvidenceStatus::Error) {
-            return;
+            return false;
         }
+        let was_pending = ev.status == EvidenceStatus::Pending;
         ev.status = EvidenceStatus::Error;
         ev.error = Some(msg.to_string());
         let i = ev.milestone as usize;
@@ -605,6 +726,93 @@ impl Estate {
             "verdict",
             json!({ "evidence_id": U64(evidence_id), "pass": false, "reasons": [reason] }),
         );
+        was_pending
+    }
+
+    /// Finding 10: a verdict that fails only for infrastructure reasons (`infra_only`) is an Error, not a Fail: the
+    /// milestone reopens, the verdict is kept for the record, and in outlayer mode (`raw_hash` set) the check's
+    /// `VERIFY_DEPOSIT` goes back to the verification budget and the playground submission slot is returned. Only for
+    /// a Pending evidence (each OutLayer request resumes once), so a budget refund can't repeat.
+    fn infra_error(&mut self, evidence_id: u64, mut verdict: Verdict, raw_hash: Option<String>) -> bool {
+        let reasons = verdict.reasons.clone();
+        let first = self.set_error_with(
+            evidence_id,
+            &format!("the check couldn't run: {}", reasons.join(", ")),
+            reasons.first().map(String::as_str).unwrap_or("worker_error"),
+        );
+        if let Some(mut ev) = self.evidence.get(&evidence_id).cloned() {
+            verdict.pass = false;
+            verdict.source = Some(if raw_hash.is_some() { "outlayer" } else { "https" }.to_string());
+            verdict.reasons.truncate(16);
+            verdict.warnings.truncate(16);
+            verdict.ai_observations.truncate(MAX_OBSERVATIONS);
+            ev.verdict = Some(verdict);
+            if raw_hash.is_some() {
+                ev.raw_response_hash = raw_hash.clone();
+            }
+            self.evidence.insert(evidence_id, ev);
+        }
+        if first && raw_hash.is_some() {
+            self.refund_check(evidence_id);
+        }
+        false
+    }
+
+    /// Give a failed check's cost back: `VERIFY_DEPOSIT` to the budget, and the submitter's playground slot.
+    fn refund_check(&mut self, evidence_id: u64) {
+        if self.verify_mode != "outlayer" {
+            return;
+        }
+        self.verification_budget = self
+            .verification_budget
+            .saturating_add(VERIFY_DEPOSIT.as_yoctonear());
+        if let Some(by) = self.evidence.get(&evidence_id).map(|e| e.submitted_by.clone()) {
+            let k = crate::ext::key(crate::ext::P_PLAYGROUND_SUBMITS, by.as_bytes());
+            if let Some(mut v) = crate::ext::get::<Vec<u64>>(&k) {
+                v.pop();
+                crate::ext::set(&k, &v);
+            }
+        }
+        env::log_str(&format!(
+            "evidence {}: the check couldn't run; its {} went back to the verification budget",
+            evidence_id, VERIFY_DEPOSIT
+        ));
+    }
+
+    /// Stage order (finding 1): milestone `i` takes captures, evidence and sign-off only once `i − 1` is Approved.
+    pub(crate) fn assert_previous_approved(&self, i: usize) {
+        if i == 0 {
+            return;
+        }
+        let prev = &self.milestones[i - 1];
+        ensure!(
+            prev.status == MilestoneStatus::Approved,
+            "E_MILESTONE_STATE",
+            "milestone {} ({}) must be approved first; it is {:?}",
+            i - 1,
+            prev.key,
+            prev.status
+        );
+    }
+
+    /// Playground (finding 9): every account but the surveyor may submit at most `PLAYGROUND_SUBMITS_PER_HOUR`
+    /// evidence per rolling hour (each one spends `VERIFY_DEPOSIT` of the shared budget). `E_RATE_LIMIT`.
+    fn playground_rate_limit(&self, caller: &AccountId, now: u64) {
+        if !self.params.playground || caller == &self.surveyor_id {
+            return;
+        }
+        let k = crate::ext::key(crate::ext::P_PLAYGROUND_SUBMITS, caller.as_bytes());
+        let mut v: Vec<u64> = crate::ext::get(&k).unwrap_or_default();
+        v.retain(|t| t.saturating_add(ONE_HOUR_NS) > now);
+        ensure!(
+            v.len() < PLAYGROUND_SUBMITS_PER_HOUR,
+            "E_RATE_LIMIT",
+            "at most {} playground submissions per account per hour; next at {}",
+            PLAYGROUND_SUBMITS_PER_HOUR,
+            v.first().map(|t| t.saturating_add(ONE_HOUR_NS)).unwrap_or(now)
+        );
+        v.push(now);
+        crate::ext::set(&k, &v);
     }
 
     fn apply_verdict(
@@ -640,12 +848,16 @@ impl Estate {
                 return false;
             }
         }
-        // A mocked AI answer is a test fixture, never evidence (review L3).
-        if verdict.warnings.iter().any(|w| w.starts_with("ai_mock"))
-            && !verdict.reasons.iter().any(|r| r == "ai_mock")
-        {
-            verdict.reasons.push("ai_mock".to_string());
-        }
+        // A mocked AI answer or a mock verifier is a test fixture, never evidence (review L3, audit round 4 finding 3):
+        // every warning starting with `mock` or `ai_mock` becomes a failing reason.
+        let mocks: Vec<String> = verdict
+            .warnings
+            .iter()
+            .filter(|w| w.starts_with("mock") || w.starts_with("ai_mock"))
+            .filter(|w| !verdict.reasons.contains(w))
+            .cloned()
+            .collect();
+        verdict.reasons.extend(mocks);
         // A pass with reasons attached is a fail; reasons win.
         let pass = verdict.pass && verdict.reasons.is_empty();
         verdict.pass = pass;

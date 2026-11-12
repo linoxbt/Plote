@@ -1,10 +1,13 @@
 import { PloteError } from "@/lib/errors";
 // GET /api/oneclick/status?depositAddress= — proxy of 1Click GET /v0/status.
-// On SUCCESS it calls estate.report_deposit({ unit_id, amount }) once with the relayer key (the estate's deposit reporter),
+// On SUCCESS it calls estate.report_deposit({ unit_id, amount }) once with the reporter key (REPORTER_*, the estate's
+// verdict_relayer / deposit reporter; on testnet it falls back to the relayer key),
 // but only when the recipient is a unit account of an estate configured on this network (NEXT_PUBLIC_ESTATES).
 // Any other recipient — e.g. the Mainnet Lite unit (scripts/mainnet-lite.ts), a bare account with no contract —
 // is skipped and the response says so: `sync: "skipped"` with `sync_note`. The USDC is on the account either way.
-// The relayer only syncs deposit addresses Plote itself quoted (a row in oneclick_quotes), claimed once in Postgres.
+// The reporter only reports deposit addresses Plote itself quoted (a row in oneclick_quotes), claimed once in Postgres.
+// A report whose outcome is unknown (timeout, network) is not retried; it is logged (plote:report-deposit-uncertain)
+// and posted to ALERT_WEBHOOK_URL for an operator.
 // On SUCCESS it also copies the quote's chip_name / chip_note to the family wall (chipins), once per deposit address.
 // Testnet builds (no NEAR Intents) only answer for deposit addresses Plote quoted (the Mainnet Lite unit); anything
 // else gets ONECLICK_MAINNET_ONLY instead of being proxied.
@@ -14,7 +17,8 @@ import { estate as E } from "@/lib/estate";
 import { clientIp, jsonError, ok } from "@/lib/server/http";
 import { oneclickChipin, oneclickFetch, oneclickMainnetOnly } from "@/lib/server/oneclick-server";
 import { markOnce, rateLimitShared } from "@/lib/server/rate-limit";
-import { callAsRelayer, isAllowedReceiver, relayerCredentials } from "@/lib/server/relayer";
+import { callAsReporter, isAllowedReceiver, reporterCredentials } from "@/lib/server/relayer";
+import { alert, logError } from "@/lib/server/alert";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import type { StatusResponse } from "@/lib/oneclick";
 
@@ -35,10 +39,14 @@ export async function GET(req: Request) {
   try {
     r = await oneclickFetch(`/status?depositAddress=${encodeURIComponent(dep)}`);
   } catch (e) {
-    return jsonError("ONECLICK_UNAVAILABLE", e instanceof Error ? e.message : "1Click unreachable", 503);
+    logError("plote:oneclick-status-unreachable", e);
+    return jsonError("ONECLICK_UNAVAILABLE", "Couldn't reach NEAR Intents (1Click). Try again in a minute.", 503);
   }
   const j = (await r.json().catch(() => ({}))) as StatusResponse & { message?: string };
-  if (!r.ok) return jsonError("ONECLICK_STATUS_FAILED", j.message ?? `1Click returned HTTP ${r.status}.`, r.status === 404 ? 404 : 502);
+  if (!r.ok) {
+    if (r.status !== 404) logError("plote:oneclick-status-failed", `HTTP ${r.status}`);
+    return jsonError("ONECLICK_STATUS_FAILED", r.status === 404 ? "NEAR Intents (1Click) doesn't know this deposit address." : "NEAR Intents (1Click) couldn't report this payment's status. Try again in a minute.", r.status === 404 ? 404 : 502);
+  }
 
   let synced = !!row?.synced;
   if (sb && row) await sb.from(TABLES.oneclickQuotes).update({ status: j.status, updated_at: new Date().toISOString() }).eq("deposit_address", dep);
@@ -52,8 +60,8 @@ export async function GET(req: Request) {
       // Not a unit of a configured estate on this network (Mainnet Lite's unit has no contract): nothing to sync.
       sync = "skipped";
       syncNote = `${recipient} isn't a unit of an estate configured on ${NETWORK}, so there is no estate to sync; the USDC stays on that account.`;
-    } else if (!relayerCredentials()) {
-      syncNote = "The relayer isn't configured here, and only the estate's deposit reporter (the relayer) can credit a 1Click payment.";
+    } else if (!reporterCredentials()) {
+      syncNote = "The deposit reporter isn't configured here, and only the estate's deposit reporter can credit a 1Click payment.";
     } else if (!sb || !row) {
       syncNote = "This payment wasn't quoted through Plote, so the relayer doesn't report it; the USDC stays on the unit until the estate's deposit reporter credits it.";
     } else if (!markOnce(`sync:${dep}`, 60_000)) {
@@ -70,7 +78,7 @@ export async function GET(req: Request) {
           const amount = String(j.swapDetails?.amountOut ?? j.quoteResponse?.quote?.amountOut ?? "");
           if (!/^[1-9][0-9]{0,30}$/.test(amount)) throw new Error("1Click status has no delivered amount");
           const dot = recipient.indexOf(".");
-          await callAsRelayer(E.reportDeposit(recipient.slice(dot + 1), recipient.slice(0, dot), amount)); // throws on a failed transaction
+          await callAsReporter(E.reportDeposit(recipient.slice(dot + 1), recipient.slice(0, dot), amount)); // throws on a failed transaction
           synced = true;
           sync = "done";
         } catch (e) {
@@ -85,8 +93,9 @@ export async function GET(req: Request) {
             syncNote = `report_deposit for ${recipient} was refused (${e.code}); a later poll retries it.`;
           } else {
             sync = "pending";
-            syncNote = `report_deposit for ${recipient} didn't confirm (${e instanceof Error ? e.message.slice(0, 120) : "unknown error"}); it isn't retried automatically, so an operator should check the unit's paid amount before reporting again.`;
-            console.warn("plote:report-deposit-uncertain", JSON.stringify({ deposit: dep, unit: recipient }));
+            syncNote = `report_deposit for ${recipient} didn't confirm; it isn't retried automatically, so an operator checks the unit's paid amount before reporting again.`;
+            logError("plote:report-deposit-uncertain", e, { deposit: dep, unit: recipient });
+            await alert(`Plote (${NETWORK}): report_deposit for ${recipient} (1Click deposit ${dep}) didn't confirm. It is NOT retried automatically: check the unit's paid amount on-chain before reporting again.`);
           }
         }
       } else {

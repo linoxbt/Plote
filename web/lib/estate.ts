@@ -2,10 +2,14 @@
 // Views return promises (via the cached RPC view). Change methods return a TxSpec that the caller
 // sends through the wallet (`sendTx`), the login key (`callNoPopup`) or the relayer (surveyor phone).
 
-import { fnCall, ONE_YOCTO, view, ZERO, type TxSpec } from "./near";
+import { z } from "zod";
+import { fnCall, ONE_YOCTO, view, viewChecked, ZERO, type TxSpec } from "./near";
 import { nearToYocto } from "./format";
+import {
+  CaptureViewSchema, EstateViewSchema, EvidenceViewSchema, MilestoneViewSchema, PendingLienSchema, ProposalViewSchema, TakenViewSchema, UnitViewSchema,
+} from "./schemas";
 import type {
-  CaptureView, DevStats, EstateView, EvidenceView, MilestoneView, NftContractMetadata, NftToken,
+  CaptureView, DevStats, EstateView, EvidenceView, MilestoneView, NftContractMetadata, NftToken, PendingLien,
   ProposalKind, ProposalView, TakenView, U128, U64, UnitInput, UnitView, Verdict, VerifierSource,
 } from "./types";
 
@@ -36,6 +40,7 @@ export const GAS = {
   finish_recovery: 15,
   cancel_recovery: 10,
   set_lien: 10,
+  accept_lien: 10,
   clear_lien: 10,
   open_capture: 15,
   submit_evidence: 300,
@@ -43,8 +48,8 @@ export const GAS = {
   qs_sign: 15,
   claim_release: 300,
   withdraw_owed: 50,
-  propose: 15,
-  vote: 30,
+  propose: 100, // checks the quorum over every unit
+  vote: 100, // walks the caller's eligible tokens (≤ 50 per call) and re-counts distinct holders
   expire_proposal: 15,
   nft_transfer: 30,
   nft_approve: 30,
@@ -91,12 +96,15 @@ export const estate = {
   nftMetadata: (e: string) => view<NftContractMetadata>(e, "nft_metadata"),
   nftIsApproved: (e: string, token_id: string, approved_account_id: string, approval_id?: number) =>
     view<boolean>(e, "nft_is_approved", { token_id, approved_account_id, approval_id }),
+  /** A lien the holder set that its lender hasn't accepted yet, or null. */
+  getPendingLien: (e: string, unit_id: string) => viewChecked<PendingLien | null>(e, "get_pending_lien", { unit_id }, PendingLienSchema.nullable()),
 
   // ---------------- change methods (INTERFACE §1.2) ----------------
   addUnits: (e: string, units: UnitInput[]): TxSpec =>
     fnCall(e, "add_units", { units }, Math.min(300, 30 * Math.max(1, units.length)), (BigInt(ADD_UNIT_DEPOSIT_EACH) * BigInt(units.length)).toString()),
   fundVerification: (e: string, yocto: string): TxSpec => fnCall(e, "fund_verification", {}, GAS.fund_verification, yocto),
-  setVerifier: (e: string, verifier: VerifierSource): TxSpec => fnCall(e, "set_verifier", { verifier }, GAS.set_verifier),
+  /** Developer: repoint the verifier (before the first sale; any time on the playground). 1 yocto (full-access key). */
+  setVerifier: (e: string, verifier: VerifierSource): TxSpec => fnCall(e, "set_verifier", { verifier }, GAS.set_verifier, ONE_YOCTO),
   /** Developer: correct the NFT `reference` app URL (https, ≤ 200 chars). 1 yocto (full-access key). */
   setAppUrl: (e: string, url: string): TxSpec => fnCall(e, "set_app_url", { url }, GAS.set_app_url, ONE_YOCTO),
   /** Developer: finish a unit whose USDC registration failed; attach ≥ 0.00125 NEAR. */
@@ -133,8 +141,11 @@ export const estate = {
     fnCall(e, "guardian_recover", { unit_id, new_owner }, GAS.guardian_recover, ONE_YOCTO),
   finishRecovery: (e: string, unit_id: string): TxSpec => fnCall(e, "finish_recovery", { unit_id }, GAS.finish_recovery),
   cancelRecovery: (e: string, unit_id: string): TxSpec => fnCall(e, "cancel_recovery", { unit_id }, GAS.cancel_recovery, ONE_YOCTO),
+  /** Holder: name a lender. The lien is PENDING until the lender calls `accept_lien`. */
   setLien: (e: string, unit_id: string, lender: string, cap: U128): TxSpec =>
     fnCall(e, "set_lien", { unit_id, lender, cap }, GAS.set_lien, ONE_YOCTO),
+  /** Lender: activate a pending lien naming you. 1 yocto. */
+  acceptLien: (e: string, unit_id: string): TxSpec => fnCall(e, "accept_lien", { unit_id }, GAS.accept_lien, ONE_YOCTO),
   clearLien: (e: string, unit_id: string): TxSpec => fnCall(e, "clear_lien", { unit_id }, GAS.clear_lien, ONE_YOCTO),
 
   openCapture: (e: string, milestone: number): TxSpec => fnCall(e, "open_capture", { milestone }, GAS.open_capture),
@@ -183,13 +194,25 @@ export { ZERO };
 /** 0.05 NEAR, kept by the estate (contract `PROPOSAL_DEPOSIT`). */
 export const PROPOSAL_DEPOSIT = "50000000000000000000000";
 
+/**
+ * The main views with a runtime shape check (lib/schemas.ts), for the browser: a contract that answers in an
+ * unexpected shape fails with a clear BAD_VIEW error instead of rendering garbage or building a payment from it.
+ */
+export const checkedViews = {
+  getEstate: (e: string, opts?: { fresh?: boolean }) => viewChecked<EstateView>(e, "get_estate", {}, EstateViewSchema, opts),
+  getUnit: (e: string, unit_id: string, opts?: { fresh?: boolean }) => viewChecked<UnitView | null>(e, "get_unit", { unit_id }, UnitViewSchema.nullable(), opts),
+  listUnits: (e: string, from_index = 0, limit = 100) => viewChecked<UnitView[]>(e, "list_units", { from_index, limit }, z.array(UnitViewSchema)),
+  isTaken: (e: string, unit_id: string) => viewChecked<TakenView>(e, "is_taken", { unit_id }, TakenViewSchema),
+  getMilestones: (e: string, opts?: { fresh?: boolean }) => viewChecked<MilestoneView[]>(e, "get_milestones", {}, z.array(MilestoneViewSchema), opts),
+  getCapture: (e: string, milestone: number, opts?: { fresh?: boolean }) => viewChecked<CaptureView | null>(e, "get_capture", { milestone }, CaptureViewSchema.nullable(), opts),
+  getEvidence: (e: string, id: string, opts?: { fresh?: boolean }) => viewChecked<EvidenceView | null>(e, "get_evidence", { id }, EvidenceViewSchema.nullable(), opts),
+  listEvidence: (e: string, opts: { milestone?: number; from_index?: number; limit?: number } = {}) =>
+    viewChecked<EvidenceView[]>(e, "list_evidence", opts, z.array(EvidenceViewSchema)),
+  getProposal: (e: string, id: string) => viewChecked<ProposalView | null>(e, "get_proposal", { id }, ProposalViewSchema.nullable()),
+  listProposals: (e: string, from_index = 0, limit = 50) => viewChecked<ProposalView[]>(e, "list_proposals", { from_index, limit }, z.array(ProposalViewSchema)),
+};
+
 // ---------------- derived helpers ----------------
-
-export const TAKEN_STATUSES = ["Allocated", "InDefault", "HandedOver"] as const;
-
-export function isTakenStatus(s: string | null | undefined): boolean {
-  return !!s && (TAKEN_STATUSES as readonly string[]).includes(s);
-}
 
 /** Approved milestone count with the veto window passed (what releases count). */
 export function approvedCount(ms: MilestoneView[] | null | undefined): number {

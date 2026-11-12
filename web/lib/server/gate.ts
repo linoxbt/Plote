@@ -1,17 +1,19 @@
 // Server-side gate pass check (SPEC §9.5) for POST /api/gate/verify. Same rules as the guard-phone check in
 // lib/gate.ts, plus a single-use claim of the pass nonce in Postgres (claim_once, migration 0003), so a pass
-// screenshot can't be replayed at a second gate or on a second guard device inside its 60-second life.
+// screenshot can't be replayed at a second gate or on a second guard device inside its 60-second life. The claim fails
+// closed: when Postgres can't answer, verifyGatePassServer throws ReplayCheckUnavailable (the route answers 503)
+// instead of accepting the pass on a per-instance check.
 
 import { estate as E } from "../estate";
 import { estateSlug } from "../estates";
 import { GATE_TTL_MS, decodeGatePass, nonceFromBase64, parseGateMessage } from "../nep413";
 import type { NftToken, UnitView } from "../types";
 import { checkSignatureAndKey, type KeyReader } from "./auth";
-import { claimOnceShared } from "./once";
+import { claimOnceStrict } from "./once";
 import { viewAccessKey } from "../near";
 
 export type GateCheck =
-  | { ok: true; unit: string; label: string; accountId: string; replayCheck: "shared" | "local" }
+  | { ok: true; unit: string; label: string; accountId: string; replayCheck: "shared" }
   | { ok: false; code: string; reason: string; unit?: string };
 
 export type GateDeps = {
@@ -25,13 +27,24 @@ export const gateDeps: GateDeps = {
   readKey: viewAccessKey,
   token: (e, u) => E.nftToken(e, u),
   unit: (e, u) => E.getUnit(e, u),
-  claim: claimOnceShared,
+  claim: async (scope, key, ttlMs) => {
+    const c = await claimOnceStrict(scope, key, ttlMs);
+    return { ok: c.ok, shared: !c.unavailable };
+  },
 };
+
+/** The single-use check couldn't reach Postgres: no pass is accepted until it can. */
+export class ReplayCheckUnavailable extends Error {
+  constructor() {
+    super("replay check unavailable");
+    this.name = "ReplayCheckUnavailable";
+  }
+}
 
 /** The nonce stays claimed a little longer than a pass can be accepted (60 s old, 30 s clock skew). */
 export const GATE_CLAIM_TTL_MS = GATE_TTL_MS + 60_000;
 
-/** Throws only when NEAR can't be reached. */
+/** Throws when NEAR can't be reached, or ReplayCheckUnavailable when the shared nonce claim can't be made. */
 export async function verifyGatePassServer(text: string, estateAccountId: string, deps: GateDeps = gateDeps, now = Date.now()): Promise<GateCheck> {
   const pass = decodeGatePass(text.trim());
   if (!pass) return { ok: false, code: "GATE_BAD_PASS", reason: "This isn't a Plote gate pass." };
@@ -58,6 +71,7 @@ export async function verifyGatePassServer(text: string, estateAccountId: string
   if (!u || u.status !== "HandedOver") return { ok: false, code: "GATE_NOT_HANDED_OVER", reason: `${unit.toUpperCase()} hasn't been handed over yet.`, unit };
   // Last, so a pass that fails a check above isn't burned; the claim is atomic, so only one scan of a pass passes.
   const c = await deps.claim("gate", `${estateAccountId}:${pass.nonce}`, GATE_CLAIM_TTL_MS);
+  if (!c.shared) throw new ReplayCheckUnavailable();
   if (!c.ok) return { ok: false, code: "NONCE_USED", reason: "This pass was already used. Replays are rejected.", unit };
-  return { ok: true, unit, label: u.label, accountId: pass.accountId, replayCheck: c.shared ? "shared" : "local" };
+  return { ok: true, unit, label: u.label, accountId: pass.accountId, replayCheck: "shared" };
 }

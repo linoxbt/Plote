@@ -9,6 +9,7 @@
 
 pub mod errors;
 pub mod events;
+pub mod ext;
 mod milestones;
 mod nft;
 mod payments;
@@ -75,6 +76,21 @@ pub const MAX_VOTE_TOKENS_PER_CALL: usize = 50;
 /// A vote's weight is the token's `min(paid, price)` in whole USDC (rounded up), so `electorate`/`yes`/`no` (u32)
 /// hold up to ~4.29 billion USDC.
 pub const VOTE_WEIGHT_UNIT: u128 = 1_000_000;
+
+/// `on_unit_deposit` within this long after a `report_deposit` credited the same unit accepts the money but doesn't book
+/// it (finding 14): the report's balance reads may already have counted it. The reporter books it with another report.
+pub const REPORT_SETTLE_NS: u64 = 5 * 60_000_000_000;
+/// `request_surplus_booking` → `finalize_surplus_booking` delay (finding 7).
+pub const SURPLUS_DELAY_NS: u64 = 7 * ONE_DAY_NS;
+/// Playground: evidence submissions per account per rolling hour (the surveyor is exempt; finding 9).
+pub const PLAYGROUND_SUBMITS_PER_HOUR: usize = 5;
+/// Playground: `playground_reset` by anyone but the developer / surveyor at most this often (finding 9).
+pub const PLAYGROUND_RESET_INTERVAL_NS: u64 = 10 * 60_000_000_000;
+/// How long an `nft_transfer_call` blocks the token's money and vote methods if its resolve callback never runs.
+pub const NFT_PENDING_MAX_NS: u64 = 10 * 60_000_000_000;
+/// The pre-hardening verifier the live testnet estates are pinned to: it doesn't echo `evidence_id`/`sha256`, so its
+/// verdicts may pass without them. Any other pin needs both (finding 3); `repin_verifier` moves an estate off it.
+pub const LEGACY_VERIFIER: &str = "31c7225df81449c11bac1ae31b00fbfcc353a64a2f1aed4b0ce9c90e1dd818f8";
 
 pub const GAS_UNIT_INIT: Gas = Gas::from_tgas(5);
 pub const GAS_USDC_REGISTER: Gas = Gas::from_tgas(5);
@@ -198,6 +214,7 @@ impl Estate {
             "E_BAD_ARGS",
             "bps out of range"
         );
+        assert_trust_anchors(&params, &outlayer_id);
         let sum: u32 =
             milestones.iter().map(|m| m.bps as u32).sum::<u32>() + params.mobilisation_bps as u32;
         ensure!(
@@ -228,6 +245,7 @@ impl Estate {
         assert_safe_checks(&params, &geofence, &verifier);
         assert_safe_params(&params);
         assert_app_url(&app_url);
+        ext::set(ext::K_VERSION, &ext::STATE_VERSION);
 
         Self {
             developer_id,
@@ -286,6 +304,50 @@ impl Estate {
 /// Did the promise result at `i` succeed? (Payload ignored.)
 pub(crate) fn result_ok(i: u64) -> bool {
     env::promise_results_count() > i && env::promise_result_checked(i, 64 * 1024).is_ok()
+}
+
+/// The OutLayer contract a real estate may call (audit round 4, finding 3): `outlayer.testnet` for an estate on a
+/// `.testnet` account, `outlayer.near` for any other (mainnet). A free `outlayer_id` let a deployer point the estate at
+/// a mock that passes everything.
+pub(crate) fn expected_outlayer(estate: &AccountId) -> &'static str {
+    if is_testnet_account(estate) {
+        "outlayer.testnet"
+    } else {
+        "outlayer.near"
+    }
+}
+
+/// `new` only (audit round 4, findings 2d and 3): the playground switch exists only on testnet; outside it the OutLayer
+/// account is the real one, a token costs at least 10% of its price (`min_initial_bps ≥ 1000`, so vote weight and the
+/// distinct-holder rule can't be farmed with 1-base-unit tokens) and a default costs at least 3% (`penalty_bps ≥ 300`).
+/// Live estates were initialised before these rules; nothing re-checks them on upgrade.
+pub(crate) fn assert_trust_anchors(params: &Params, outlayer_id: &AccountId) {
+    let me = env::current_account_id();
+    if params.playground {
+        ensure!(
+            is_testnet_account(&me),
+            "E_BAD_ARGS",
+            "playground estates exist only on testnet (.testnet accounts)"
+        );
+        return;
+    }
+    let want = expected_outlayer(&me);
+    ensure!(
+        outlayer_id.as_str() == want,
+        "E_BAD_ARGS",
+        "outlayer_id must be {} for this estate",
+        want
+    );
+    ensure!(
+        params.min_initial_bps >= 1_000,
+        "E_BAD_ARGS",
+        "min_initial_bps must be at least 1000 (10%) outside the playground"
+    );
+    ensure!(
+        params.penalty_bps >= 300,
+        "E_BAD_ARGS",
+        "penalty_bps must be at least 300 (3%) outside the playground"
+    );
 }
 
 /// Outside the playground, the photo checks can't be configured away (pre-audit review H2/M3): a real geofence, a
@@ -468,7 +530,9 @@ impl Estate {
         (0..self.milestones.len()).any(|i| self.milestone_missed(i, now))
     }
 
-    /// Basis points whose release is unlocked: mobilisation + every approved milestone whose veto window passed.
+    /// Basis points whose release is unlocked: mobilisation + the approved milestones whose veto window passed, **in
+    /// stage order** (audit round 4, finding 1): counting stops at the first milestone that isn't, so a later stage
+    /// signed while an earlier one was vetoed (or approved out of order before this rule) unlocks nothing.
     pub(crate) fn approved_bps(&self, now: u64) -> u128 {
         let mut bps = self.params.mobilisation_bps as u128;
         for m in &self.milestones {
@@ -476,6 +540,8 @@ impl Estate {
                 && m.veto_until.map(|v| now >= v).unwrap_or(false)
             {
                 bps += m.bps as u128;
+            } else {
+                break;
             }
         }
         bps
@@ -492,9 +558,18 @@ impl Estate {
         if !unit.status.has_token() || !unit.ready {
             return 0;
         }
-        let base = unit.paid.min(unit.price);
+        // Net equity (audit round 4, finding 5): a partial (lien-first) refund lowers what can ever be released, and
+        // a release never asks for more than the unit holds by the books, so `claim_release` can't fail forever.
+        let base = Self::net_paid(unit).min(unit.price);
         let cap = base.saturating_mul(self.approved_bps(now)) / BPS;
-        cap.saturating_sub(unit.released)
+        cap.saturating_sub(unit.released).min(self.refundable(unit))
+    }
+
+    /// What the holder has put into the unit and not taken back: `paid − refunded_out`. Refunds (lien-first ones
+    /// included) lower it at once; an excess withdrawal only takes money above the price, so `min(net_paid, price)` is
+    /// unchanged by it. Used for vote weight, releases, `is_taken` and the NFT.
+    pub(crate) fn net_paid(unit: &Unit) -> u128 {
+        unit.paid.saturating_sub(unit.refunded_out)
     }
 
     pub(crate) fn refundable(&self, unit: &Unit) -> u128 {
