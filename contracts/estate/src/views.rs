@@ -152,7 +152,7 @@ pub struct ProposalView {
     pub yes: u32,
     pub no: u32,
     pub voted: Vec<String>,
-    /// true: `electorate`/`yes`/`no` are vote weights in whole USDC (`min(paid, price)` per token); false: a proposal
+    /// true: `electorate`/`yes`/`no` are vote weights in whole USDC (net equity `min(paid − refunded_out, price)` per token, capped at its weight when the proposal opened); false: a proposal
     /// opened before weighted voting, counted per token.
     pub weighted: bool,
     /// Distinct current holders of the tokens eligible for this proposal, and those of them whose tokens voted yes /

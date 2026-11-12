@@ -1,14 +1,14 @@
-//! Holder votes (SPEC §8): each allocation token votes once, recorded per token, weighted by the money it has at stake
-//! (`min(paid, price)` at vote time, in whole USDC). A proposal executes on a majority of `electorate`, the weight of
-//! the tokens allocated when it opened (fixed at creation), and — for every kind but `Veto` — also on a strict majority
-//! of the distinct holders of those tokens (final review: flash-weight capture).
+//! Holder votes (SPEC §8): each allocation token votes once, recorded per token, weighted by the money it has at stake:
+//! its net equity `min(paid − refunded_out, price)` in whole USDC, but never more than it weighed when the proposal
+//! opened (audit round 4: copy-on-write weight history, `note_weight_change`). A proposal executes on a majority of
+//! `electorate`, the weight of the tokens allocated when it opened (fixed at creation), and — for every kind but
+//! `Veto` — also on a strict majority of the distinct holders of those tokens (final review: flash-weight capture).
 //!
-//! Why both: there is no per-token weight snapshot in state, so a holder can top a unit up right before voting (and
-//! refund it after). The weight majority alone would let one such holder pass a `StepIn` / `ReplaceSurveyor` /
-//! `Freeze` against everyone else. The distinct-holder majority is the binding safeguard: one account can never pass
-//! a money-moving or estate-stopping vote alone while others hold eligible tokens; it would need tokens in other
-//! hands (each one a real purchase). `Veto` stays fast and weight-only: it fits inside the veto window and only sends a
-//! milestone back for new evidence.
+//! Why both: the distinct-holder majority means one account can never pass a money-moving or estate-stopping vote alone
+//! while others hold eligible tokens; the weight majority (net equity, capped at creation; tokens cost ≥ 10% of their
+//! price on new estates) means sybil accounts holding cheap tokens can't out-vote the money. A top-up after a proposal
+//! opened adds nothing to it and a refund lowers a token's weight at once. `Veto` stays fast and weight-only: it fits
+//! inside the veto window and only sends a milestone back for new evidence.
 
 use crate::events::emit;
 use crate::*;
@@ -243,7 +243,7 @@ impl Estate {
     }
 
     /// Votes with every token the caller holds that was allocated before the proposal opened and hasn't voted on it
-    /// yet (whoever held it then), up to `MAX_VOTE_TOKENS_PER_CALL` per call, each weighted by `min(paid, price)` now.
+    /// yet (whoever held it then), up to `MAX_VOTE_TOKENS_PER_CALL` per call, each weighted by `weight_for` (net equity now, capped at its weight when `p` opened).
     pub fn vote(&mut self, proposal_id: U64, approve: bool) {
         let caller = env::predecessor_account_id();
         let now = Self::now();

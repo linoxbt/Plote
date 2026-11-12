@@ -73,7 +73,7 @@ pub const STALE_CHECK_NS: u64 = ONE_HOUR_NS;
 pub const MAX_APP_URL_LEN: usize = 200;
 /// Tokens counted per `vote` call (bounds `voted.contains` and the unit reads); a holder with more calls again.
 pub const MAX_VOTE_TOKENS_PER_CALL: usize = 50;
-/// A vote's weight is the token's `min(paid, price)` in whole USDC (rounded up), so `electorate`/`yes`/`no` (u32)
+/// A vote's weight is the token's net equity `min(paid − refunded_out, price)` in whole USDC (rounded up), so `electorate`/`yes`/`no` (u32)
 /// hold up to ~4.29 billion USDC.
 pub const VOTE_WEIGHT_UNIT: u128 = 1_000_000;
 

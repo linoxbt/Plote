@@ -210,6 +210,16 @@ pending `ft_transfer_call` sees money that may leave):
   (a pending `ft_transfer_call` spanning both reads that is later refunded), so the role must be a Plote-controlled
   account. It cannot create money that never reached the unit.
 - **`sync`** (and `unit.sync_deposits`, which calls it) is a public check only.
+- **Report / `ft_transfer_call` overlap** (audit round 4, finding 14): USDC credits the unit before `on_unit_deposit`
+  runs, so a report that finishes in between may already have booked that money (e.g. a retried report). Each report
+  that credits a unit remembers when and how much surplus its reads saw and left unbooked (`spare`). For 5 minutes
+  (`REPORT_SETTLE_NS`) after it, an `on_unit_deposit` of at most `spare` is booked normally (and uses that much up); a
+  larger one is accepted (`"0"`, the money stays on the unit) but **not booked**, event
+  `deposit_deferred {unit_id, sender_id, amount}`. The app server then books it with `report_deposit({unit_id, amount})`
+  (two reads; it can never be booked twice). The unit contract can't signal earlier (its code is a global contract
+  fixed by hash), so this is the estate-side guard.
+- **Unbooked surplus** (finding 7): USDC on a unit that nobody reported is booked as `unattributed` by
+  `request_surplus_booking` → (7 days) → `finalize_surplus_booking`, then swept (`sweep_unattributed`).
 
 Server call after a 1Click `SUCCESS`: the relayer signs `report_deposit` on the **estate** account (not the unit):
 `{ "unit_id": "<first label of the recipient>", "amount": "<swapDetails.amountOut>" }`, 0 deposit, 100 Tgas; on a failed
@@ -248,8 +258,11 @@ is credited to `owed_of(reserver)` (`withdraw_owed`); the reservation still ends
 | `owed_of` | `{ account_id }` | `U128` |
 | `check_input` | `{ evidence_id: U64 }` | `String \| null` — the exact worker stdin (HTTPS fallback) |
 | `votes_available` | `{ proposal_id: U64, account_id }` | `u32` (tokens that can still vote) |
-| `vote_weight_available` | `{ proposal_id: U64, account_id }` | `u32` (the weight `vote` would cast now, ≤ 50 tokens) |
-| `nft_token`, `nft_tokens`, `nft_tokens_for_owner`, `nft_supply_for_owner`, `nft_total_supply`, `nft_metadata` | standard | standard; `metadata.media` = live SVG data URI |
+| `vote_weight_available` | `{ proposal_id: U64, account_id }` | `u32` (the weight `vote` would cast now, ≤ 50 tokens; `min(now, at creation)` per token; tokens in a pending `nft_transfer_call` excluded) |
+| `get_pending_lien` | `{ unit_id }` | `{ lender: string, cap: U128 } \| null` — a lien offered by the current holder, not accepted yet |
+| `get_surplus_request` | `{ unit_id }` | `{ at: U64, amount: U128, ready_at: U64 } \| null` |
+| `state_version` | — | `u32` (1 = deployed before the marker and not migrated; current 2) |
+| `nft_token`, `nft_tokens`, `nft_tokens_for_owner`, `nft_supply_for_owner`, `nft_total_supply`, `nft_metadata` | standard | standard; `metadata.media` = live SVG data URI. The SVG's "paid" and `metadata.extra.paid` are **net** (`paid − refunded_out`) |
 
 ```ts
 type EstateView = {
@@ -286,17 +299,20 @@ type UnitView = {
   lien: { lender: string; cap: string } | null;
   // computed
   refundable_now: string;    // what refund() would pay right now ("0" if refunds aren't open)
-  releasable_now: string;    // what claim_release would move right now ("0" while frozen or refunds are open)
+  releasable_now: string;    // what claim_release would move right now ("0" while frozen or refunds are open):
+                             // min(min(paid − refunded_out, price) × approved_bps / 10000 − released, paid − released − refunded_out)
   excess_now: string;        // what withdraw_excess would pay (capped at what is still refundable)
   refunds_open: boolean;
   next_due: { due_at: string; cumulative: string; shortfall: string } | null;
-  progress_bps: number;      // approved (veto passed) bps incl. mobilisation
+  progress_bps: number;      // approved (veto passed) bps incl. mobilisation, counted in stage order: stops at the
+                             // first milestone that isn't Approved with its veto window over
   approved_bps: number;      // same as progress_bps (kept for clarity)
 };
 
 type TakenView = {
   exists: boolean; status: UnitStatus | null; holder: string | null;
-  paid: string; released: string; price: string; label: string | null;
+  paid: string;              // net: paid − refunded_out
+  released: string; price: string; label: string | null;
   account: string | null; reserved_until: string | null; allocated_at: string | null;
 };
 
@@ -330,13 +346,15 @@ type EvidenceView = {
   device_gps: [number, number] | null; challenge: string; challenge_opened_at: string;
   submitted_by: string; submitted_at: string;
   status: "Pending" | "Pass" | "Fail" | "Error";
-  verdict: Verdict | null; raw_response_hash: string | null; error: string | null;
+  verdict: Verdict | null;              // also kept on an infrastructure Error (see §1.4 `verdict`)
+  raw_response_hash: string | null; error: string | null;
+  ai_model: string | null;              // the worker's `ai_model`, ≤ 64 chars (stored outside the evidence record)
 };
 
 type ProposalView = {
   id: string; kind: unknown /* ProposalKind */; proposer: string;
   created_at: string; expires_at: string;
-  electorate: number; yes: number; no: number;   // weighted: whole USDC of min(paid, price); else token counts
+  electorate: number; yes: number; no: number;   // weighted: whole USDC of min(paid − refunded_out, price); else token counts
   voted: string[];                               // unit ids that voted
   weighted: boolean;
   holders_eligible: number; holders_yes: number; holders_no: number;   // distinct holders (non-Veto majority rule)
@@ -362,11 +380,29 @@ type DevStats = {
 `frozen {reason, refunds_open}` · `unfrozen {}` · `surveyor_changed {old, new}` · `handed_over {unit_id}` ·
 `proposal_created {proposal_id, kind, proposer, expires_at}` · `voted {proposal_id, voter, approve, tokens, weight}` ·
 `proposal_executed {proposal_id}` · `proposal_rejected {proposal_id}` · `payout_redirected {old, new}` (executed `StepIn`) ·
-`playground_reset {}` · `app_url_changed {old, new}`.
+`playground_reset {}` · `app_url_changed {old, new}` · `verifier_changed {old, new, by: "developer" | "estate"}` ·
+`lien_offered {unit_id, lender, cap}` · `lien_accepted {unit_id, lender, cap}` · `lien_settled {unit_id, lender, amount}`
+(default sale) · `deposit_deferred {unit_id, sender_id, amount}` · `surplus_requested {unit_id, amount, ready_at}` ·
+`surplus_booked {unit_id, amount, unattributed}` · `migrated {from, to}`.
 
 `verdict.reasons` in the `verdict` event is `["worker_error"]` when OutLayer failed or the output was unparsable,
 `["worker_commit_mismatch"]` when the verdict came from another build than the pinned commit, and `["check_timeout"]`
 when `reopen_stale_check` reopened the milestone.
+
+Audit round 4 verdict rules (any verify mode):
+- Every warning starting with `mock` or `ai_mock` (e.g. the outlayer-mock's `mock_verifier`) is added to `reasons`, so
+  the verdict fails.
+- OutLayer mode: a verdict that doesn't echo **both** `evidence_id` and `sha256` gets the reason `verdict_unbound` and
+  can't pass (a mismatching echo is an `Error`, reason `verdict_mismatch`, as before). The pre-hardening build
+  `31c7225…` echoes neither, so estates pinned to it must `repin_verifier` before a check can pass. HTTPS mode:
+  `submit_verdict` refuses a missing/mismatching echo with `E_VERDICT_MISMATCH`.
+- **Infrastructure failures** (finding 10): a verdict whose failing reasons are all in {`ai_unavailable`,
+  `worker_error`, and `challenge_unverified` when `ai_unavailable` is in its reasons or warnings} is stored as
+  `Error` (milestone back to `Open`, the verdict kept), the `verdict` event's reason is the first of them, and in
+  outlayer mode the check's 0.05 NEAR goes back to `verification_budget` (also when the OutLayer call itself failed)
+  and the submitter's playground rate-limit slot is returned. Any other reason makes it a normal `Fail`.
+- Other reasons (`gps_device_missing`, `url_not_allowed`, …) fail as any reason does; warnings such as
+  `gps_exif_only`, `captured_at_mismatch`, `ai_model_mismatch` don't.
 
 ### 1.5 Error codes
 
@@ -376,7 +412,8 @@ E_MILESTONE_STATE E_NOT_VERIFIED E_VETO_WINDOW E_FROZEN E_NO_REFUND_YET E_NOTHIN
 E_UNDERPAID E_IN_FLIGHT E_BUDGET E_BAD_TOKEN E_BPS_SUM E_DEADLINES E_NO_CHALLENGE E_CHALLENGE_EXPIRED
 E_NOTHING_TO_SWEEP E_NO_EXCESS E_NOT_ELIGIBLE E_ALREADY_VOTED E_PROPOSAL_STATE E_PROPOSAL_OPEN E_PLAYGROUND_ONLY
 E_NOT_DUE E_HANDOVER E_RECOVERY E_TOO_MANY E_BAD_ARGS E_NOT_UNIT E_ALREADY_SOLD E_VERIFY_MODE E_NOT_ESTATE E_STORAGE
-E_QUORUM E_STEP_IN E_LATE_CLAIM E_REFUNDS_OPEN E_TOO_MANY_APPROVALS E_CAPTURE_ACTIVE E_CHECK_PENDING`
+E_QUORUM E_STEP_IN E_LATE_CLAIM E_REFUNDS_OPEN E_TOO_MANY_APPROVALS E_CAPTURE_ACTIVE E_CHECK_PENDING
+E_VERDICT_MISMATCH E_TIMELOCK E_RATE_LIMIT E_NFT_PENDING E_NOTHING_OWED`
 
 `E_VERIFY_MODE`: `submit_verdict` on an estate whose `verify_mode` isn't `"https"`. `E_NOT_ESTATE` (plote-unit): a
 caller other than the estate tried to initialise the unit or move its funds. `E_STORAGE` (plote-musdc): the receiver
@@ -391,9 +428,36 @@ reservation ending (a late payment may still land for that reserver).
 closes them). `E_TOO_MANY_APPROVALS`: `nft_approve` for a 17th account. `E_CAPTURE_ACTIVE`: on the playground,
 `open_capture` while another account's capture for that milestone is unexpired. `E_CHECK_PENDING`: `reopen_stale_check`
 less than 1 h after the latest evidence was submitted. `E_ALREADY_VOTED`: every eligible token of the caller already
-voted (`E_NOT_ELIGIBLE` means none was allocated before the proposal opened). `E_BALANCE_PENDING` also means a
+voted (`E_NOT_ELIGIBLE` means none of the caller's tokens was allocated before the proposal opened). `E_BALANCE_PENDING` also means a
 `report_deposit` saw the unit's books change between its balance reads (nothing credited; report again).
 `E_NOT_RELAYER` also covers `report_deposit` from anyone but the deposit reporter.
+
+Audit round 4: `E_VERDICT_MISMATCH`: `submit_verdict` whose verdict doesn't echo the evidence id and its committed
+sha256. `E_TIMELOCK`: `finalize_surplus_booking` before its 7-day delay. `E_RATE_LIMIT`: on the playground, a 6th
+`submit_evidence` by one account within an hour, or a `playground_reset` by a non-developer/surveyor within 10 min of the
+last one. `E_NFT_PENDING`: a money, vote or transfer method on a token whose `nft_transfer_call` hasn't resolved.
+`E_NOTHING_OWED`: `withdraw_owed` with nothing owed. Reused codes: `E_MILESTONE_STATE` also means the previous milestone
+isn't Approved yet (stage order); `E_NOT_ESTATE` also covers `repin_verifier` from any account but the estate itself;
+`E_NOT_DEVELOPER` also covers the surplus-booking methods (developer or `recovery_id`); `E_LIEN` / `E_NOT_LENDER` cover
+`accept_lien`; `E_CHECK_PENDING` / `E_CAPTURE_ACTIVE` also cover `playground_reset`.
+
+### 1.6 Upgrades and state layout (audit round 4, finding 11)
+
+Live estates are upgraded in place, so the borsh layout of the root `Estate` and of everything stored in it (`Unit`,
+`Milestone`, `Proposal`, `Evidence`, `Verdict`, `Params`, …) never changes; an enum may only gain variants at the end
+(a unit test, `layout::r4_stored_layout_unchanged`, reads current bytes with verbatim copies of the deployed types).
+New state lives under raw storage keys starting with `z` (the original collections use one-byte prefixes `0x00..0x07`):
+`zv` state version, `zx` latest proposal expiry, `zs` per-unit weight history, `zl` pending liens, `zu` surplus
+requests, `zr` playground submissions, `zt` last playground reset, `zn` pending `nft_transfer_call`s, `zw` last
+crediting report per unit, `zm` `ai_model` per evidence. Upgrade procedure: deploy the new code, then call `migrate`
+from the estate account (it can be the second action of the same transaction); `state_version` then reads 2. A future
+change that does need a new root layout would add a `#[private] #[init(ignore_state)]` migration that reads the old
+struct; `migrate` is where the stored version is dispatched on.
+
+Storage (finding 13): holder setters (`set_guardians` ≤ 3, `set_beneficiary` 1, `set_lien` one pending offer per unit,
+`list_for_sale` one listing, `vote` entries inside a proposal paid for by `PROPOSAL_DEPOSIT`) take no storage deposit;
+each is bounded per unit and paid by the estate's balance. New per-unit/per-account keys are bounded too (weight history
+≤ 8 entries, playground submissions ≤ 5 timestamps).
 
 ---
 
@@ -417,7 +481,9 @@ receiver if needed when ≥ 0.00125 NEAR is attached. Name "Plote test USDC", sy
 ## 4. Verifier worker stdin / stdout
 
 See SPEC §6.3. stdin adds `"playground": bool`, `"challenge": "K7RQ4M"`, `"challenge_opened_at": U64-as-number`.
-stdout (one line JSON): `Verdict` fields above **minus** `source`, plus `evidence_id`. Numbers for `exif_time` may be
+stdout (one line JSON): `Verdict` fields above **minus** `source`, plus `evidence_id`, `sha256` (the committed hash,
+lowercase, whenever bytes were fetched; `null` otherwise) and `ai_model` (`string | null`). The estate requires the
+`evidence_id`/`sha256` echo for a pass (§1.4) and ignores fields it doesn't know. Numbers for `exif_time` may be
 numbers or strings; the estate accepts both. `ai_observations` is the model's `observations` list (strings only, ≤ 4).
 
 Run modes (SPEC 6.1): `demo_mode` turns `ai_unavailable` into a warning; `playground` turns `ai_stage_mismatch`,
