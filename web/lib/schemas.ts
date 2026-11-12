@@ -152,6 +152,7 @@ export const EvidenceViewSchema = z.looseObject({
   verdict: VerdictSchema.nullable(),
   raw_response_hash: nstr,
   error: nstr,
+  ai_model: nstr.optional(),
 });
 
 export const ProposalViewSchema = z.looseObject({
@@ -170,5 +171,7 @@ export const ProposalViewSchema = z.looseObject({
   holders_no: num,
   status: z.enum(["Open", "Executed", "Rejected", "Expired"]),
 });
+
+export const SurplusRequestSchema = z.looseObject({ at: amount, amount, ready_at: amount });
 
 export const PendingLienSchema = z.looseObject({ lender: str, cap: amount });

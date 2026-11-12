@@ -48,8 +48,9 @@ export function VotesClient({ slug }: { slug: string }) {
       <div className="mb-6 space-y-2">
         <h2 className="text-2xl font-normal">Holder votes</h2>
         <p className="max-w-2xl text-sm text-muted">
-          Each allocation token allocated before a proposal opened votes once, cast by whoever holds it, weighted by the USDC paid into its unit (net of
-          refunds, in whole USDC, up to the price), and the total weight is fixed when the proposal opens. A veto passes when yes is more than half of
+          Each allocation token allocated before a proposal opened votes once, cast by whoever holds it, weighted by its net equity, min(paid − refunded,
+          price) in whole USDC, and never more than it weighed when the proposal opened (a top-up afterwards adds nothing). The total weight is fixed
+          when the proposal opens. A veto passes when yes is more than half of
           that weight. Every other kind also needs a majority of the distinct holders, and enough units sold to reach the quorum (at least 3 tokens and
           a quarter of the units). Opening a proposal costs a 0.05 NEAR deposit, kept by the estate.
         </p>
@@ -144,7 +145,7 @@ function ProposalCard({ estate, p, ms }: { estate: string; p: ProposalView; ms?:
           </p>
         ) : null}
         <p className="mono text-xs text-muted">
-          {p.weighted ? "USDC-weighted: each token counts the whole USDC paid into its unit, net of refunds, up to the price." : "One vote per token (opened before weighted votes)."}
+          {p.weighted ? "USDC-weighted: each token counts min(paid − refunded, price) in whole USDC, never more than it weighed when this proposal opened." : "One vote per token (opened before weighted votes)."}
           {holdersRule ? " It also needs a majority of distinct holders, so one large holder can't pass it alone." : ""}
         </p>
         <details className="text-xs text-muted">

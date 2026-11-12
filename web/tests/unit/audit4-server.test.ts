@@ -6,7 +6,7 @@ import { resolveAppUrl } from "@/lib/config";
 import { cleanupDeletes, parseMaxGasTgas } from "@/lib/server/env";
 import { pollerFreshness, publicView } from "@/lib/server/health";
 import { relayerCredentials, reporterCredentials } from "@/lib/server/relayer";
-import { dedupeByEmail, newHolder, runFollowUps } from "@/lib/server/follow-ups";
+import { DEFERRED_PER_RUN, dedupeByEmail, deferredDeposit, newHolder, runFollowUps } from "@/lib/server/follow-ups";
 import { verifyGatePassServer, ReplayCheckUnavailable, type GateDeps } from "@/lib/server/gate";
 import { redact } from "@/lib/server/alert";
 import { KeyPair } from "near-api-js";
@@ -142,6 +142,8 @@ describe("poller: one row per real event", () => {
     const rows = receiptEvents(ESTATE, ref, out);
     expect(rows.map((r) => [r.unit, r.data_index, r.data.token_ids])).toEqual([["a-1", 0, ["a-1"]], ["a-2", 1, ["a-2"]]]);
     expect(rows.every((r) => r.notified_at === null)).toBe(true); // transfers clean up subscriptions
+    const deferred = receiptEvents(ESTATE, ref, { id: "R1", executor: ESTATE, success: true, logs: [ev("deposit_deferred", { unit_id: "a-1", sender_id: "x", amount: "5" })] });
+    expect(deferred[0]).toMatchObject({ unit: "a-1", notified_at: null }); // booked by the follow-ups
   });
   it("the in-memory store dedupes on (tx, receipt, log, data index) only", async () => {
     const mem = memoryStore();
@@ -230,7 +232,51 @@ describe("follow-ups: emails and subscription clean-up from pending rows", () =>
     expect(events[0].notified_at).toBeNull(); // retried next run
   });
 
+  it("books a deferred deposit with report_deposit, retries a failure, and never closes it as stale", async () => {
+    const old = new Date(now - 10 * 86_400_000).toISOString();
+    const events: Row[] = [
+      { id: 1, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_deferred", data: { unit_id: "a-1", sender_id: "x.testnet", amount: "2500000" }, block_time: old, notified_at: null },
+      { id: 2, network: "testnet", estate: ESTATE, unit: "a-2", event: "deposit_deferred", data: { unit_id: "a-2", sender_id: "x.testnet", amount: "100" }, block_time: recent, notified_at: null },
+    ];
+    let failA2 = true;
+    const report = vi.fn(async (_e: string, unit: string) => {
+      if (unit === "a-2" && failA2) throw new Error("E_BALANCE_PENDING: books changed");
+    });
+    const r1 = await runFollowUps(fakeDb(events, []), { now, report, reporterReady: true });
+    expect(report).toHaveBeenCalledWith(ESTATE, "a-1", "2500000");
+    expect(r1).toMatchObject({ stale: 0, depositsReported: 1 });
+    expect(r1.depositErrors).toHaveLength(1);
+    expect(events[0].notified_at).not.toBeNull(); // booked, done
+    expect(events[1].notified_at).toBeNull(); // failed: still pending
+    failA2 = false;
+    const r2 = await runFollowUps(fakeDb(events, []), { now, report, reporterReady: true });
+    expect(r2.depositsReported).toBe(1);
+    expect(report).toHaveBeenCalledTimes(3); // a-1 once, a-2 twice; nothing reported again once done
+    await runFollowUps(fakeDb(events, []), { now, report, reporterReady: true });
+    expect(report).toHaveBeenCalledTimes(3);
+  });
+
+  it("leaves deferred deposits pending (and says so) without a reporter key", async () => {
+    const events: Row[] = [{ id: 1, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_deferred", data: { unit_id: "a-1", amount: "5" }, block_time: recent, notified_at: null }];
+    const report = vi.fn(async () => undefined);
+    const r = await runFollowUps(fakeDb(events, []), { now, report, reporterReady: false });
+    expect(report).not.toHaveBeenCalled();
+    expect(events[0].notified_at).toBeNull();
+    expect(r.depositErrors[0]).toContain("reporter key");
+  });
+
+  it("caps report_deposit transactions per run", async () => {
+    const events: Row[] = Array.from({ length: DEFERRED_PER_RUN + 2 }, (_, i) => ({ id: i + 1, network: "testnet", estate: ESTATE, unit: `a-${i}`, event: "deposit_deferred", data: { unit_id: `a-${i}`, amount: "1" }, block_time: recent, notified_at: null }));
+    const report = vi.fn(async () => undefined);
+    await runFollowUps(fakeDb(events, []), { now, report, reporterReady: true });
+    expect(report).toHaveBeenCalledTimes(DEFERRED_PER_RUN);
+    expect(events.filter((e) => e.notified_at === null)).toHaveLength(2);
+  });
+
   it("helpers", () => {
+    expect(deferredDeposit({ unit: null, data: { unit_id: "a-1", amount: "10" } })).toEqual({ unit: "a-1", amount: "10" });
+    expect(deferredDeposit({ unit: "a-1", data: { amount: "0" } })).toBeNull();
+    expect(deferredDeposit({ unit: "a-1", data: { amount: "1e6" } })).toBeNull();
     expect(dedupeByEmail([{ account: "a", unit: "1", email: "X@y" }, { account: "a", unit: "2", email: "x@y " }]).map((s) => s.unit)).toEqual(["1"]);
     expect(newHolder({ event: "sold", data: { to: "b" } })).toBe("b");
     expect(newHolder({ event: "nft_transfer", data: { new_owner_id: "c" } })).toBe("c");

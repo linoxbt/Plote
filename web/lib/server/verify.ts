@@ -10,12 +10,48 @@ export function relayAllowed(verifyMode: string | null | undefined): boolean {
   return verifyMode === "https";
 }
 
+/**
+ * JSON.parse that keeps large integers exact: an integer literal of 16+ digits outside a string (the worker's
+ * `exif_time` in ns is above 2^53) becomes a string of the same digits. The estate accepts `exif_time` as a number or
+ * a string, so the verdict reaches it unchanged in value.
+ */
+export function parseJsonExact(text: string): unknown {
+  let out = "";
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      out += c;
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      out += c;
+      continue;
+    }
+    if (c === "-" || (c >= "0" && c <= "9")) {
+      let j = i + 1;
+      while (j < text.length && /[0-9.eE+-]/.test(text[j])) j++;
+      const tok = text.slice(i, j);
+      out += /^-?\d{16,}$/.test(tok) ? `"${tok}"` : tok;
+      i = j - 1;
+      continue;
+    }
+    out += c;
+  }
+  return JSON.parse(out);
+}
+
 /** Find the verdict in whatever OutLayer returns: a bare verdict, a JSON string, or a wrapper. Mirrors the contract. */
 export function extractVerdict(v: unknown, depth = 0): { verdict: WorkerVerdict; attestation: string | null } | null {
   if (depth > 4 || v == null) return null;
   if (typeof v === "string") {
     try {
-      return extractVerdict(JSON.parse(v.trim()), depth + 1);
+      return extractVerdict(parseJsonExact(v.trim()), depth + 1);
     } catch {
       return null;
     }
@@ -40,31 +76,22 @@ function attestationRef(o: Record<string, unknown>): string | null {
   return null;
 }
 
-/** Shape the worker's verdict into the contract's `Verdict` JSON (U64 as string, bounded lists). */
-export function toContractVerdict(v: WorkerVerdict, attestation: string | null): Record<string, unknown> {
-  const str = (x: unknown) => (typeof x === "string" ? x : x == null ? null : String(x));
-  const list = (x: unknown) => (Array.isArray(x) ? x.filter((s) => typeof s === "string").slice(0, 16) : []);
-  const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : null);
-  const gps = Array.isArray(v.gps) && v.gps.length === 2 && v.gps.every((n) => typeof n === "number") ? v.gps : null;
-  return {
-    pass: v.pass,
-    reasons: list(v.reasons),
-    warnings: list(v.warnings),
-    phash: typeof v.phash === "string" ? v.phash : "",
-    nearest_distance: Math.min(255, Math.max(0, num(v.nearest_distance) ?? 64)),
-    exif_time: v.exif_time == null ? null : String(v.exif_time),
-    gps,
-    gps_source: str(v.gps_source),
-    distance_m: num(v.distance_m),
-    ai_stage: str(v.ai_stage),
-    ai_confidence: num(v.ai_confidence),
-    challenge_read: str(v.challenge_read),
-    ai_observations: list(v.ai_observations).slice(0, 4).map((o) => o.slice(0, 160)),
-    ai_chat_id: str(v.ai_chat_id),
-    worker_commit: typeof v.worker_commit === "string" ? v.worker_commit : "unknown",
-    attestation: str(v.attestation) ?? attestation,
-    source: null,
-  };
+/**
+ * submit_verdict's `verdict` (INTERFACE §1.2 `VerdictArg`): the worker's stdout object as is — every Verdict field
+ * plus its `evidence_id` / `sha256` echo and `ai_model`; the estate ignores fields it doesn't know. Only `attestation`
+ * is filled in, from OutLayer's wrapper, when the worker didn't set one.
+ */
+export function toVerdictArg(v: WorkerVerdict, attestation: string | null): Record<string, unknown> {
+  return v.attestation == null && attestation ? { ...v, attestation } : { ...v };
+}
+
+/**
+ * The echo the estate requires (else E_VERDICT_MISMATCH): `evidence_id` equal to this evidence (number or string) and
+ * `sha256` equal to its committed hash, case-insensitive. Checked before paying gas for a transaction that would fail.
+ */
+export function verdictBinds(v: Record<string, unknown>, evidenceId: string, sha256: string): boolean {
+  const id = typeof v.evidence_id === "number" || typeof v.evidence_id === "string" ? String(v.evidence_id) : null;
+  return id === evidenceId && typeof v.sha256 === "string" && v.sha256.toLowerCase() === sha256.toLowerCase();
 }
 
 // ---------------------------------------------------------------------------------------------------------------

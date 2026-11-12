@@ -6,10 +6,10 @@ import { z } from "zod";
 import { fnCall, ONE_YOCTO, view, viewChecked, ZERO, type TxSpec } from "./near";
 import { nearToYocto } from "./format";
 import {
-  CaptureViewSchema, EstateViewSchema, EvidenceViewSchema, MilestoneViewSchema, PendingLienSchema, ProposalViewSchema, TakenViewSchema, UnitViewSchema,
+  CaptureViewSchema, EstateViewSchema, EvidenceViewSchema, MilestoneViewSchema, PendingLienSchema, ProposalViewSchema, SurplusRequestSchema, TakenViewSchema, UnitViewSchema,
 } from "./schemas";
 import type {
-  CaptureView, DevStats, EstateView, EvidenceView, MilestoneView, NftContractMetadata, NftToken, PendingLien,
+  CaptureView, DevStats, EstateView, EvidenceView, MilestoneView, NftContractMetadata, NftToken, PendingLien, SurplusRequest,
   ProposalKind, ProposalView, TakenView, U128, U64, UnitInput, UnitView, Verdict, VerifierSource,
 } from "./types";
 
@@ -39,6 +39,8 @@ export const GAS = {
   guardian_recover: 15,
   finish_recovery: 15,
   cancel_recovery: 10,
+  request_surplus_booking: 50, // one balance read + callback
+  finalize_surplus_booking: 100, // two chained balance reads + callbacks, like report_deposit
   set_lien: 10,
   accept_lien: 10,
   clear_lien: 10,
@@ -97,9 +99,12 @@ export const estate = {
   nftIsApproved: (e: string, token_id: string, approved_account_id: string, approval_id?: number) =>
     view<boolean>(e, "nft_is_approved", { token_id, approved_account_id, approval_id }),
   /** A lien the holder set that its lender hasn't accepted yet, or null. */
+  /** A pending surplus booking for a unit, or null. */
+  getSurplusRequest: (e: string, unit_id: string) => viewChecked<SurplusRequest | null>(e, "get_surplus_request", { unit_id }, SurplusRequestSchema.nullable()),
   getPendingLien: (e: string, unit_id: string) => viewChecked<PendingLien | null>(e, "get_pending_lien", { unit_id }, PendingLienSchema.nullable()),
 
   // ---------------- change methods (INTERFACE §1.2) ----------------
+  /** Developer. Returns nothing: each unit's account is created asynchronously (`UnitView.ready` turns true when done). */
   addUnits: (e: string, units: UnitInput[]): TxSpec =>
     fnCall(e, "add_units", { units }, Math.min(300, 30 * Math.max(1, units.length)), (BigInt(ADD_UNIT_DEPOSIT_EACH) * BigInt(units.length)).toString()),
   fundVerification: (e: string, yocto: string): TxSpec => fnCall(e, "fund_verification", {}, GAS.fund_verification, yocto),
@@ -128,6 +133,10 @@ export const estate = {
   refund: (e: string, unit_id: string): TxSpec => fnCall(e, "refund", { unit_id }, GAS.refund, ONE_YOCTO),
   withdrawExcess: (e: string, unit_id: string): TxSpec => fnCall(e, "withdraw_excess", { unit_id }, GAS.withdraw_excess, ONE_YOCTO),
   sweepUnattributed: (e: string, unit_id: string): TxSpec => fnCall(e, "sweep_unattributed", { unit_id }, GAS.sweep_unattributed),
+  /** Developer or recovery_id: record the unit's unreported USDC surplus (starts the 7-day delay). No deposit. */
+  requestSurplusBooking: (e: string, unit_id: string): TxSpec => fnCall(e, "request_surplus_booking", { unit_id }, GAS.request_surplus_booking),
+  /** Developer or recovery_id, ≥ 7 days after the request: book what is still seen as `unattributed` (E_TIMELOCK before). */
+  finalizeSurplusBooking: (e: string, unit_id: string): TxSpec => fnCall(e, "finalize_surplus_booking", { unit_id }, GAS.finalize_surplus_booking),
   listForSale: (e: string, unit_id: string, ask: U128): TxSpec => fnCall(e, "list_for_sale", { unit_id, ask }, GAS.list_for_sale, ONE_YOCTO),
   cancelListing: (e: string, unit_id: string): TxSpec => fnCall(e, "cancel_listing", { unit_id }, GAS.cancel_listing, ONE_YOCTO),
   declareDefault: (e: string, unit_id: string): TxSpec => fnCall(e, "declare_default", { unit_id }, GAS.declare_default),

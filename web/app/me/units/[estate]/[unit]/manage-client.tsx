@@ -137,7 +137,10 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
   const refundable = toBig(u.refundable_now);
   const nextRefundOpen = (ms.data ?? []).filter((m) => !(m.status === "Approved" && m.veto_passed)).map((m) => m.refunds_open_at).sort()[0];
   const handoverMs = ms.data?.[ms.data.length - 1];
-  const canHandover = u.status === "Allocated" && handoverMs?.status === "Approved" && handoverMs.veto_passed;
+  // handover needs EVERY milestone Approved and the last one's veto window over (contract E_HANDOVER).
+  const allApproved = !!ms.data?.length && ms.data.every((m) => m.status === "Approved");
+  const canHandover = u.status === "Allocated" && allApproved && !!handoverMs?.veto_passed;
+  const handoverWhy = u.status !== "Allocated" || canHandover ? null : !allApproved ? "Handover opens once every stage is approved." : "Handover opens when the last stage's veto window ends.";
   const latestTitle = done > 0 ? ms.data?.[done - 1]?.title : null;
 
   return (
@@ -178,7 +181,12 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
               <PositionCard e={e} u={u} />
               {toBig(u.excess_now) > 0n && isHolder ? <Button onClick={() => exec("Withdraw excess", E.withdrawExcess(account, u.id))}>Withdraw excess <MonoAmount value={u.excess_now} naira={false} /></Button> : null}
               {owed.data && toBig(owed.data) > 0n ? <Button onClick={() => exec("Withdraw owed", E.withdrawOwed(account))}>Withdraw owed <MonoAmount value={owed.data} naira={false} /></Button> : null}
-              {canHandover && isHolder ? <Button variant="accent" onClick={() => exec("Take handover", E.handover(account, u.id), "Handed over. Your token is now your gate pass.")}><DoorOpen className="h-4 w-4" aria-hidden /> Take handover</Button> : null}
+              {isHolder && u.status === "Allocated" && handoverMs?.status === "Approved" ? (
+                <div className="space-y-1">
+                  <Button variant="accent" disabled={!canHandover} onClick={() => exec("Take handover", E.handover(account, u.id), "Handed over. Your token is now your gate pass.")}><DoorOpen className="h-4 w-4" aria-hidden /> Take handover</Button>
+                  {handoverWhy ? <p className="text-xs text-muted">{handoverWhy}</p> : null}
+                </div>
+              ) : null}
               {u.status === "HandedOver" ? <LinkButton href={`/me/units/${s}/${u.id}/pass`} variant="accent"><DoorOpen className="h-4 w-4" aria-hidden /> Gate pass</LinkButton> : null}
             </Section>
 

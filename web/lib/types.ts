@@ -68,6 +68,7 @@ export type UnitView = {
 
 export type TakenView = {
   exists: boolean; status: UnitStatus | null; holder: string | null;
+  /** Net of refunds (paid − refunded_out). */
   paid: string; released: string; price: string; label: string | null;
   account: string | null; reserved_until: string | null; allocated_at: string | null;
 };
@@ -105,7 +106,12 @@ export type EvidenceView = {
   submitted_by: string; submitted_at: string;
   status: EvidenceStatus;
   verdict: Verdict | null; raw_response_hash: string | null; error: string | null;
+  /** The worker's NEAR AI model id (≤ 64 chars), stored beside the evidence. Absent on older estates. */
+  ai_model?: string | null;
 };
+
+/** A pending surplus booking (`get_surplus_request`): finalize from `ready_at` (7 days after `at`). */
+export type SurplusRequest = { at: string; amount: string; ready_at: string };
 
 export type ProposalStatus = "Open" | "Executed" | "Rejected" | "Expired";
 

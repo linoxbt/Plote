@@ -130,7 +130,7 @@ describe("/api/verify", () => {
     h.relayer.mockReset();
     h.views = {
       get_estate: { verify_mode: "https", verdict_relayer: "relayer.plote.testnet" },
-      get_evidence: { status: "Pending" },
+      get_evidence: { status: "Pending", sha256: "ab".repeat(32) },
       check_input: "{\"input\":1}",
     };
   });
@@ -144,7 +144,7 @@ describe("/api/verify", () => {
   });
 
   it("keeps a paid verdict when submit_verdict fails, and a retry submits it without paying OutLayer again", async () => {
-    const outlayer = vi.fn(async () => new Response(JSON.stringify({ output: { pass: true, reasons: [], worker_commit: "abc" } }), { status: 200 }));
+    const outlayer = vi.fn(async () => new Response(JSON.stringify({ output: { pass: true, reasons: [], worker_commit: "abc", evidence_id: 2, sha256: "ab".repeat(32), ai_model: "m" } }), { status: 200 }));
     vi.stubGlobal("fetch", outlayer);
     h.relayer.mockRejectedValueOnce(new Error("relayer: RPC timeout"));
     const r = await post(2);
@@ -160,6 +160,17 @@ describe("/api/verify", () => {
     expect(await again.json()).toMatchObject({ pass: true, reused: true });
     expect(outlayer).toHaveBeenCalledTimes(1); // not paid twice
     expect(h.results.get(`${ESTATE}|2`)).toMatchObject({ submitted_tx: "TX1" });
+    // The verdict went to the estate as the worker's stdout, echo and ai_model included.
+    expect(h.relayer.mock.calls[0][0].actions[0].args.verdict).toMatchObject({ evidence_id: 2, sha256: "ab".repeat(32), ai_model: "m" });
+    vi.unstubAllGlobals();
+  });
+
+  it("never submits a verdict that doesn't echo this evidence (the estate would refuse it)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ output: { pass: true, evidence_id: 99, sha256: "ab".repeat(32) } }), { status: 200 })));
+    const r = await post(3);
+    expect(r.status).toBe(502);
+    expect((await r.json()).code).toBe("VERDICT_MISMATCH");
+    expect(h.relayer).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 });

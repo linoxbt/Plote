@@ -77,6 +77,20 @@ const APP_MESSAGES: Record<string, string> = {
   CONTRACT_NOT_DEPLOYED: "This contract isn't deployed on this network yet.",
   NOT_CONFIGURED: "This feature isn't configured on this deployment.",
   NETWORK_ERROR: "Network error. Try again.",
+  // raised by the web app itself (they usually carry a more specific message)
+  NOT_PLOTE: "This isn't a genuine Plote estate or unit, so Plote won't send it money.",
+  PAYMENT_REFUNDED: "The payment was refused and the USDC came back to your account.",
+  PAYMENT_UNCONFIRMED: "Plote couldn't confirm the payment was accepted. Check the unit page before paying again.",
+  BAD_VIEW: "The contract answered in a shape this site doesn't understand. It may be a different version than this site expects.",
+  APP_KEY_UNSUPPORTED: "This browser can't keep a key that scripts can't read, so your wallet will ask you to approve each action.",
+  APP_KEY_UNUSABLE: "This browser's app key can't send this call, so your wallet will ask instead.",
+  LISTING_BLOCKED: "This listing can't be bought right now.",
+  NOTHING_RELEASED: "Nothing was released: none of these units had money releasable at that moment.",
+  SETUP_PENDING: "The unit still isn't set up. Try again in a minute.",
+  // raised by the app's server routes
+  REPLAY_CHECK_UNAVAILABLE: "The server couldn't check this request for replays right now, so it was refused. Try again in a minute.",
+  QUOTE_NOT_RECORDED: "The payment quote couldn't be recorded, so no deposit address was issued. Try again.",
+  POLL_LOCK_UNAVAILABLE: "Another update run is in progress or the lock couldn't be taken. Try again shortly.",
   UNKNOWN: "Something went wrong.",
 };
 

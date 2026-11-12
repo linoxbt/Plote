@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LogOut, Wallet as WalletIcon } from "lucide-react";
 import { NETWORK } from "@/lib/config";
 import { explainError } from "@/lib/errors";
@@ -40,6 +40,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { push } = useTx();
+  // The signed-in account, readable from the connector's event handlers (its "wallet:signOut" carries no account).
+  const current = useRef<string | null>(null);
+  useEffect(() => {
+    current.current = accountId;
+  }, [accountId]);
 
   /** Accept an account only when it belongs to this build's network; otherwise sign the wallet out again. */
   const adopt = useCallback((id: string | null, name: string | null): boolean => {
@@ -65,6 +70,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           adopt(t.accounts[0]?.accountId ?? null, t.wallet?.manifest?.name ?? null);
         });
         c.on("wallet:signOut", () => {
+          // Signing out from inside the wallet also forgets this browser's app keys for that account.
+          const was = current.current;
+          if (was) void forgetAllAppKeys(was).catch(() => 0);
           if (!alive) return;
           setAccountId(null);
           setWalletName(null);

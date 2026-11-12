@@ -209,10 +209,16 @@ async function secrets(estate: string, slug: string) {
 async function pin(estate: string, developer: string) {
   const verifier = { repo: `project:${PROJECT_ID}`, commit: hash, build_target: "wasm32-wasip2" };
   try {
-    await call(account(developer), estate, "set_verifier", { verifier }, { gas: 30n * TGAS });
+    await call(account(developer), estate, "set_verifier", { verifier }, { gas: 30n * TGAS, deposit: 1n });
     log(`✓ ${estate}: verifier pinned to ${hash.slice(0, 12)}…`);
   } catch (e) {
-    log(`! ${estate}: couldn't pin (${(e as Error).message.slice(0, 120)})`);
+    // After the first sale only the estate account itself may repin (repin_verifier; gone once its keys are deleted).
+    try {
+      await call(account(estate), estate, "repin_verifier", { verifier }, { gas: 30n * TGAS, deposit: 1n });
+      log(`✓ ${estate}: verifier re-pinned by the estate account to ${hash.slice(0, 12)}…`);
+    } catch (e2) {
+      log(`! ${estate}: couldn't pin (${(e as Error).message.slice(0, 100)}; repin: ${(e2 as Error).message.slice(0, 100)})`);
+    }
   }
 }
 

@@ -2,7 +2,8 @@
 // receipt listing (newest first, down to the cursor in poll_cursor, continuing a saved listing first), with logs read
 // over RPC. EVENT_JSON rows go to the `events` cache; processed receipt ids go to poll_receipts (with or without
 // events) so they're never refetched. Then the follow-ups (lib/server/follow-ups.ts): events still marked
-// notified_at null (qs_signed / released emails; sold / nft_transfer removes the old holder's subscriptions), a bounded
+// notified_at null (qs_signed / released emails; sold / nft_transfer removes the old holder's subscriptions;
+// deposit_deferred is booked with report_deposit by the reporter key), a bounded
 // batch per run, so a run that dies after inserting loses no email. Also: fills evidence_files.evidence_id from
 // list_evidence (SPEC §14.2), checks evidence storage (lib/server/storage-cleanup.ts), alerts on low balances.
 // Auth: header `x-cron-secret: $CRON_SECRET` or `$POLL_SECRET`. Scheduled by Supabase pg_cron every 5 minutes
@@ -143,6 +144,7 @@ async function run(sb: SupabaseClient | null, dryRun: boolean, overBudget: () =>
     ...entries.filter(([, r]) => r.skipped).map(([e]) => `${e}: skipped this run (time budget)`),
     ...entries.flatMap(([e, r]) => (r.storage && "error" in r.storage && r.storage.error ? [`${e}: storage check: ${r.storage.error}`] : [])),
     ...(followUps && "error" in followUps ? [`follow-ups (emails): ${followUps.error}`] : []),
+    ...(followUps && "depositErrors" in followUps ? followUps.depositErrors : []),
   ];
   const alerted = problems.length && !dryRun ? await alert(`Plote (${NETWORK}) needs attention:\n- ${problems.join("\n- ")}`) : false;
   if (sb && !dryRun) {

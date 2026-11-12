@@ -11,7 +11,7 @@ import { PloteError } from "./errors";
 import { viewAccount } from "./near";
 
 /** The reproducible build of affdf57 (README "Reproducible build"). New hashes are appended after an upgrade. */
-const DEFAULT_ESTATE_CODE_HASHES = "J31YPbxD3kVvoezwLtMkiMW4FE52r51rRPbamEg9beNX";
+const DEFAULT_ESTATE_CODE_HASHES = "61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD,J31YPbxD3kVvoezwLtMkiMW4FE52r51rRPbamEg9beNX";
 
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
 

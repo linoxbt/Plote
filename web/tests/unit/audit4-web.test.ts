@@ -13,7 +13,8 @@ import { isOptimizableImage, supabaseImagePattern } from "@/lib/images";
 import { accountsTouchedBy, afterOwnTx, callNoPopup, fnCall, isKeyError, KeyUnusableError, parseView, viewFinality, type TxResult, type TxSpec } from "@/lib/near";
 import { pinProblem } from "@/lib/phone-key";
 import { verifierPin } from "@/lib/proof";
-import { MilestoneViewSchema, UnitViewSchema } from "@/lib/schemas";
+import { MilestoneViewSchema, SurplusRequestSchema, UnitViewSchema } from "@/lib/schemas";
+import { messageForCode } from "@/lib/errors";
 import { assertFtCallAccepted, ftCallOutcome } from "@/lib/tx-outcome";
 import type { CaptureView, MilestoneView } from "@/lib/types";
 
@@ -288,5 +289,19 @@ describe("small helpers", () => {
     }
     const m = M(0, "Open");
     expect(parseView({ ...m, extra: 1 }, MilestoneViewSchema, "x")).toMatchObject({ extra: 1, late: false });
+  });
+});
+
+describe("audit 4 follow-up", () => {
+  it("app and server codes have their own messages", () => {
+    for (const c of ["NOT_PLOTE", "PAYMENT_REFUNDED", "PAYMENT_UNCONFIRMED", "BAD_VIEW", "APP_KEY_UNSUPPORTED", "APP_KEY_UNUSABLE", "LISTING_BLOCKED", "NOTHING_RELEASED", "SETUP_PENDING", "REPLAY_CHECK_UNAVAILABLE", "QUOTE_NOT_RECORDED", "POLL_LOCK_UNAVAILABLE"]) {
+      expect(messageForCode(c), c).not.toBe(messageForCode("UNKNOWN"));
+    }
+  });
+
+  it("get_surplus_request shape", () => {
+    expect(parseView({ at: "1", amount: "5", ready_at: "604800000000001" }, SurplusRequestSchema.nullable(), "x")).toMatchObject({ amount: "5" });
+    expect(parseView(null, SurplusRequestSchema.nullable(), "x")).toBeNull();
+    expect(() => parseView({ at: 1 }, SurplusRequestSchema, "x")).toThrow();
   });
 });

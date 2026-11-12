@@ -193,7 +193,7 @@ export function CheckResult({ o, onShare }: { o: CheckOutcome; onShare?: () => v
               </dd>
             </div>
             <div>
-              <dt className="label">Paid</dt>
+              <dt className="label" title="What the holder paid in, minus anything refunded out">Paid (net of refunds)</dt>
               <dd className="flex flex-wrap items-baseline gap-2">
                 <MonoAmount value={v.paid} account={v.account} /> <span className="mono text-sm text-muted">{pct(v.paid, v.price)}% of price</span>
               </dd>

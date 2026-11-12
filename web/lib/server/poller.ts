@@ -15,7 +15,7 @@
 //     exactly those receipts (successful ones only: a failed receipt's state was rolled back).
 //  4. Insert events, one row per (receipt, log line, data item / token id), keyed (tx_hash, receipt_id, log_index,
 //     data_index) with ON CONFLICT DO NOTHING; then record the receipt ids, then save the cursor (never backwards).
-//     Rows that need follow-up (emails, subscription clean-up) are inserted with notified_at null; the route handles
+//     Rows that need follow-up (emails, subscription clean-up, deferred deposits) are inserted with notified_at null; the route handles
 //     them from the table, so a run that dies after the insert loses nothing.
 // Idempotent: any step can be repeated. A transaction whose outcome can't be read is left for the next run and the
 // cursor stays below it.
@@ -77,8 +77,11 @@ export const MAX_PAGES = 4; // × 25 receipts; each page is one NearBlocks credi
 export const MAX_TXS = 40; // outcome reads per estate per run
 export const LOOKBACK_BLOCKS = 100; // re-list a little below the cursor (indexer lag); seen receipts cost nothing
 
-/** Events the route follows up on (notified_at null): emails for qs_signed / released, subscription clean-up on a transfer. */
-export const FOLLOW_UP_EVENTS = ["qs_signed", "released", "sold", "nft_transfer"] as const;
+/**
+ * Events the route follows up on (notified_at null): emails for qs_signed / released, subscription clean-up on a
+ * transfer, and booking a deferred deposit with report_deposit (lib/server/follow-ups.ts).
+ */
+export const FOLLOW_UP_EVENTS = ["qs_signed", "released", "sold", "nft_transfer", "deposit_deferred"] as const;
 
 const height = (r: NbReceipt) => Number(r.block?.block_height ?? 0);
 

@@ -30,8 +30,9 @@ end $$;
 create unique index if not exists events_receipt_log_key on events (tx_hash, receipt_id, log_index, data_index);
 
 -- 2. events.notified_at: follow-ups (emails for qs_signed / released, subscription clean-up on sold / nft_transfer)
---    are done from the table, so a poller run that dies after inserting loses nothing. The poller inserts those events
---    with notified_at null and everything else stamped. Rows cached before this are stamped now (no historic emails).
+--    and booking deposit_deferred with report_deposit are done from the table, so a poller run that dies after
+--    inserting loses nothing. The poller inserts those events with notified_at null and everything else stamped.
+--    Rows cached before this are stamped now (no historic emails).
 alter table events add column if not exists notified_at timestamptz;
 update events set notified_at = now() where notified_at is null;
 create index if not exists events_follow_up_idx on events (id) where notified_at is null;

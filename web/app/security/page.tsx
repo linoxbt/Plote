@@ -51,7 +51,7 @@ export default function SecurityPage() {
             verdicts. It can&apos;t move funds out of a unit, but those two roles are residual trust in Plote.
           </FeatureCard>
           <FeatureCard icon={<Vote className="h-5 w-5" strokeWidth={1.5} />} title="Holders have the last word">
-            Votes weighted by USDC at stake (net of refunds, capped when the vote opens) can veto a sign-off, freeze releases, replace the surveyor or
+            Votes weighted by each token&apos;s net equity (paid minus refunded, up to the price, never more than when the vote opened) can veto a sign-off, freeze releases, replace the surveyor or
             redirect releases to a replacement contractor. Everything but a veto also needs a majority of distinct holders and a quorum.
           </FeatureCard>
           <FeatureCard icon={<Eye className="h-5 w-5" strokeWidth={1.5} />} title="Everything is public">

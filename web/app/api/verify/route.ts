@@ -2,8 +2,10 @@
 // Body: { estate, evidenceId }. Reads the exact worker input from the estate (`check_input`), runs the worker on
 // OutLayer's HTTPS API (capped at WORKER_TIMEOUT_MS), stores the paid verdict (verify_results), then submits it with
 // submit_verdict, signed by the reporter key (REPORTER_*, the estate's verdict_relayer; testnet falls back to the
-// relayer key). Resumable: a stored, unsubmitted verdict is submitted again instead of paying for another run. Weaker than yield/resume: the relayer is trusted to pass the result through, and the
-// proof page says "verdict via HTTPS". Only for estates whose verify_mode is "https": an OutLayer-mode estate
+// relayer key). Resumable: a stored, unsubmitted verdict is submitted again instead of paying for another run.
+// The verdict is the worker's stdout object unchanged (VerdictArg: Verdict fields + its evidence_id / sha256 echo +
+// ai_model); one that doesn't echo this evidence is never submitted (the estate refuses it, E_VERDICT_MISMATCH).
+// Weaker than yield/resume: the reporter is trusted to pass the result through, and the proof page says "verdict via HTTPS". Only for estates whose verify_mode is "https": an OutLayer-mode estate
 // gets its verdict from OutLayer's yield/resume callback, and the contract rejects relayed ones (E_VERIFY_MODE).
 
 import { NextResponse } from "next/server";
@@ -19,7 +21,7 @@ import { rateLimitShared } from "@/lib/server/rate-limit";
 import { callAsReporter, reporterCredentials, reporterEnvNames } from "@/lib/server/relayer";
 import { logError } from "@/lib/server/alert";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
-import { extractVerdict, paidStore, relayAllowed, toContractVerdict, type PaidStore } from "@/lib/server/verify";
+import { extractVerdict, paidStore, parseJsonExact, relayAllowed, toVerdictArg, verdictBinds, type PaidStore } from "@/lib/server/verify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -73,7 +75,12 @@ export async function POST(req: Request) {
   // A run that OutLayer was already paid for, whose submit_verdict failed: submit that verdict again, don't pay twice.
   // Leased separately (60 s) so it doesn't use up one of the MAX_ATTEMPTS paid runs.
   const paid = paidStore(supabaseAdmin());
-  const stored = await paid.load(estate, id).catch(() => null);
+  let stored = await paid.load(estate, id).catch(() => null);
+  if (stored && !verdictBinds(stored.verdict, id, ev.sha256)) {
+    // Saved before the estate required the evidence_id/sha256 echo: it can never be accepted, so close it.
+    await paid.submitted(estate, id, null).catch(() => undefined);
+    stored = null;
+  }
   if (stored) {
     if (!(await claimOnce("verify-submit", `${estate}:${id}`, 60_000))) {
       return jsonError("VERIFY_IN_PROGRESS", "This photo's verdict is being submitted right now. Try again in a minute.", 409);
@@ -89,13 +96,13 @@ export async function POST(req: Request) {
       : jsonError("VERIFY_IN_PROGRESS", "A check of this photo is already running. Try again in a minute.", 409);
   }
   try {
-    return await runWorker(url, key, estate, id, input, paid);
+    return await runWorker(url, key, estate, id, ev.sha256, input, paid);
   } finally {
     await releaseVerify(estate, id);
   }
 }
 
-async function runWorker(url: string, key: string, estate: string, id: string, input: string, paid: PaidStore) {
+async function runWorker(url: string, key: string, estate: string, id: string, sha256: string, input: string, paid: PaidStore) {
   let raw: unknown;
   try {
     const r = await fetch(url, {
@@ -109,7 +116,7 @@ async function runWorker(url: string, key: string, estate: string, id: string, i
       logError("plote:verify-worker-failed", `OutLayer HTTP ${r.status}`, { estate, evidence: id, body: text.slice(0, 200) });
       return jsonError("WORKER_FAILED", "The photo check service returned an error. Try again in a minute.", 502);
     }
-    raw = JSON.parse(text);
+    raw = parseJsonExact(text); // large integers (exif_time in ns) kept exact
   } catch (err) {
     logError("plote:verify-worker-failed", err, { estate, evidence: id });
     return jsonError("WORKER_FAILED", "The photo check didn't finish in time or its answer couldn't be read. Try again in a minute.", 502);
@@ -119,7 +126,13 @@ async function runWorker(url: string, key: string, estate: string, id: string, i
     logError("plote:verify-worker-failed", "no verdict in OutLayer's response", { estate, evidence: id });
     return jsonError("WORKER_FAILED", "The photo check didn't return a verdict. Try again in a minute.", 502);
   }
-  const verdict = toContractVerdict(found.verdict, found.attestation);
+  // The worker's stdout as is (VerdictArg): Verdict fields plus its evidence_id / sha256 echo and ai_model.
+  const verdict = toVerdictArg(found.verdict, found.attestation);
+  if (!verdictBinds(verdict, id, sha256)) {
+    // The estate would refuse it (E_VERDICT_MISMATCH): don't spend gas, and don't keep it for a resubmit.
+    logError("plote:verify-verdict-unbound", "the worker's verdict doesn't echo this evidence", { estate, evidence: id });
+    return jsonError("VERDICT_MISMATCH", "The photo check answered for a different photo (or without naming it), so it can't be used. Try again.", 502);
+  }
   // OutLayer is paid now: keep the verdict before anything else can fail (submit error, the 60 s limit), so a retry
   // submits this one instead of paying for another run.
   const saved = await paid.save(estate, id, verdict, "not submitted yet").catch(() => false);

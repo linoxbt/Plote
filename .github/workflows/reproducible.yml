@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
@@ -48,19 +50,28 @@ jobs:
                   line = f"{f}  sha256={d.hex()}  code_hash={b58(d)}"
                   print(line); out.write(line + "\n")
           EOF
-      - name: compare the estate WASM with config/estate-wasm.sha256
+      - name: compare the deployed estate build with config/estate-wasm.sha256
+        # The WASM embeds its source revision (NEP-330), so the pinned artifact is rebuilt at the pinned revision, and
+        # the contract sources at HEAD must be identical to that revision (otherwise a new reviewed build is due).
         run: |
-          built=$(sha256sum target/near/plote_estate/plote_estate.wasm | cut -d' ' -f1)
-          pinned=$(grep -v '^[[:space:]]*#' config/estate-wasm.sha256 | grep -Eo '[0-9a-f]{64}' | head -n1)
-          echo "built  estate sha256: $built"
-          echo "pinned estate sha256: ${pinned:-<none>}"
-          if [ "$built" != "$pinned" ]; then
-            echo "::error file=config/estate-wasm.sha256::The reproducible estate WASM ($built) is not the pinned artifact (${pinned:-none})."
-            echo "If this contract change is intended: deploy this artifact (scripts/upgrade-estate-code.ts --expected-hash $built),"
-            echo "then replace the hash in config/estate-wasm.sha256 with $built in the same commit."
+          pinned=$(grep -v '^[[:space:]]*#' config/estate-wasm.sha256 | grep -Eo '^[0-9a-f]{64}' | head -n1)
+          rev=$(grep -Eo '^rev [0-9a-f]{40}' config/estate-wasm.sha256 | cut -d' ' -f2)
+          echo "pinned estate sha256: ${pinned:-<none>} at rev ${rev:-<none>}"
+          if [ -z "$pinned" ] || [ -z "$rev" ]; then echo "::error file=config/estate-wasm.sha256::needs a sha256 line and a 'rev <commit>' line"; exit 1; fi
+          if ! git diff --quiet "$rev" HEAD -- contracts/estate contracts/unit Cargo.lock Cargo.toml; then
+            echo "::error file=config/estate-wasm.sha256::Contract sources changed since the deployed build ($rev)."
+            echo "Build this commit reproducibly, deploy it (scripts/upgrade-estate-code.ts --expected-hash <sha256>), then set the sha256 and rev in config/estate-wasm.sha256."
             exit 1
           fi
-          echo "OK: the estate WASM matches the pinned, deployed artifact."
+          git worktree add /tmp/pinned "$rev"
+          (cd /tmp/pinned && cargo near build reproducible-wasm --manifest-path contracts/estate/Cargo.toml)
+          built=$(sha256sum /tmp/pinned/target/near/plote_estate/plote_estate.wasm | cut -d' ' -f1)
+          echo "rebuilt estate sha256: $built"
+          if [ "$built" != "$pinned" ]; then
+            echo "::error file=config/estate-wasm.sha256::The reproducible build of $rev ($built) is not the pinned artifact ($pinned)."
+            exit 1
+          fi
+          echo "OK: HEAD's contracts are the deployed sources, and their reproducible build is the pinned artifact."
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

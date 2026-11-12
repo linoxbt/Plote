@@ -58,7 +58,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
   const exifMs = v?.exif_time ? nsToMs(v.exif_time) : null;
   const subMs = nsToMs(ev.submitted_at);
   // The model that judged the stage, as the worker recorded it; with no record we don't guess (and hide the links).
-  const aiModel = v?.ai_model?.trim() || null;
+  const aiModel = ev.ai_model?.trim() || v?.ai_model?.trim() || null;
   // The model's own notes (SPEC 6.4 "observations"), stored with the verdict (INTERFACE `Verdict.ai_observations`).
   const notes = (v?.ai_observations ?? []).filter((o) => o.trim() !== "");
   const pin = verifierPin(e.verifier, v ? v.worker_commit : null);
@@ -212,7 +212,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
               ) : "—"}
             </KV>
             <KV k="Build target">{e.verifier.build_target}</KV>
-            {v?.ai_model ? <KV k="AI model">{v.ai_model}</KV> : null}
+            {aiModel ? <KV k="AI model">{aiModel}</KV> : null}
             <KV k="OutLayer execution / attestation">{v?.attestation ?? "—"}</KV>
             <KV k="Verdict source">{v?.source ?? "—"}</KV>
             <KV k="Raw response hash">{ev.raw_response_hash ?? "—"}</KV>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { EstateBanners } from "@/components/banners";
 import { AppKeyToggle } from "@/components/app-key";
@@ -14,11 +14,12 @@ import { BracketCard, Button, ErrorState, Field, LinkButton, LoadingCard, Page }
 import { canDeclareDefault, defaultOpensAt } from "@/lib/default";
 import { DEV_KEY_METHODS, estate as E, MAX_UNITS_PER_ADD } from "@/lib/estate";
 import { estateAccount, estateSlug, UNIT_ID_RE } from "@/lib/estates";
-import { formatNear, msToNs, nearToYocto, parseUsdc, unitDisplay } from "@/lib/format";
+import { formatNear, formatUsd, msToNs, nearToYocto, nsToMs, parseUsdc, toBig, unitDisplay } from "@/lib/format";
+import { usdc } from "@/lib/usdc";
 import { useEstate, useNow, useUnits } from "@/lib/hooks";
 import { sendTx } from "@/lib/near";
 import { PloteError } from "@/lib/errors";
-import type { UnitInput } from "@/lib/types";
+import type { UnitInput, UnitView } from "@/lib/types";
 
 type Row = { id: string; label: string; price: string; plan: { date: string; cumulative: string }[] };
 
@@ -38,6 +39,8 @@ export function DevEstateClient({ slug }: { slug: string }) {
   if (!est.data) return <Page><ErrorState error={est.error} onRetry={() => est.refetch()} /></Page>;
   const e = est.data;
   const isDev = accountId === e.developer_id;
+  // request/finalize_surplus_booking: the developer or the estate's recovery account.
+  const canBook = !!accountId && (isDev || accountId === e.recovery_id);
   const set = (i: number, patch: Partial<Row>) => setRows((r) => r.map((x, k) => (k === i ? { ...x, ...patch } : x)));
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ["units", account] }), qc.invalidateQueries({ queryKey: ["estate", account] })]);
@@ -101,7 +104,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
             {units.data ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[680px] text-sm">
-                  <thead><tr className="text-left"><th className="label">Unit</th><th className="label">Status</th><th className="label text-right">Price</th><th className="label text-right">Paid</th><th className="label text-right">Released</th><th className="label text-right">Instalments</th></tr></thead>
+                  <thead><tr className="text-left"><th className="label">Unit</th><th className="label">Status</th><th className="label text-right">Price</th><th className="label text-right">Paid</th><th className="label text-right">Released</th><th className="label text-right">Instalments</th>{canBook ? <th className="label text-right">Unreported USDC</th> : null}</tr></thead>
                   <tbody>
                     {units.data.map((u) => {
                       const nowNs = BigInt(msToNs(now));
@@ -126,6 +129,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
                               : canDeclareDefault(u, e.params, nowNs) ? <DeclareDefaultButton estate={account} e={e} u={u} size="sm" />
                               : <CountdownChip until={opens!.toString()} label="overdue · default in" tone="amber" endedLabel="any moment now" />}
                           </td>
+                          {canBook ? <td className="py-2 text-right"><SurplusCell estate={account} u={u} /></td> : null}
                         </tr>
                       );
                     })}
@@ -193,5 +197,55 @@ export function DevEstateClient({ slug }: { slug: string }) {
         </div>
       </RequireWallet>
     </Page>
+  );
+}
+
+/** Books of a unit: what its USDC balance should be (contract `expected_balance`). */
+function expectedBalance(u: Pick<UnitView, "paid" | "unattributed" | "released" | "refunded_out">): bigint {
+  const v = toBig(u.paid) + toBig(u.unattributed) - toBig(u.released) - toBig(u.refunded_out);
+  return v > 0n ? v : 0n;
+}
+
+/**
+ * USDC on a unit that nobody reported (e.g. a plain transfer outside 1Click) can only be booked as `unattributed`
+ * by the developer or recovery account: request (one balance read) → 7 days → finalize (two reads) → sweep.
+ */
+function SurplusCell({ estate, u }: { estate: string; u: UnitView }) {
+  const { run } = useTx();
+  const qc = useQueryClient();
+  const now = useNow(30_000);
+  const bal = useQuery({ queryKey: ["usdc-bal", u.account], queryFn: () => usdc.balanceOf(u.account), staleTime: 60_000, retry: 0, enabled: u.ready });
+  const req = useQuery({ queryKey: ["surplus-request", estate, u.id], queryFn: () => E.getSurplusRequest(estate, u.id), staleTime: 60_000, retry: 0, enabled: u.ready });
+  if (!u.ready) return <span className="mono text-xs text-muted">—</span>;
+  const surplus = bal.data ? toBig(bal.data) - expectedBalance(u) : 0n;
+  const r = req.data ?? null;
+  const refresh = () => Promise.all([
+    qc.invalidateQueries({ queryKey: ["surplus-request", estate, u.id] }),
+    qc.invalidateQueries({ queryKey: ["usdc-bal", u.account] }),
+    qc.invalidateQueries({ queryKey: ["units", estate] }),
+  ]);
+  if (r) {
+    const ready = nsToMs(r.ready_at) <= now;
+    return (
+      <span className="flex flex-wrap items-center justify-end gap-2">
+        <MonoAmount value={r.amount} naira={false} />
+        {ready ? (
+          <Button size="sm" onClick={async () => {
+            const x = await run(`Book surplus on ${unitDisplay(u.id)}`, () => sendTx(E.finalizeSurplusBooking(estate, u.id)), { success: "Booked as unattributed. Anyone can now sweep it back (to the last reserver within the late-claim window, else the recovery account)." });
+            if (x) await refresh();
+          }}>Book it</Button>
+        ) : <CountdownChip until={r.ready_at} label="bookable in" tone="amber" />}
+      </span>
+    );
+  }
+  if (surplus <= 0n) return <span className="mono text-xs text-muted">{bal.isLoading ? "…" : "none"}</span>;
+  return (
+    <span className="flex flex-wrap items-center justify-end gap-2">
+      <span className="mono text-xs text-amber" title="USDC on the unit above its books, which no payment booked">{formatUsd(surplus.toString())}</span>
+      <Button size="sm" onClick={async () => {
+        const x = await run(`Request surplus booking on ${unitDisplay(u.id)}`, () => sendTx(E.requestSurplusBooking(estate, u.id)), { success: "Recorded. It can be booked in 7 days, if it's still there." });
+        if (x) await refresh();
+      }}>Start 7-day booking</Button>
+    </span>
   );
 }

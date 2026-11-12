@@ -50,10 +50,10 @@ export function AppKeyToggle({
     return (
       <p className="mono flex flex-wrap items-center gap-2 text-xs text-orange">
         <Icon className="h-3.5 w-3.5" aria-hidden /> {activeLabel}
-        <button type="button" className="min-h-9 text-muted underline" onClick={async () => {
+        <Button size="sm" className="min-h-9 text-muted underline" onClick={async () => {
           const r = await run("Remove key", () => removeAppKey(accountId, contractId, role).then(() => true), { success: "Key deleted from your account." });
-          if (r) refresh();
-        }}>remove key</button>
+          if (r) await refresh();
+        }}>remove key</Button>
       </p>
     );
   }
@@ -62,7 +62,7 @@ export function AppKeyToggle({
       {state === "pending" ? (
         <p className="mono text-xs text-amber">
           A key was requested but isn&apos;t on your account yet (your wallet may not support adding it at sign-in).{" "}
-          <button type="button" className="min-h-9 underline" onClick={() => void forgetLoginKey(accountId, contractId, role).then(refresh)}>forget it</button>
+          <Button size="sm" className="min-h-9 underline" onClick={() => forgetLoginKey(accountId, contractId, role).then(refresh)}>forget it</Button>
         </p>
       ) : null}
       <Button
