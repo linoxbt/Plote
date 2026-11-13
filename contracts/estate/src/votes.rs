@@ -64,6 +64,8 @@ pub(crate) fn vote_weight(unit: &Unit) -> u32 {
 
 /// Weight-history entries kept per unit (copy-on-write snapshots, see `note_weight_change`).
 pub(crate) const MAX_WEIGHT_HISTORY: usize = 8;
+/// Holder changes per token per proposal period while proposals are open (see `holder_history_full`).
+pub(crate) const MAX_HOLDER_HISTORY: usize = 16;
 
 /// Distinct holders: eligible for a proposal, and among them those whose tokens voted yes / no.
 pub(crate) struct HolderTally {
@@ -73,23 +75,44 @@ pub(crate) struct HolderTally {
 }
 
 /// `holder_tally` against a prebuilt `token_index` (views build it once for a page of proposals).
-pub(crate) fn tally(p: &Proposal, tokens: &HashMap<&str, (&AccountId, u64)>) -> HolderTally {
-    let eligible: HashSet<&AccountId> = tokens
-        .values()
-        .filter(|(_, at)| *at <= p.created_at)
-        .map(|(h, _)| *h)
-        .collect();
+/// Holder histories of the units that have one (`Estate::holder_histories`): unit id → (changed_at, holder before).
+pub(crate) type HolderHistories = HashMap<String, Vec<(u64, AccountId)>>;
+
+/// Who held token `id` when a proposal created at `created_at` opened: the holder before the first change at or after
+/// that time, else the current holder (review N3).
+pub(crate) fn holder_at<'a>(
+    id: &str,
+    current: &'a AccountId,
+    hist: &'a HolderHistories,
+    created_at: u64,
+) -> &'a AccountId {
+    hist.get(id)
+        .and_then(|h| h.iter().find(|(at, _)| *at >= created_at))
+        .map(|(_, a)| a)
+        .unwrap_or(current)
+}
+
+/// `holder_tally` against a prebuilt `token_index` and `holder_histories` (views build them once for a page of
+/// proposals). Holders are counted as they were **when the proposal opened** (review N3): splitting tokens over fresh
+/// accounts afterwards adds no holders.
+pub(crate) fn tally(
+    p: &Proposal,
+    tokens: &HashMap<&str, (&AccountId, u64)>,
+    hist: &HolderHistories,
+) -> HolderTally {
+    let at_creation = |id: &str| -> Option<&AccountId> {
+        let (h, at) = tokens.get(id)?;
+        (*at <= p.created_at).then(|| holder_at(id, h, hist, p.created_at))
+    };
+    let eligible: HashSet<&AccountId> = tokens.keys().filter_map(|id| at_creation(id)).collect();
     let (mut yes, mut no): (HashSet<&AccountId>, HashSet<&AccountId>) = Default::default();
     for v in &p.voted {
         let Some((id, Some(dir))) = voted_entry(v) else {
             continue;
         };
-        let Some((h, _)) = tokens.get(id) else {
+        let Some(h) = at_creation(id) else {
             continue;
         };
-        if !eligible.contains(h) {
-            continue;
-        }
         if dir {
             yes.insert(h);
         } else {
@@ -433,7 +456,7 @@ impl Estate {
     /// hold a token that voted yes / no. A holder counts once however many tokens they hold; one who voted some tokens
     /// yes and others no counts on both sides.
     pub(crate) fn holder_tally(&self, p: &Proposal) -> HolderTally {
-        tally(p, &self.token_index())
+        tally(p, &self.token_index(), &self.holder_histories())
     }
 
     /// `StepIn` redirects every future release, so it is only for a project in trouble: releases frozen by a
@@ -547,6 +570,68 @@ impl Estate {
         match self.weight_at(&unit.id, created_at) {
             Some(then) => now.min(then),
             None => now,
+        }
+    }
+
+    /// Holder snapshot (review N3), the same copy-on-write idea as the weight history: when a token changes hands while
+    /// any proposal may be open, `(now, previous holder)` is appended to the unit's holder history, so tallies count the
+    /// holder each token had when a proposal opened. Entries older than one proposal period are dropped. Called by
+    /// `move_token` (every change of hands).
+    pub(crate) fn note_holder_change(&mut self, unit_id: &str, from: &AccountId, now: u64) {
+        if now >= self.proposal_horizon() {
+            return;
+        }
+        let k = crate::ext::key(crate::ext::P_HOLDER_HISTORY, unit_id.as_bytes());
+        let mut h = self.live_holder_history(unit_id, now);
+        h.push((now, from.clone()));
+        crate::ext::set(&k, &h);
+        let mut idx: Vec<String> = crate::ext::get(crate::ext::K_HOLDER_INDEX).unwrap_or_default();
+        if !idx.iter().any(|x| x == unit_id) {
+            idx.push(unit_id.to_string());
+            crate::ext::set(crate::ext::K_HOLDER_INDEX, &idx);
+        }
+    }
+
+    /// The unit's holder history without entries older than one proposal period.
+    pub(crate) fn live_holder_history(&self, unit_id: &str, now: u64) -> Vec<(u64, AccountId)> {
+        let k = crate::ext::key(crate::ext::P_HOLDER_HISTORY, unit_id.as_bytes());
+        let mut h: Vec<(u64, AccountId)> = crate::ext::get(&k).unwrap_or_default();
+        let period = self.params.proposal_period_ns.0;
+        h.retain(|(at, _)| at.saturating_add(period) > now);
+        h
+    }
+
+    /// A voluntary change of hands (transfer, sale) is refused once a token changed hands `MAX_HOLDER_HISTORY` times
+    /// within one proposal period while proposals are open: dropping entries could misattribute a token to a later
+    /// holder. Recovery and the `nft_transfer_call` revert are never refused (they need no slot to be safe).
+    pub(crate) fn holder_history_full(&self, unit_id: &str, now: u64) -> bool {
+        now < self.proposal_horizon()
+            && self.live_holder_history(unit_id, now).len() >= MAX_HOLDER_HISTORY
+    }
+
+    /// Every holder history, read once (through the `zi` index, so only units that changed hands while proposals were
+    /// open cost a read).
+    pub(crate) fn holder_histories(&self) -> HolderHistories {
+        let idx: Vec<String> = crate::ext::get(crate::ext::K_HOLDER_INDEX).unwrap_or_default();
+        idx.into_iter()
+            .filter_map(|id| {
+                let h: Vec<(u64, AccountId)> = crate::ext::get(&crate::ext::key(
+                    crate::ext::P_HOLDER_HISTORY,
+                    id.as_bytes(),
+                ))?;
+                Some((id, h))
+            })
+            .collect()
+    }
+
+    pub(crate) fn clear_holder_history(&mut self, unit_id: &str) {
+        let k = crate::ext::key(crate::ext::P_HOLDER_HISTORY, unit_id.as_bytes());
+        if crate::ext::get::<Vec<(u64, AccountId)>>(&k).is_some() {
+            crate::ext::del(&k);
+            let mut idx: Vec<String> =
+                crate::ext::get(crate::ext::K_HOLDER_INDEX).unwrap_or_default();
+            idx.retain(|x| x != unit_id);
+            crate::ext::set(crate::ext::K_HOLDER_INDEX, &idx);
         }
     }
 

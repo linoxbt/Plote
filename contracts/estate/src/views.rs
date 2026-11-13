@@ -349,6 +349,7 @@ impl Estate {
     pub fn list_proposals(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<ProposalView> {
         let now = Self::now();
         let tokens = self.token_index();
+        let hist = self.holder_histories();
         let from = from_index.unwrap_or(0) as u64;
         let limit = limit.unwrap_or(50).min(100) as u64;
         let newest = self.next_proposal_id.saturating_sub(1);
@@ -356,7 +357,7 @@ impl Estate {
         (0..limit)
             .map_while(|k| top.checked_sub(k).filter(|id| *id >= 1))
             .filter_map(|id| self.proposals.get(&id))
-            .map(|p| proposal_view(p, now, crate::votes::tally(p, &tokens)))
+            .map(|p| proposal_view(p, now, crate::votes::tally(p, &tokens, &hist)))
             .collect()
     }
 

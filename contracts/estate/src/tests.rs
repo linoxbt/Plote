@@ -251,7 +251,7 @@ impl Env {
         self.report(id, surplus)
     }
 
-    /// `report_deposit(id, amount)` by the relayer, with both balance reads returning the simulated balance.
+    /// `report_deposit(id, amount, None)` by the relayer, with both balance reads returning the simulated balance.
     fn report(&mut self, id: &str, amount: u128) -> u128 {
         let b = self.bal[id];
         self.report_with(id, amount, b, b)
@@ -288,7 +288,7 @@ impl Env {
         )]);
         match self
             .c
-            .on_report_first(id.to_string(), U128(amount), expected, None)
+            .on_report_first(id.to_string(), U128(amount), expected, None, None)
         {
             PromiseOrValue::Promise(_) => Some(()),
             PromiseOrValue::Value(v) => {
@@ -310,7 +310,7 @@ impl Env {
             serde_json::to_vec(&U128(second)).unwrap(),
         )]);
         self.c
-            .on_report_second(id.to_string(), U128(amount), expected, U128(first), None)
+            .on_report_second(id.to_string(), U128(amount), expected, U128(first), None, None)
             .0
     }
 
@@ -2927,7 +2927,7 @@ fn deposit_pending_then_accepted_credits_exactly_once() {
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
             let _ =
-                e.c.on_report_first("a-1a".into(), U128(9_000 * USDC), expected, None);
+                e.c.on_report_first("a-1a".into(), U128(9_000 * USDC), expected, None, None);
         }),
     );
     // same if the credit lands between the two reads
@@ -2954,6 +2954,7 @@ fn deposit_pending_then_accepted_credits_exactly_once() {
                 U128(9_000 * USDC),
                 expected,
                 U128(9_000 * USDC),
+                None,
                 None,
             );
         }),
@@ -2989,7 +2990,7 @@ fn deposit_report_voided_by_transfer_out_between_reads() {
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
             let _ =
-                e.c.on_report_first("a-4b".into(), U128(1_000 * USDC), expected, None);
+                e.c.on_report_first("a-4b".into(), U128(1_000 * USDC), expected, None, None);
         }),
     );
     // and once it landed (the read still shows the money that left)
@@ -2999,7 +3000,7 @@ fn deposit_report_voided_by_transfer_out_between_reads() {
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
             let _ =
-                e.c.on_report_first("a-4b".into(), U128(1_000 * USDC), expected, None);
+                e.c.on_report_first("a-4b".into(), U128(1_000 * USDC), expected, None, None);
         }),
     );
     assert_eq!(e.unit("a-4b").paid.0, 10_000 * USDC, "nothing booked");
@@ -3045,7 +3046,7 @@ fn deposit_report_voided_by_transfer_out_between_reads() {
     panics(
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
-            let _ = e.c.on_report_first("a-4b".into(), U128(1), expected, None);
+            let _ = e.c.on_report_first("a-4b".into(), U128(1), expected, None, None);
         }),
     );
 }

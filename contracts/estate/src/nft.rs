@@ -402,6 +402,17 @@ impl Estate {
             "E_BAD_ARGS",
             "current and next owner must differ"
         );
+        let now = env::block_timestamp();
+        if guarded {
+            ensure!(
+                !self.holder_history_full(&unit.id, now),
+                "E_TOO_MANY",
+                "token {} changed hands too often while votes are open; try again later",
+                unit.id
+            );
+        }
+        // Who held it when open proposals started is remembered (review N3).
+        self.note_holder_change(&unit.id, from, now);
         self.remove_token(from, &unit.id);
         self.add_token(to, &unit.id);
         unit.holder = Some(to.clone());

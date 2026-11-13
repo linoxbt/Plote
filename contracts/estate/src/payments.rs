@@ -221,8 +221,10 @@ impl Estate {
     /// unit; `amount` is the delivered USDC in base units. Credits `min(amount, surplus over the books seen in two
     /// chained balance reads)`; returns (via the promise) the amount credited. Fails `E_BALANCE_PENDING` (nothing
     /// credited, report again) if the unit's books changed between the reads, `E_IN_FLIGHT` while a transfer out is
-    /// pending.
-    pub fn report_deposit(&mut self, unit_id: String, amount: U128) -> Promise {
+    /// pending. `deferred: true` books money `on_unit_deposit` accepted but deferred (event `deposit_deferred`): the
+    /// credit is capped at what is still recorded as deferred on the unit and uses it up, so a retried deferred report
+    /// can't book it twice (review N6).
+    pub fn report_deposit(&mut self, unit_id: String, amount: U128, deferred: Option<bool>) -> Promise {
         ensure!(
             self.verdict_relayer.as_ref() == Some(&env::predecessor_account_id()),
             "E_NOT_RELAYER",
@@ -242,16 +244,30 @@ impl Estate {
             "a transfer out of {} is pending; report after it lands",
             unit_id
         );
+        let deferred = deferred.unwrap_or(false);
+        let amount = if deferred {
+            let rec = deferred_of(&unit_id);
+            ensure!(
+                rec > 0,
+                "E_NOTHING_TO_SWEEP",
+                "no deferred deposit is waiting on unit {}",
+                unit_id
+            );
+            U128(amount.0.min(rec))
+        } else {
+            amount
+        };
         let expected = U128(Self::expected_balance(&unit));
         self.read_balance(&unit).then(
             Self::ext(env::current_account_id())
                 .with_static_gas(GAS_ON_REPORT_FIRST)
-                .on_report_first(unit_id, amount, expected, None),
+                .on_report_first(unit_id, amount, expected, None, Some(deferred)),
         )
     }
 
-    /// First read of `report_deposit` (and of `finalize_surplus_booking`, `surplus: true`): the books must be what they
-    /// were when the report started; then read again.
+    /// First read of `report_deposit`: the books must be what they were when the report started; then read again.
+    /// `surplus: true` only comes from callbacks scheduled by an earlier build's `finalize_surplus_booking`; such a
+    /// booking is now ignored (it used to book without moving the money; see `on_surplus_second`).
     #[private]
     pub fn on_report_first(
         &mut self,
@@ -259,7 +275,12 @@ impl Estate {
         amount: U128,
         expected: U128,
         surplus: Option<bool>,
+        deferred: Option<bool>,
     ) -> PromiseOrValue<U128> {
+        if surplus.unwrap_or(false) {
+            env::log_str("a surplus booking scheduled by an earlier build is ignored; request it again");
+            return PromiseOrValue::Value(U128(0));
+        }
         let unit = self.unchanged_unit(&unit_id, expected.0);
         let first = read_balance_result().unwrap_or_else(|| {
             errors::fail("E_BALANCE_PENDING", "the balance read failed; report again")
@@ -275,13 +296,14 @@ impl Estate {
             self.read_balance(&unit).then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(GAS_ON_REPORT_SECOND)
-                    .on_report_second(unit_id, amount, expected, U128(first), surplus),
+                    .on_report_second(unit_id, amount, expected, U128(first), None, deferred),
             ),
         )
     }
 
-    /// Second read of `report_deposit`: credits `min(amount, first − expected, second − expected)`. With `surplus: true`
-    /// (`finalize_surplus_booking`) the same amount is booked as `unattributed` instead and the request ends.
+    /// Second read of `report_deposit`: credits `min(amount, first − expected, second − expected)` (for a deferred
+    /// report also at most what is still recorded as deferred, which it uses up). `surplus: true`: see
+    /// `on_report_first` (ignored).
     #[private]
     pub fn on_report_second(
         &mut self,
@@ -290,13 +312,22 @@ impl Estate {
         expected: U128,
         first: U128,
         surplus: Option<bool>,
+        deferred: Option<bool>,
     ) -> U128 {
+        if surplus.unwrap_or(false) {
+            env::log_str("a surplus booking scheduled by an earlier build is ignored; request it again");
+            return U128(0);
+        }
         let mut unit = self.unchanged_unit(&unit_id, expected.0);
         let second = read_balance_result().unwrap_or_else(|| {
             errors::fail("E_BALANCE_PENDING", "the balance read failed; report again")
         });
         let seen = first.0.min(second);
-        let credit = seen.saturating_sub(expected.0).min(amount.0);
+        let mut credit = seen.saturating_sub(expected.0).min(amount.0);
+        let deferred = deferred.unwrap_or(false);
+        if deferred {
+            credit = credit.min(deferred_of(&unit_id));
+        }
         if credit == 0 {
             env::log_str(&format!(
                 "unit {} holds nothing above its books on the second read; nothing credited",
@@ -304,20 +335,8 @@ impl Estate {
             ));
             return U128(0);
         }
-        if surplus.unwrap_or(false) {
-            crate::ext::del(&crate::ext::key(crate::ext::P_SURPLUS, unit_id.as_bytes()));
-            let spare = seen.saturating_sub(expected.0 + credit);
-            crate::ext::set(
-                &crate::ext::key(crate::ext::P_LAST_REPORT, unit_id.as_bytes()),
-                &(Self::now(), spare),
-            );
-            unit.unattributed += credit;
-            emit(
-                "surplus_booked",
-                json!({ "unit_id": unit_id, "amount": U128(credit), "unattributed": U128(unit.unattributed) }),
-            );
-            self.save(unit);
-            return U128(credit);
+        if deferred {
+            set_deferred(&unit_id, deferred_of(&unit_id) - credit);
         }
         if credit < amount.0 {
             env::log_str(&format!(
@@ -400,6 +419,7 @@ impl Estate {
                 "deposit_deferred",
                 json!({ "unit_id": unit_id, "sender_id": sender_id, "amount": amount }),
             );
+            set_deferred(&unit_id, deferred_of(&unit_id).saturating_add(amount.0));
             return U128(0);
         }
         self.credit(&mut unit, amount.0, now, "ft_transfer_call");
@@ -407,20 +427,27 @@ impl Estate {
         U128(0)
     }
 
-    // ---------- unbooked surplus (finding 7) ----------
+    // ---------- unbooked surplus (finding 7, review N1) ----------
     //
-    // USDC that reached a unit by plain transfer and was never reported (a 1Click delivery the reporter missed, a
-    // mistaken transfer) is on the unit but in no book, so nothing could ever move it. The developer or the recovery
-    // account can book it as `unattributed` (then `sweep_unattributed` sends it to the last reserver within
-    // `late_claim_ns`, else to `recovery_id`) in two steps: `request_surplus_booking` reads the balance and records the
-    // surplus seen; `finalize_surplus_booking`, at least `SURPLUS_DELAY_NS` (7 days) later, reads twice more like
-    // `report_deposit` and books `min(recorded, first − expected, second − expected)`. Only money above the books can be
-    // booked, never `paid`; a delivery reported meanwhile is credited to its payer first and shrinks the surplus.
+    // USDC that reached an EMPTY unit by plain transfer and was never reported (a 1Click delivery for a reservation that
+    // ended, a mistaken transfer) is on the unit but in no book, so nothing could ever move it. The developer or the
+    // recovery account can move it out in two steps: `request_surplus_booking` reads the balance and records the surplus
+    // seen; `finalize_surplus_booking`, at least `SURPLUS_DELAY_NS` (7 days) later, reads twice more like `report_deposit`
+    // and books `min(recorded, first − expected, second − expected)` as `unattributed` and **in the same flow** transfers
+    // exactly that to the sweep recipient (the last reserver within `late_claim_ns`, else `recovery_id`); a failed
+    // transfer undoes the booking.
+    //
+    // Both steps (and both callbacks) need an empty unit: no token, no reservation, nothing booked as escrow
+    // (`paid − released − refunded_out == 0`), nothing in flight, the estate not frozen. A balance read can be inflated
+    // for a few blocks (an `ft_transfer_call` whose `ft_on_transfer` fails is refunded by `ft_resolve_transfer` later), so
+    // a "surplus" might be transient. On an empty unit that can only move the inflater's own transient money (USDC then
+    // can't refund all of it to them); holder or reserver escrow is never reachable.
 
-    /// Developer or `recovery_id`: record the unit's current surplus over its books (one balance read). Starts the 7-day
-    /// delay; a new request replaces the old one. Returns (via the promise) the surplus recorded.
+    /// Developer or `recovery_id`: record an empty unit's current surplus over its books (one balance read). Starts the
+    /// 7-day delay; a new request replaces the old one. Returns (via the promise) the surplus recorded.
     pub fn request_surplus_booking(&mut self, unit_id: String) -> Promise {
         self.assert_surplus_role();
+        self.assert_not_frozen();
         let unit = self.unit(&unit_id);
         ensure!(
             unit.ready,
@@ -428,12 +455,7 @@ impl Estate {
             "unit {} is still being created",
             unit_id
         );
-        ensure!(
-            unit.in_flight == 0,
-            "E_IN_FLIGHT",
-            "a transfer out of {} is pending",
-            unit_id
-        );
+        self.assert_surplus_unit(&unit);
         let expected = U128(Self::expected_balance(&unit));
         self.read_balance(&unit).then(
             Self::ext(env::current_account_id())
@@ -444,7 +466,8 @@ impl Estate {
 
     #[private]
     pub fn on_surplus_request(&mut self, unit_id: String, expected: U128) -> U128 {
-        let _ = self.unchanged_unit(&unit_id, expected.0);
+        let unit = self.unchanged_unit(&unit_id, expected.0);
+        self.assert_surplus_unit(&unit);
         let balance = read_balance_result().unwrap_or_else(|| {
             errors::fail(
                 "E_BALANCE_PENDING",
@@ -470,14 +493,16 @@ impl Estate {
         U128(amount)
     }
 
-    /// Developer or `recovery_id`, at least 7 days after `request_surplus_booking`: book the surplus still seen (two
-    /// reads, capped at what was recorded) as `unattributed`. `E_TIMELOCK` before then, `E_BAD_ARGS` without a request.
+    /// Developer or `recovery_id`, at least 7 days after `request_surplus_booking`, on a still-empty unit: book the
+    /// surplus still seen (two reads, capped at what was recorded) and transfer it out at once. The request is used up by
+    /// this call whatever the outcome. `E_TIMELOCK` before then, `E_BAD_ARGS` without a request. Attach ≥ 150 Tgas.
     pub fn finalize_surplus_booking(&mut self, unit_id: String) -> Promise {
         self.assert_surplus_role();
+        self.assert_not_frozen();
         let unit = self.unit(&unit_id);
-        let req: crate::ext::SurplusRequest =
-            crate::ext::get(&crate::ext::key(crate::ext::P_SURPLUS, unit_id.as_bytes()))
-                .unwrap_or_else(|| errors::fail("E_BAD_ARGS", "no surplus booking was requested"));
+        let k = crate::ext::key(crate::ext::P_SURPLUS, unit_id.as_bytes());
+        let req: crate::ext::SurplusRequest = crate::ext::get(&k)
+            .unwrap_or_else(|| errors::fail("E_BAD_ARGS", "no surplus booking was requested"));
         let ready_at = req.at.saturating_add(SURPLUS_DELAY_NS);
         ensure!(
             Self::now() >= ready_at,
@@ -486,18 +511,81 @@ impl Estate {
             unit_id,
             ready_at
         );
-        ensure!(
-            unit.in_flight == 0,
-            "E_IN_FLIGHT",
-            "a transfer out of {} is pending",
-            unit_id
-        );
+        self.assert_surplus_unit(&unit);
+        // Used up now: a finalize that books nothing (or fails in a callback) needs a new request and a new delay.
+        crate::ext::del(&k);
         let expected = U128(Self::expected_balance(&unit));
         self.read_balance(&unit).then(
             Self::ext(env::current_account_id())
-                .with_static_gas(GAS_ON_REPORT_FIRST)
-                .on_report_first(unit_id, U128(req.amount), expected, Some(true)),
+                .with_static_gas(GAS_ON_SURPLUS_FIRST)
+                .on_surplus_first(unit_id, U128(req.amount), expected),
         )
+    }
+
+    /// First read of `finalize_surplus_booking`. Books nothing (returns 0) if the unit is no longer empty, its books
+    /// changed, the estate froze, or it holds nothing above its books; otherwise reads again.
+    #[private]
+    pub fn on_surplus_first(
+        &mut self,
+        unit_id: String,
+        amount: U128,
+        expected: U128,
+    ) -> PromiseOrValue<U128> {
+        let Some(unit) = self.surplus_unit_unchanged(&unit_id, expected.0) else {
+            return PromiseOrValue::Value(U128(0));
+        };
+        let first = read_balance_result().unwrap_or(0);
+        if first <= expected.0 {
+            env::log_str(&format!(
+                "unit {} holds nothing above its books; nothing booked",
+                unit_id
+            ));
+            return PromiseOrValue::Value(U128(0));
+        }
+        PromiseOrValue::Promise(
+            self.read_balance(&unit).then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_ON_SURPLUS_SECOND)
+                    .on_surplus_second(unit_id, amount, expected, U128(first)),
+            ),
+        )
+    }
+
+    /// Second read: books `min(amount, first − expected, second − expected)` as `unattributed` and starts its transfer to
+    /// the sweep recipient in the same receipt (`OutKind::SurplusSweep`; a failed transfer unbooks it).
+    #[private]
+    pub fn on_surplus_second(
+        &mut self,
+        unit_id: String,
+        amount: U128,
+        expected: U128,
+        first: U128,
+    ) -> U128 {
+        let Some(mut unit) = self.surplus_unit_unchanged(&unit_id, expected.0) else {
+            return U128(0);
+        };
+        let second = read_balance_result().unwrap_or(0);
+        let credit = first
+            .0
+            .min(second)
+            .saturating_sub(expected.0)
+            .min(amount.0);
+        if credit == 0 {
+            env::log_str(&format!(
+                "unit {} holds nothing above its books; nothing booked",
+                unit_id
+            ));
+            return U128(0);
+        }
+        unit.unattributed += credit;
+        emit(
+            "surplus_booked",
+            json!({ "unit_id": unit_id, "amount": U128(credit), "unattributed": U128(unit.unattributed) }),
+        );
+        let to = self.sweep_recipient(&unit, Self::now());
+        self.send_from_unit(&mut unit, OutKind::SurplusSweep, to, credit)
+            .detach();
+        U128(credit)
     }
 
     /// View: a pending surplus booking request, if any: `{ at, amount }` (`at` + 7 days = when it can be finalized).
@@ -568,10 +656,19 @@ impl Estate {
         self.send_from_unit(&mut unit, OutKind::Excess, holder, amount)
     }
 
-    /// Anyone: move unattributed USDC off a unit — to the last reserver within `late_claim_ns`
-    /// of their reservation ending (a late 1Click delivery), otherwise to `recovery_id`.
+    /// Anyone: move unattributed USDC off an Available unit — to the last reserver within `late_claim_ns`
+    /// of their reservation ending (a late 1Click delivery), otherwise to `recovery_id`. Refused (`E_UNIT_TAKEN`) while
+    /// the unit is reserved or held (review N1): stray money there waits until the unit is empty again (end a lapsed
+    /// reservation with `expire_reservation` first), so a sweep can never reach holder or reserver escrow.
     pub fn sweep_unattributed(&mut self, unit_id: String) -> Promise {
         let mut unit = self.unit(&unit_id);
+        ensure!(
+            unit.status == UnitStatus::Available,
+            "E_UNIT_TAKEN",
+            "unit {} is {:?}; unattributed money is swept only from an Available unit",
+            unit_id,
+            unit.status
+        );
         ensure!(
             unit.unattributed > self.params.dust_threshold.0,
             "E_NOTHING_TO_SWEEP",
@@ -583,19 +680,7 @@ impl Estate {
             "a transfer out of {} is pending",
             unit_id
         );
-        let now = Self::now();
-        // Money synced onto a unit whose current reservation lapsed but wasn't ended yet belongs to that (current)
-        // reserver, not to the one before them; its expiry is when it ended.
-        let latest = match &unit.reservation {
-            Some(r) if now >= r.expires_at.0 => Some(r),
-            _ => unit.last_reservation.as_ref(),
-        };
-        let to = match latest {
-            Some(r) if now < r.expires_at.0.saturating_add(self.params.late_claim_ns.0) => {
-                r.by.clone()
-            }
-            _ => self.recovery_id.clone(),
-        };
+        let to = self.sweep_recipient(&unit, Self::now());
         let amount = unit.unattributed;
         self.send_from_unit(&mut unit, OutKind::Sweep, to, amount)
     }
@@ -656,6 +741,10 @@ impl Estate {
                 "transfer of {} from {} to {} failed; nothing moved",
                 amount.0, unit_id, receiver
             ));
+            if kind == OutKind::SurplusSweep {
+                // Nothing moved: undo the booking, so a surplus that was only transient isn't left in the books.
+                unit.unattributed = unit.unattributed.saturating_sub(amount.0);
+            }
             if kind == OutKind::ReservationRefund && unit.status == UnitStatus::Reserved {
                 // The reserver can't receive it (e.g. not registered on USDC). Don't keep the unit hostage: move the
                 // money to the estate's own account, credit it to `owed` for the reserver (`withdraw_owed`) and end
@@ -688,7 +777,7 @@ impl Estate {
                 );
                 self.save(unit);
             }
-            OutKind::Sweep => {
+            OutKind::Sweep | OutKind::SurplusSweep => {
                 unit.unattributed = unit.unattributed.saturating_sub(a);
                 emit(
                     "unattributed_swept",
@@ -799,7 +888,76 @@ pub struct SurplusRequestView {
     pub ready_at: U64,
 }
 
+/// USDC `on_unit_deposit` accepted on this unit but deferred (not booked) that no deferred report has booked yet.
+fn deferred_of(unit_id: &str) -> u128 {
+    crate::ext::get(&crate::ext::key(crate::ext::P_DEFERRED, unit_id.as_bytes())).unwrap_or(0)
+}
+
+fn set_deferred(unit_id: &str, v: u128) {
+    let k = crate::ext::key(crate::ext::P_DEFERRED, unit_id.as_bytes());
+    if v == 0 {
+        crate::ext::del(&k);
+    } else {
+        crate::ext::set(&k, &v);
+    }
+}
+
 impl Estate {
+    /// A unit the surplus booking may touch: no token, no reservation, no escrow booked, nothing in flight.
+    fn surplus_unit_empty(unit: &Unit) -> bool {
+        unit.status == UnitStatus::Available
+            && unit.reservation.is_none()
+            && unit.holder.is_none()
+            && unit.in_flight == 0
+            && unit.paid.saturating_sub(unit.released + unit.refunded_out) == 0
+    }
+
+    fn assert_surplus_unit(&self, unit: &Unit) {
+        ensure!(
+            unit.in_flight == 0,
+            "E_IN_FLIGHT",
+            "a transfer out of {} is pending",
+            unit.id
+        );
+        ensure!(
+            Self::surplus_unit_empty(unit),
+            "E_UNIT_TAKEN",
+            "unit {} is reserved, held or holds escrow; a surplus is booked only on an empty unit",
+            unit.id
+        );
+    }
+
+    /// The unit for a surplus callback if it is still empty, the estate unfrozen and its books unchanged; else `None`.
+    fn surplus_unit_unchanged(&self, unit_id: &str, expected: u128) -> Option<Unit> {
+        let unit = self.units.get(unit_id).cloned()?;
+        if self.frozen.is_some()
+            || !Self::surplus_unit_empty(&unit)
+            || Self::expected_balance(&unit) != expected
+        {
+            env::log_str(&format!(
+                "unit {} changed (or the estate froze) while its surplus was being read; nothing booked",
+                unit_id
+            ));
+            return None;
+        }
+        Some(unit)
+    }
+
+    /// Who swept money goes to: the last reserver within `late_claim_ns` of their reservation ending (a late 1Click
+    /// delivery), otherwise `recovery_id`.
+    fn sweep_recipient(&self, unit: &Unit, now: u64) -> AccountId {
+        let latest = match &unit.reservation {
+            Some(r) if now >= r.expires_at.0 => Some(r),
+            _ => unit.last_reservation.as_ref(),
+        };
+        match latest {
+            Some(r) if now < r.expires_at.0.saturating_add(self.params.late_claim_ns.0) => {
+                r.by.clone()
+            }
+            _ => self.recovery_id.clone(),
+        }
+    }
+
     fn assert_surplus_role(&self) {
         let caller = env::predecessor_account_id();
         ensure!(
@@ -957,6 +1115,7 @@ impl Estate {
         unit.released = 0;
         unit.refunded_out = 0;
         unit.excess_out = 0;
+        set_deferred(&unit.id, 0);
         if let Some(owner) = unit.deposit_owner.take() {
             Promise::new(owner).transfer(RESERVE_DEPOSIT).detach();
         }
