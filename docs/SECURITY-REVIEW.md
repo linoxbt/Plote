@@ -8,6 +8,10 @@ the preparation for one (docs/LAUNCH.md §1).
 Status key: **Fixed** (code + test), **Mitigated** (risk reduced, residual noted), **Open** (needs work outside
 this codebase or a state migration).
 
+> **Current status (13 Nov):** the sections are in date order and earlier notes describe the state at the time. The
+> correction below about the pre-hardening verifier, and the Audit 3 "photo checks cannot pass" item, are superseded:
+> see [Audit 4](#audit-4-1213-nov) for what is live now and what is still open.
+
 ## Contracts (`contracts/estate`, `contracts/unit`)
 
 | # | Sev | Finding | Status |
@@ -137,3 +141,125 @@ was applied and everything below marked Fixed was deployed and re-verified live 
   pending `ft_transfer_call` across both reads could still book refunded money. Full fix needs a per-unit pending counter (state migration).
 - **Event schedule:** done — Supabase pg_cron calls the poller every 5 minutes (`0005_poll_schedule.sql`, `POLL_SECRET`), verified live.
 - **Independent audit, legal opinion, mainnet funds and a real-site pilot** (LAUNCH.md §1).
+
+## Audit 4 (12–13 Nov)
+
+A fourth review of contracts, verifier, web, server, CI and deploy tooling, followed by a live redeploy. **Still not an
+independent audit.**
+
+What was deployed and checked live on NEAR testnet (12–13 Nov):
+
+- **Contracts:** all three estates (`harmattan-court`, `baobab-heights`, `playground` `.plote.testnet`) run the
+  reproducible build of commit `99f6a77` (`99f6a77db831a8f5658d8d1d13b3cfa5415f60c8`): wasm sha256
+  `4a572e3e11df139fdf7b12742149c1add0792f56b04cbd73690e25fbee9ece6a`, `code_hash`
+  `61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD`, built in the pinned `sourcescan/cargo-near:0.22.0-rust-1.97.0` image.
+  Upgraded in place with state intact, then `migrate` → `state_version` 2. `config/estate-wasm.sha256` pins the sha256
+  and revision; `.github/workflows/reproducible.yml` rebuilds the pinned revision and fails if the hash differs or the
+  contract sources changed since it.
+- **Verifier:** hardened build, version key `07cf962632350d40bcdc4318d382af8f31aa49aab264b7b725add86dd415df6b`,
+  reproducible with `cd verifier && ./build-wasm.sh` (`verifier/README.md`, `.github/workflows/verifier-build.yml`),
+  published on OutLayer as `plote.testnet/plote-verifier`. All three estates are pinned to it; the two sold estates
+  through the new `repin_verifier`, which only the estate account itself can call while its keys exist. The NEAR AI key
+  is stored as an OutLayer secret per estate with `Predecessor(Whitelist[estate])`.
+- **First live end-to-end pass** (playground, 12 Nov): `open_capture` code `2NJF8S` → photo uploaded via
+  `/api/evidence/upload-url` → `submit_evidence` id 6 → OutLayer TEE worker `plote-verifier@0.1.0` with NEAR AI model
+  `Qwen/Qwen3-VL-30B-A3B-Instruct` → verdict Pass (no reasons, no warnings) → milestone Verified → `qs_sign` →
+  Approved → 2-minute veto window → `claim_release` on `p-55` and `p-56` (100 USDC paid each) → 20 USDC released from
+  each (40 in total) to `dev-harmattan.plote.testnet`. Proof page: https://plote-vert.vercel.app/proof/playground/6.
+  **About that photo:** it is a public-domain 1943 photograph of a foundation, with the one-time code on paper
+  composited in digitally and EXIF stamped onto the file. The model accepted it. This shows the documented limit
+  (V-H1, A4-H3): finding the code in the frame cannot by itself prove the paper was physically on site. The playground
+  has no geofence; non-demo estates require the phone's GPS.
+- **Web:** the production build includes the Audit 4 web and server changes. Supabase migrations `0006_audit4.sql`
+  and `0007_poll_schedule_url.sql` were applied on 13 Nov before the production deploy of `bdf7176`; a poller run on
+  the new code returned 200 with no errors and advanced every estate's cursor.
+
+Tests after the fixes: estate 108, unit 5, musdc 3 (`cargo test --workspace`); 11 integration flows on the real WASMs
+(`tests/integration`); verifier 89 + 5; web 192 (Vitest). Clippy `-D warnings` clean.
+
+Status key for this section: **Fixed (live)** — deployed and running on testnet; **Fixed (code)** —
+merged and tested, waiting on a testnet configuration change;
+**Open (documented)** — not fixed, written down in INTERFACE.md, README or LAUNCH.md.
+
+### Critical
+
+| # | Finding | Status |
+|---|---|---|
+| A4-C1 | **Fake-estate payments.** The web app treated any account under the root (or typed into a URL) as a Plote estate, so a look-alike contract could be shown with Plote's pages and take buyers' payments | **Fixed (live)** — only genuine estates are treated as Plote: those in `NEXT_PUBLIC_ESTATES`, or subaccounts of the root account whose `code_hash` is in `NEXT_PUBLIC_ESTATE_CODE_HASHES` (default `61CGp8J2…`, `J31YPbxD…`); the app refuses to build a payment to anything else (`assertPayable`), including nested look-alike accounts |
+
+### High
+
+| # | Finding | Status |
+|---|---|---|
+| A4-H1 | **Stage order not enforced.** A later milestone could be captured, signed and released before an earlier one; `approved_bps` summed approved stages regardless of order; `handover` didn't need every stage | **Fixed (live)** — `open_capture` / `submit_evidence` / `qs_sign` for milestone *i* need *i − 1* Approved (`E_MILESTONE_STATE`, playground too); `approved_bps` counts approved stages in order only; `handover` needs all milestones Approved (`E_HANDOVER`). Integration flow `audit4_stage_order_and_repin_on_chain` |
+| A4-H2 | **Vote capture**: splitting one stake across sybil accounts (several 10 % tokens out-voting fully paid holders), or pledging a unit to one's own second account and taking a lien-first refund while keeping the full vote weight | **Fixed (live)** — weight = net equity `min(paid − refunded_out, price)`, never above the token's weight when the proposal opened (copy-on-write snapshot); every kind but Veto also needs a strict majority of distinct holders; new estates need `min_initial_bps ≥ 1000` |
+| A4-H3 | **Spoofable location.** The phone's GPS was optional and EXIF GPS can be written by anyone, so a real estate's geofence could be satisfied from anywhere | **Fixed (live)** for the check: `gps_device_missing` outside the playground and demo estates; EXIF and phone GPS must agree within 100 m. **Residual, Open (documented):** both positions still come from the submitter's device, and the challenge code can't prove physical presence (see the live proof photo above). Device-attested capture is not built |
+| A4-H4 | **Unvalidated trust anchors:** any `outlayer_id` (a mock could be pinned), the `playground` flag on any account, `mock*` warnings accepted, and HTTPS-mode `submit_verdict` not bound to the evidence | **Fixed (live)** — `outlayer_id` allowlisted per network (`outlayer.testnet` / `outlayer.near`) outside the playground; `playground: true` only on `.testnet` accounts; every `mock*` / `ai_mock*` warning becomes a failing reason; verdicts must echo `evidence_id` and the committed `sha256` (`verdict_unbound` otherwise); HTTPS-mode `submit_verdict` enforces both (`E_VERDICT_MISMATCH`). These are `new`-time checks; the live estates were checked by hand (all three use `outlayer.testnet`, only the playground has the flag) |
+| A4-H5 | **Sold estates ran the pre-hardening verifier** (`31c7225…`), because `set_verifier` stops at the first sale | **Fixed (live)** — `repin_verifier` (estate account only, 1 yocto, never back to `31c7225…`); all three estates pinned to `07cf9626…`. The method disappears when the estate keys are deleted |
+| A4-H6 | **UI showed success for payments the contract refused or refunded** (an `ft_transfer_call` whose `on_unit_deposit` returned the amount) | **Fixed (live)** — the outcome's refunded amount is read; refused or refunded payments are shown as failures with the reason |
+| A4-H7 | **Estate wizard and deploy script disagreed** on the config schema, so a wizard-made config couldn't be deployed as shown | **Fixed (live)** — the wizard emits the deploy-script schema; tests check its fields against what the deploy scripts read and the checked-in testnet config |
+| A4-H8 | **False public claims** in the README, site copy and proof page (verifier fixes "live", passing proofs, reproducibility) | **Fixed (live)** — site copy and proof page corrected (the proof page states what was checked and what wasn't); README, demo script and this review updated 13 Nov |
+| A4-H9 | **Estate keys.** Each estate account holds a full-access key, so its holder can replace the code | **Open (documented)** — kept on testnet so the demo stays upgradable; deleted at mainnet launch (LAUNCH.md §3); `/status` shows "not locked". Same as C10 / A3-2 |
+
+### Medium
+
+| # | Finding | Status |
+|---|---|---|
+| A4-M1 | Partial-refund accounting: after a lien-first refund, the release cap (`min(paid, price) × bps − released`) could ask for more than the unit held, so `claim_release` failed for that unit forever | **Fixed (live)** — releases are capped by the unit's books net of refunds; the token stays alive with net-equity weight (`r4_release_capped_by_books_after_partial_refund`) |
+| A4-M2 | A lien set before a default blocked the default sale, and liens needed no lender consent | **Fixed (live)** — liens need lender consent (`set_lien` → `accept_lien`; an offer is void after a transfer); a Default sale pays the lender first from the proceeds, up to its cap (`lien_settled`), the seller gets the rest and the buyer takes the token free of the lien |
+| A4-M3 | Veto top-up: topping up after a Veto opened added weight to it | **Fixed (live)** — weight capped at its value when the proposal opened |
+| A4-M4 | Unbooked surplus: USDC on a unit that nobody reported had no path out | **Fixed (live)** — `request_surplus_booking` → 7 days (`E_TIMELOCK`) → `finalize_surplus_booking`, booked as `unattributed` only, then `sweep_unattributed` |
+| A4-M5 | Poller skipped the rest of a backlog when NearBlocks paged it (gap skipping) | **Fixed (live)** — resumes from the NearBlocks continuation; never-backwards cursor (`poll_cursor_save`, 0006) |
+| A4-M6 | Event dedupe keyed by transaction, so several events in one transaction collapsed | **Fixed (live)** — events keyed by receipt, log line and data index (0006) |
+| A4-M7 | Lost emails: emails tied to the insert, so a failed send was never retried | **Fixed (live)** — emails driven by `events.notified_at` (0006) |
+| A4-M8 | Double schedulers: GitHub Actions and pg_cron both ran the poller, overlapping | **Fixed (live)** for `poll.yml` (manual only); run lock `poll_lock` and the 45 s work budget **Fixed (live)** (0006) |
+| A4-M9 | Playground DoS: unbounded submissions burned the verification budget; anyone could reset during others' captures | **Fixed (live)** — on-chain caps (5 submissions per account per hour, `E_RATE_LIMIT`; a slot is returned on infrastructure failure); guarded `playground_reset` (no check running, no foreign open capture, once per 10 min); per-estate relay caps on the server |
+| A4-M10 | 1Click note attribution: the estate and unit for a deposit could be taken from the request body instead of the quote's recipient, so a payment or family-wall note could be attributed to another unit | **Fixed (live)** — estate and unit derived from the recipient `<unit>.<estate>` only; a body naming another unit is refused |
+| A4-M11 | 1Click quote insert unchecked: a failed database insert still returned a deposit address the status route would not know | **Fixed (live)** — insert checked; no address is returned without a stored quote |
+| A4-M12 | Verdict lost when the 60 s request ended between the OutLayer answer and `submit_verdict` | **Fixed (live)** — verdict saved before submitting; a retry resubmits it without a new paid run |
+| A4-M13 | Hot key: one relayer key both paid gas and booked deposits | **Fixed (code)** — separate `REPORTER_*` key, required on mainnet. **Testnet:** the estates' `verdict_relayer` is still `relayer.plote.testnet`, so relayer and reporter are one account there until it is changed on-chain |
+| A4-M14 | `APP_URL` could fall back to localhost in production links (emails, NFT reference) | **Fixed (live)** — production falls back to `https://$VERCEL_PROJECT_PRODUCTION_URL`, never localhost |
+| A4-M15 | SSRF / hash oracle: the worker fetched any URL, followed redirects, and echoed the digest of whatever it fetched | **Fixed (live)** — URL allowlist (`url_not_allowed`), no redirects, the committed hash echoed (not the served bytes' digest) |
+| A4-M16 | An AI outage burned the verification budget and counted as a failed photo | **Fixed (live)** — infrastructure-only failures (`ai_unavailable`, `worker_error`) are stored as Error, refund the 0.05 NEAR and reopen the milestone; the worker retries NEAR AI once on a transient error |
+| A4-M17 | Unreproducible verifier, and a proof page claiming the build could be checked against source | **Fixed (live)** — `build-wasm.sh` reproducible build + `verifier-build.yml`; model pinned and recorded (`ai_model`); the proof page no longer compares a git SHA with a WASM hash or claims a source match it can't show |
+| A4-M18 | Types drift between the web app and INTERFACE.md | **Fixed (live)** — types aligned; new fields and error codes in `web/lib/errors.ts` |
+| A4-M19 | Double submit on payment and capture buttons | **Fixed (live)** — double-submit guards on payment and capture actions |
+| A4-M20 | Stale data after transactions | **Fixed (live)** — targeted cache invalidation per estate and unit |
+| A4-M21 | Capture dead ends (stuck after an upload or a failed check) | **Fixed (live)** — ready/retry states; only the next milestone in order is offered; another account's open capture is explained |
+| A4-M22 | Gas: `propose` and `vote` were sent with too little gas for the quorum scan and distinct-holder count | **Fixed (live)** — 100 Tgas each in the app |
+| A4-M23 | No `migrate` or state version for in-place upgrades | **Fixed (live)** — `migrate` + `state_version` (2 on all three estates); layout test `layout::r4_stored_layout_unchanged` |
+| A4-M24 | CI gaps: broad token permissions, actions pinned by tag, no secret scan, reproducible check not tied to the deployed revision | **Fixed (live)** — least-privilege permissions, SHA-pinned actions, gitleaks, reproducible check rebuilds the pinned revision |
+
+### Low
+
+| # | Finding | Status |
+|---|---|---|
+| A4-L1 | `ExtendDeadline` checked only at `propose`; could shorten a deadline | **Fixed (live)** — re-checked when it passes, never shortens (rejected otherwise) |
+| A4-L2 | Money/vote/transfer methods usable while an `nft_transfer_call` of the token was unresolved | **Fixed (live)** — pending flag, `E_NFT_PENDING` |
+| A4-L3 | `add_units` kept any excess deposit | **Fixed (live)** — excess returned to the developer |
+| A4-L4 | A report and an `ft_transfer_call` overlapping could book the same money twice | **Fixed (live)** in the contract — amounts above the report's spare are accepted but not booked (`deposit_deferred`). The server books them with `report_deposit` from the poller's follow-ups: **Fixed (live)** (0006) |
+| A4-L5 | `set_verifier` took no 1 yocto | **Fixed (live)** — 1 yocto required |
+| A4-L6 | `withdraw_owed` with nothing owed succeeded silently | **Fixed (live)** — `E_NOTHING_OWED` |
+| A4-L7 | Replay checks fell back to per-instance memory when Postgres was down | **Fixed (live)** — relayed delegates and gate passes fail closed (503 `REPLAY_CHECK_UNAVAILABLE`) |
+| A4-L8 | API errors and logs could carry internal details or keys | **Fixed (live)** — sanitized error bodies; keys and bearer tokens redacted from logs |
+| A4-L9 | No signal when the poller stopped | **Fixed (live)** — `poller.ok` in `/api/health` (false after 20 min without a saved cursor) |
+| A4-L10 | Flagged evidence files were only reported, never deleted | **Fixed (live)** — deleted by default in production (`STORAGE_CLEANUP_DELETE=0` for report-only); runs inside the poller |
+
+New error codes: `E_VERDICT_MISMATCH`, `E_TIMELOCK`, `E_RATE_LIMIT`, `E_NFT_PENDING`, `E_NOTHING_OWED` (INTERFACE §1.5,
+`web/lib/errors.ts`). New verifier reasons: `gps_device_missing`, `url_not_allowed`; new contract reason
+`verdict_unbound`.
+
+### Still open after Audit 4
+
+1. **Estate full-access keys on testnet** (A4-H9). Until they are deleted at mainnet launch (LAUNCH.md §3), the key
+   holder can upgrade the code and call `repin_verifier`.
+2. **No timelock on `StepIn` / `ReplaceSurveyor`** (INTERFACE §1.2). Quorum, both majorities and the net-equity snapshot
+   are the safeguards.
+3. **Veto stall** (A3-6): a holder with ≥ 50 % of the weight can stop a Veto passing by abstaining.
+4. **Deposit reporter trust** (A2-12): the reporter is trusted to report plain-transfer deposits honestly. It can credit
+   at most the surplus seen in two balance reads, but could book money from a pending `ft_transfer_call` that is later
+   refunded. On testnet it is the same account as the relayer (A4-M13).
+5. **Code-in-frame is not proof of presence** (V-H1, A4-H3): the live proof photo shows a composited code passes.
+   Non-demo estates add the phone's GPS; device-attested capture is not built.
+6. **CSP** (W-M1, A3-7): `script-src` still allows `'unsafe-inline'` and `'unsafe-eval'` for the wallet SDKs.
+7. **External gates:** independent audit, legal opinion, mainnet pilot on a real site (LAUNCH.md §1).
