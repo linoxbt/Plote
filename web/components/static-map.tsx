@@ -19,14 +19,14 @@ export function StaticMap({ center, radiusM, pin, pinLabel }: { center: [number,
     <figure className="corners relative overflow-hidden bg-surface-2">
       <svg viewBox={`${x0} ${y0} ${W} ${W}`} className="block aspect-square w-full" role="img" aria-label={`Map: site boundary of ${radiusM} m${pin ? ", with the photo location pinned" : ""}`}>
         {tiles.map((t) => (
-          <image key={`${t.x}-${t.y}`} href={`https://tile.openstreetmap.org/${z}/${((t.x % max) + max) % max}/${t.y}.png`} x={t.x * 256} y={t.y * 256} width={256} height={256} style={{ filter: "invert(0.92) hue-rotate(180deg) saturate(0.4) brightness(0.9)" }} />
+          <image key={`${t.x}-${t.y}`} href={`https://tile.openstreetmap.org/${z}/${((t.x % max) + max) % max}/${t.y}.png`} x={t.x * 256} y={t.y * 256} width={256} height={256} style={{ filter: "saturate(0.35) contrast(0.95) brightness(1.02)" }} />
         ))}
-        {radiusM > 0 ? <circle cx={cx} cy={cy} r={r} fill="rgba(255,146,17,0.12)" stroke="#FF9211" strokeWidth={2} strokeDasharray="6 4" /> : null}
+        {radiusM > 0 ? <circle cx={cx} cy={cy} r={r} fill="rgba(255,122,0,0.14)" stroke="#FF7A00" strokeWidth={2} strokeDasharray="6 4" /> : null}
         <circle cx={cx} cy={cy} r={3} fill="#FF9211" />
         {p ? (
           <g>
-            <circle cx={p[0]} cy={p[1]} r={8} fill="#FD8D37" stroke="#090909" strokeWidth={2} />
-            {pinLabel ? <text x={p[0] + 12} y={p[1] + 4} fill="#FD8D37" fontSize={14} fontFamily="monospace">{pinLabel}</text> : null}
+            <circle cx={p[0]} cy={p[1]} r={8} fill="#FF7A00" stroke="#FFFFFF" strokeWidth={2} />
+            {pinLabel ? <text x={p[0] + 12} y={p[1] + 4} fill="#B54700" fontSize={14} fontFamily="monospace">{pinLabel}</text> : null}
           </g>
         ) : null}
       </svg>

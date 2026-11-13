@@ -31,12 +31,12 @@ export default function Landing() {
     <main id="main">
       {/* ── Hero ── */}
       <section aria-label="Introduction" className="relative">
-        <Container className="grid items-center gap-12 pb-14 pt-10 sm:pt-16 lg:grid-cols-[1fr_1.08fr] lg:gap-10 lg:pb-20 lg:pt-20">
+        <Container className="grid items-center gap-12 pb-14 pt-10 sm:pt-16 lg:grid-cols-[1.08fr_1fr] lg:gap-10 lg:pb-20 lg:pt-20">
           <div className="space-y-7">
             <div className="rise">
               <LiveReadPill />
             </div>
-            <h1 className="rise text-[44px] leading-[1.02] [animation-delay:80ms] sm:text-[64px] lg:text-[76px]">
+            <h1 className="rise text-[44px] leading-[1.03] [animation-delay:80ms] sm:text-[64px] lg:text-[58px] xl:text-[68px]">
               Pay for the house{" "}
               <br />
               <span className="hl">you can see.</span>
@@ -71,35 +71,39 @@ export default function Landing() {
 
       {/* ── Why Plote ── */}
       <Section label="Why Plote">
-        <div className="grid gap-10 lg:grid-cols-[1fr_1.6fr] lg:gap-16">
-          <div data-reveal className="space-y-4">
-            <Eyebrow>Why Plote</Eyebrow>
-            <h2 className="text-[32px] leading-[1.08] sm:text-[44px] sm:leading-[1.05]">
-              Off-plan is a promise.
-              <br />
-              Plote makes it a receipt.
-            </h2>
-            <p className="max-w-md text-base leading-relaxed text-muted">
-              Each unit is a named NEAR account with no keys. It holds the buyer&apos;s USDC and obeys only the estate contract&apos;s public rules — not the developer,
-              not Plote.
-            </p>
-            <TextLink href="/how-it-works">See how it works</TextLink>
+        <div className="grid gap-10">
+          <div data-reveal className="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-end">
+            <div className="space-y-4">
+              <Eyebrow>Why Plote</Eyebrow>
+              <h2 className="text-[32px] leading-[1.08] sm:text-[44px] sm:leading-[1.05]">
+                Off-plan is a promise.
+                <br />
+                Plote makes it a receipt.
+              </h2>
+            </div>
+            <div className="space-y-2">
+              <p className="max-w-md text-base leading-relaxed text-muted">
+                Each unit is a named NEAR account with no keys. It holds the buyer&apos;s USDC and obeys only the estate contract&apos;s public rules — not the
+                developer, not Plote.
+              </p>
+              <TextLink href="/how-it-works">See how it works</TextLink>
+            </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-3">
             {PROBLEMS.map(([icon, t, b, fix]) => (
               <div key={t} data-reveal className="flex flex-col rounded-[20px] bg-surface p-6 ring-1 ring-line">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-2 text-text ring-1 ring-line">{icon}</div>
                 <h3 className="mt-5 text-lg font-medium">{t}</h3>
-                <p className="mt-2 text-[15px] leading-relaxed text-muted">{b}</p>
+                <p className="mb-5 mt-2 text-[15px] leading-relaxed text-muted">{b}</p>
                 <p className="mt-auto flex items-start gap-2 border-t border-line pt-4 text-[14px] text-text">
                   <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" strokeWidth={2.25} aria-hidden /> {fix}
                 </p>
               </div>
             ))}
-            <div className="sm:col-span-3">
+            <div className="md:col-span-3">
               <SourceLinks />
             </div>
-            <div data-reveal className="rounded-[20px] bg-surface p-6 ring-1 ring-line sm:col-span-3">
+            <div data-reveal className="rounded-[20px] bg-surface p-6 ring-1 ring-line md:col-span-3">
               <p className="text-[15px] font-medium">What Plote doesn&apos;t do</p>
               <ul className="mt-3 grid gap-x-8 gap-y-2 text-sm leading-relaxed text-muted md:grid-cols-2">
                 <li>Plote is not your land title. Always check the C of O or governor&apos;s consent with a lawyer.</li>

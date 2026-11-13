@@ -36,7 +36,7 @@ export function Heading({
       {eyebrow ? <Eyebrow tone={tone}>{eyebrow}</Eyebrow> : null}
       <H
         className={clsx(
-          as === "h1" ? "text-[42px] leading-[1.04] sm:text-[60px] lg:text-[72px] lg:leading-[1.02]" : "text-[32px] leading-[1.08] sm:text-[44px] sm:leading-[1.05]",
+          as === "h1" ? "text-[40px] leading-[1.05] sm:text-[54px] lg:text-[62px] lg:leading-[1.03]" : "text-[32px] leading-[1.08] sm:text-[44px] sm:leading-[1.05]",
           align === "left" && "max-w-3xl",
         )}
       >

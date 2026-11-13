@@ -97,6 +97,8 @@
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Element defaults live in the base layer so Tailwind utilities (text-*, leading-*, font-*) can override them. */
+@layer base {
 html,
 body {
   background: var(--bg);
@@ -157,7 +159,10 @@ p {
 a {
   color: inherit;
 }
+}
 
+/* Component classes live in the components layer: utilities on the same element win (e.g. `btn hidden md:inline-flex`). */
+@layer components {
 .mono,
 .tabular {
   font-family: var(--font-mono);
@@ -402,6 +407,11 @@ select.input {
   color: var(--muted);
   margin-bottom: 0.4rem;
 }
+th.label,
+td.label {
+  display: table-cell;
+  margin-bottom: 0;
+}
 
 input[type="checkbox"],
 input[type="radio"],
@@ -462,6 +472,8 @@ details > summary::-webkit-details-marker {
 /* tables read as plain statements */
 table {
   font-variant-numeric: tabular-nums;
+}
+
 }
 
 /* ---- motion. The `motion` class is only set when the visitor hasn't asked for less motion. ---- */

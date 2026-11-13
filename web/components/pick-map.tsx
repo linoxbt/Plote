@@ -78,10 +78,10 @@ export function PickMap({ lat, lon, radiusM, onPick }: { lat: number; lon: numbe
         }}
       >
         {tiles.map((t) => (
-          <image key={`${z}-${t.x}-${t.y}`} href={`https://tile.openstreetmap.org/${z}/${((t.x % max) + max) % max}/${t.y}.png`} x={t.x * TILE} y={t.y * TILE} width={TILE} height={TILE} style={{ filter: "invert(0.92) hue-rotate(180deg) saturate(0.4) brightness(0.9)" }} />
+          <image key={`${z}-${t.x}-${t.y}`} href={`https://tile.openstreetmap.org/${z}/${((t.x % max) + max) % max}/${t.y}.png`} x={t.x * TILE} y={t.y * TILE} width={TILE} height={TILE} style={{ filter: "saturate(0.35) contrast(0.95) brightness(1.02)" }} />
         ))}
-        {r > 0 ? <circle cx={px} cy={py} r={r} fill="rgba(255,146,17,0.12)" stroke="#FF9211" strokeWidth={2} strokeDasharray="6 4" /> : null}
-        <circle cx={px} cy={py} r={7} fill="#FD8D37" stroke="#090909" strokeWidth={2} />
+        {r > 0 ? <circle cx={px} cy={py} r={r} fill="rgba(255,122,0,0.14)" stroke="#FF7A00" strokeWidth={2} strokeDasharray="6 4" /> : null}
+        <circle cx={px} cy={py} r={7} fill="#FF7A00" stroke="#FFFFFF" strokeWidth={2} />
       </svg>
       <div className="absolute right-2 top-2 flex flex-col gap-1">
         <button type="button" className="btn btn-ghost corners btn-sm min-w-11 bg-bg/80 px-2" onClick={() => zoom(1)} aria-label="Zoom in"><Plus className="h-4 w-4" aria-hidden /></button>

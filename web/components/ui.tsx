@@ -232,7 +232,7 @@ export function PageHeader({ eyebrow, title, children, actions }: { eyebrow?: Re
 }
 
 export function Page({ children, className, narrow }: { children: ReactNode; className?: string; narrow?: boolean }) {
-  return <main id="main" className={clsx("relative mx-auto w-full px-4 py-10 sm:px-6 sm:py-16 lg:px-8", narrow ? "max-w-3xl" : "max-w-7xl", className)}>{children}</main>;
+  return <main id="main" className={clsx("relative mx-auto w-full px-4 py-10 sm:px-6 sm:py-16 lg:px-8", narrow ? "max-w-3xl" : "max-w-[1200px]", className)}>{children}</main>;
 }
 
 export function KV({ k, children }: { k: ReactNode; children: ReactNode }) {

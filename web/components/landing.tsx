@@ -197,9 +197,9 @@ export function HeroUnit() {
         : null;
 
   return (
-    <div className="relative lg:h-[600px]">
+    <div className="relative lg:h-[620px]">
       {/* calm panel with the token */}
-      <div className="survey-grid relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#e7edf5] to-[#f6f8fb] ring-1 ring-line max-lg:aspect-[5/4] lg:absolute lg:inset-y-0 lg:left-14 lg:right-0">
+      <div className="survey-grid relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#e7edf5] to-[#f6f8fb] ring-1 ring-line max-lg:aspect-square sm:max-lg:aspect-[5/4] lg:absolute lg:inset-y-0 lg:left-14 lg:right-0">
         <div className="absolute inset-x-3 top-3 flex flex-wrap items-start justify-between gap-2 sm:inset-x-4 sm:top-4">
           <div className="flex flex-wrap gap-1 rounded-full bg-surface/80 p-1 ring-1 ring-line backdrop-blur" role="group" aria-label="Show an estate">
             {data.map((d) => (
@@ -209,7 +209,7 @@ export function HeroUnit() {
                 aria-pressed={d.account === current.account}
                 onClick={() => setPicked(d.account)}
                 className={clsx(
-                  "min-h-9 rounded-full px-3 text-[13px] transition-colors",
+                  "min-h-9 rounded-full px-2.5 text-[12px] transition-colors sm:px-3 sm:text-[13px]",
                   d.account === current.account ? "bg-surface font-medium text-text shadow-sm ring-1 ring-line" : "text-muted hover:text-text",
                 )}
               >
@@ -223,7 +223,7 @@ export function HeroUnit() {
             </span>
           ) : null}
         </div>
-        <div className="absolute bottom-0 right-4 top-16 flex w-[52%] items-center justify-center sm:right-8 lg:right-10 lg:top-20 lg:w-[58%]">
+        <div className="absolute right-4 top-16 flex w-[46%] justify-center sm:right-8 sm:w-[40%] lg:right-8 lg:top-24 lg:w-[48%]">
           {u && current.e ? (
             <HouseNFT
               className="w-full max-w-[300px] rounded-2xl shadow-[var(--shadow-float)]"
@@ -243,7 +243,7 @@ export function HeroUnit() {
       </div>
 
       {/* floating unit card */}
-      <div className="float-card relative z-10 mx-3 -mt-24 p-5 sm:mx-auto sm:max-w-[380px] sm:p-6 lg:absolute lg:bottom-8 lg:left-0 lg:mx-0 lg:mt-0 lg:w-[360px]">
+      <div className="float-card relative z-10 mx-3 -mt-28 p-5 sm:mx-auto sm:max-w-[380px] sm:p-6 lg:absolute lg:bottom-6 lg:left-0 lg:mx-0 lg:mt-0 lg:w-[350px]">
         <UnitCardBody d={current} u={u} />
       </div>
     </div>
@@ -699,7 +699,8 @@ export function RealProofs() {
     .sort((a, b) => cmpBig(toBig(b.ev.submitted_at), toBig(a.ev.submitted_at)))
     .slice(0, 2);
   const refunds = data.filter((d) => d.e && toBig(d.e.totals.refunded) > 0n).slice(0, 1);
-  const cards = proofs.length + refunds.length;
+  const releases = data.filter((d) => d.e && toBig(d.e.totals.released) > 0n).slice(0, Math.max(0, 3 - proofs.length - refunds.length));
+  const cards = proofs.length + refunds.length + releases.length;
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -793,6 +794,41 @@ export function RealProofs() {
         );
       })}
 
+      {releases.map((d) => {
+        const e = d.e!;
+        const released = (d.ms ?? []).filter((m) => m.status === "Approved" && m.veto_passed);
+        return (
+          <Link
+            key={`release-${d.account}`}
+            href={`/estates/${d.slug}/milestones`}
+            data-reveal
+            className="group flex flex-col rounded-[20px] bg-surface p-6 ring-1 ring-line transition-shadow hover:shadow-[0_16px_40px_-20px_rgba(11,18,32,0.35)]"
+          >
+            <p className="inline-flex items-center gap-2 text-sm font-medium text-accent">
+              <BadgeCheck className="h-4 w-4" aria-hidden /> Released, only after proof
+            </p>
+            <p className="mt-4 text-[15px] leading-relaxed text-text-2">
+              {released.length
+                ? `${released.map((m) => m.title).join(", ")} on ${prettyName(d)} passed the check, was signed and survived the veto window. Only then did ${released.length === 1 ? "its" : "their"} share move.`
+                : `${prettyName(d)} has released money to its developer after a proven stage.`}
+            </p>
+            <dl className="mt-auto grid grid-cols-2 gap-3 border-t border-line pt-4">
+              <div>
+                <dt className="mono text-[11px] uppercase tracking-[0.12em] text-muted">Released</dt>
+                <dd className="mt-1 text-[26px] font-medium leading-none tracking-[-0.03em] tabular-nums">{formatUsd(e.totals.released)}</dd>
+              </div>
+              <div>
+                <dt className="mono text-[11px] uppercase tracking-[0.12em] text-muted">Still held</dt>
+                <dd className="mt-1 text-[26px] font-medium leading-none tracking-[-0.03em] tabular-nums">{formatUsd(e.totals.in_escrow)}</dd>
+              </div>
+            </dl>
+            <span className="mt-4 flex items-center justify-between text-sm font-medium">
+              {prettyName(d)} <ArrowDot />
+            </span>
+          </Link>
+        );
+      })}
+
       {cards === 0 ? (
         <div className="flex flex-col justify-center rounded-[20px] bg-surface p-6 text-sm text-muted ring-1 ring-line md:col-span-1 lg:col-span-3">
           {loading
@@ -869,8 +905,9 @@ export function OnRecord() {
   if (!people.length) {
     return <div className="rounded-[20px] bg-surface p-6 text-sm text-muted ring-1 ring-line">{data.some((d) => d.loading) ? "Reading the estates…" : "No estate answered just now."}</div>;
   }
+  const wide = people.length <= 2;
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className={clsx("grid gap-4 sm:grid-cols-2", !wide && "lg:grid-cols-4")}>
       {people.map((p) => (
         <div key={`${p.role}-${p.account}`} data-reveal className="flex flex-col rounded-[20px] bg-surface p-5 ring-1 ring-line">
           <div className="flex items-center gap-3">
@@ -888,7 +925,7 @@ export function OnRecord() {
             <span className="min-w-0 truncate">{p.account}</span>
             <ChainLink account={p.account} className="ml-auto shrink-0" />
           </p>
-          <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3">
+          <dl className={clsx("mt-4 grid grid-cols-2 gap-x-3 gap-y-3", wide && "lg:grid-cols-4")}>
             {p.stats.map(([k, v]) => (
               <div key={k}>
                 <dt className="text-[12px] text-muted">{k}</dt>

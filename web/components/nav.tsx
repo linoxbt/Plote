@@ -70,7 +70,7 @@ const PRIMARY: NavLink[] = [
 
 function NavItem({ l, onClick, big }: { l: NavLink; onClick?: () => void; big?: boolean }) {
   const ext = l.href.startsWith("http");
-  const cls = clsx("group flex min-h-11 flex-col justify-center rounded-xl py-1.5 transition-colors", big ? "text-lg font-medium hover:text-orange-ink" : "text-sm text-muted hover:text-text");
+  const cls = clsx("group flex flex-col justify-center rounded-xl transition-colors", big ? "min-h-11 py-1.5 text-lg font-medium hover:text-orange-ink" : "min-h-9 py-1 text-sm text-muted hover:text-text");
   const inner = (
     <>
       <span className="inline-flex items-center gap-1.5">
@@ -159,7 +159,7 @@ export function Nav() {
       <div className="border-b border-line bg-surface/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-3 px-4 sm:px-6 lg:px-8">
           <Logo />
-          <nav aria-label="Primary" className="ml-6 hidden flex-1 justify-center lg:flex">
+          <nav aria-label="Primary" className="ml-4 hidden flex-1 justify-center xl:flex">
             <ul className="flex items-center gap-1">
               {PRIMARY.map((l) => {
                 const on = path === l.href || (l.href !== "/" && path.startsWith(`${l.href}/`));
@@ -169,7 +169,7 @@ export function Nav() {
                       href={l.href}
                       prefetch={false}
                       aria-current={on ? "page" : undefined}
-                      className={clsx("inline-flex min-h-11 items-center rounded-full px-3 text-[14px] transition-colors", on ? "font-medium text-text" : "text-text-2/80 hover:text-text")}
+                      className={clsx("inline-flex min-h-11 items-center whitespace-nowrap rounded-full px-2.5 text-[14px] transition-colors", on ? "font-medium text-text" : "text-text-2/80 hover:text-text")}
                     >
                       {l.label}
                     </Link>
@@ -179,7 +179,7 @@ export function Nav() {
             </ul>
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden xl:block">
+            <span className="hidden 2xl:block">
               <NetworkPill />
             </span>
             <div className="hidden sm:block">

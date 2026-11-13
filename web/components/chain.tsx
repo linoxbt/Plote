@@ -33,10 +33,10 @@ export function MonoAmount({
       </span>
     );
   }
-  const sz = { sm: "text-sm", md: "text-base", lg: "text-xl", xl: "text-3xl sm:text-4xl" }[size];
+  const sz = { sm: "text-sm", md: "text-base", lg: "text-xl", xl: "text-3xl tracking-[-0.03em] sm:text-4xl" }[size];
   return (
     <span className={clsx("inline-flex flex-wrap items-baseline gap-x-1.5", className)}>
-      <span className={clsx("mono tabular-nums", sz)} aria-label={usdcAriaLabel(value)}>
+      <span className={clsx("font-medium tabular-nums tracking-[-0.01em]", sz)} aria-label={usdcAriaLabel(value)}>
         {dollar ? "$" : ""}
         {formatUsdc(value)}
         {unit && !dollar ? ` ${unit}` : ""}
