@@ -104,13 +104,13 @@ these; no `set_*` method re-checks them, so code upgrades never brick a live est
 | `cancel_reservation` | `{ unit_id }` | the reserver; attach 1 yocto | Promise (USDC refund; resolves to `bool`), or `true` when nothing was paid |
 | `expire_reservation` | `{ unit_id }` | anyone, after `expires_at` | Promise (resolves to `bool`), or `true` when nothing was paid |
 | `sync` | `{ unit_id }` | anyone. **Check only**: reads the unit's USDC balance, logs/emits `balance_checked {unit_id, balance, expected}`, credits nothing | Promise (`U128` surplus seen) |
-| `report_deposit` | `{ unit_id, amount: U128 }` | only the estate's `verdict_relayer` (its **deposit reporter**, `E_NOT_RELAYER`); no deposit; ~100 Tgas. Books a plain-transfer (1Click) delivery, see §1.2.1 | Promise (`U128` credited) |
+| `report_deposit` | `{ unit_id, amount: U128, deferred?: bool }` | only the estate's `verdict_relayer` (its **deposit reporter**, `E_NOT_RELAYER`); no deposit; ~100 Tgas. Books a plain-transfer (1Click) delivery, see §1.2.1. `deferred: true` books a `deposit_deferred` payment: the credit is capped at what is still recorded as deferred on the unit and uses it up (`E_NOTHING_TO_SWEEP` when nothing is), so a retried deferred report never books twice | Promise (`U128` credited) |
 | `on_unit_deposit` | `{ unit_id, sender_id, amount: U128, msg }` | only the unit's own account. Books exactly `amount` and returns `"0"` when the unit takes payments (holder, or active reservation, and no transfer out pending); otherwise returns `amount` (USDC refunds it). **Deferred** (§1.2.1): within 5 min of a `report_deposit` that credited this unit, an amount above what that report saw and left unbooked is accepted (`"0"`) but not booked; event `deposit_deferred` | `U128` (unused amount) |
 | `refund` | `{ unit_id }` | holder; attach 1 yocto; `E_NFT_PENDING` during an `nft_transfer_call` of the token. A lien-first refund that leaves money on the unit keeps the token alive with less weight (net equity) | Promise |
 | `withdraw_excess` | `{ unit_id }` | holder; attach 1 yocto; `E_NFT_PENDING` as above; pays `min(paid − price − excess already out, refundable)` | Promise |
-| `sweep_unattributed` | `{ unit_id }` | anyone | Promise |
-| `request_surplus_booking` | `{ unit_id }` | developer or `recovery_id` (`E_NOT_DEVELOPER`); no deposit. Reads the unit's USDC balance once and records the surplus over the books (`E_NOTHING_TO_SWEEP` if none; `E_BALANCE_PENDING` if the books changed meanwhile, `E_IN_FLIGHT`). A new request replaces the old one. Event `surplus_requested {unit_id, amount, ready_at}` | Promise (`U128` recorded) |
-| `finalize_surplus_booking` | `{ unit_id }` | developer or `recovery_id`; ≥ 7 days after the request (`E_TIMELOCK`; `E_BAD_ARGS` without one). Two chained balance reads like `report_deposit`; books `min(recorded, first − expected, second − expected)` as **`unattributed`** (never `paid`), then `sweep_unattributed` can move it. Event `surplus_booked {unit_id, amount, unattributed}` | Promise (`U128` booked) |
+| `sweep_unattributed` | `{ unit_id }` | anyone; **only an `Available` unit** (`E_UNIT_TAKEN` while it is reserved or held: stray money there waits until the unit is empty again; end a lapsed reservation with `expire_reservation` first). Sends `unattributed` to the last reserver within `late_claim_ns` of their reservation ending, else `recovery_id` | Promise |
+| `request_surplus_booking` | `{ unit_id }` | developer or `recovery_id` (`E_NOT_DEVELOPER`); no deposit; `E_FROZEN` while frozen. **Only an empty unit**: `Available`, no reservation, no holder, `paid − released − refunded_out == 0`, nothing in flight (`E_UNIT_TAKEN`, `E_IN_FLIGHT`). Reads the unit's USDC balance once and records the surplus over the books (`E_NOTHING_TO_SWEEP` if none; `E_BALANCE_PENDING` if the books changed meanwhile). A new request replaces the old one. Event `surplus_requested {unit_id, amount, ready_at}` | Promise (`U128` recorded) |
+| `finalize_surplus_booking` | `{ unit_id }` | developer or `recovery_id`; attach ≥ 150 Tgas; ≥ 7 days after the request (`E_TIMELOCK`; `E_BAD_ARGS` without one); same empty-unit and not-frozen rules (`E_UNIT_TAKEN`, `E_IN_FLIGHT`, `E_FROZEN`). **The call uses the request up**, whatever happens next. Two chained balance reads (`on_surplus_first` → `on_surplus_second`); if the unit is still empty, unfrozen and its books unchanged, it books `min(recorded, first − expected, second − expected)` as `unattributed` (never `paid`) **and in the same receipt transfers exactly that** to the sweep recipient (last reserver within `late_claim_ns`, else `recovery_id`; memo `plote:surplussweep:<unit>`). A failed transfer undoes the booking. Events `surplus_booked {unit_id, amount, unattributed}`, then `unattributed_swept` | Promise (`U128` booked, `"0"` if nothing) |
 | `list_for_sale` | `{ unit_id, ask: U128 }` | holder, no lien; attach 1 yocto; `E_NFT_PENDING` during an `nft_transfer_call` | — |
 | `cancel_listing` | `{ unit_id }` | holder (Voluntary only); attach 1 yocto | — |
 | `ft_on_transfer` | NEP-141 (`msg = {"buy":"a-4b"}`) | only from `usdc_id`. A Default listing costs the holder's `paid − refunded_out` **at purchase time** (later payments raise it); the default penalty is `penalty_bps` of that. A lien (set before the default) doesn't block a Default sale: the proceeds after the penalty go to the lender first, up to its `cap` (event `lien_settled {unit_id, lender, amount}`), the rest to the seller, and the buyer gets the token without the lien. A Voluntary listing can't coexist with a lien | `U128` |
@@ -156,9 +156,15 @@ proposal opened adds nothing to it (no Veto capture by topping up), and `elector
 - `Veto`: executes when `yes × 2 > electorate` (weight only, so it stays fast inside the veto window); rejected when
   `no × 2 ≥ electorate`.
 - Every other kind needs **both** `yes × 2 > electorate` **and** a strict majority of distinct holders:
-  `holders_yes × 2 > holders_eligible`, where `holders_eligible` counts the distinct current holders of the eligible
-  tokens and `holders_yes` / `holders_no` those of them holding a token that voted yes / no. It is rejected when
-  `no × 2 ≥ electorate` **or** `holders_no × 2 ≥ holders_eligible`.
+  `holders_yes × 2 > holders_eligible`, where `holders_eligible` counts the distinct holders of the eligible tokens
+  **as they were when the proposal opened**, and `holders_yes` / `holders_no` those of them whose (creation-time)
+  token voted yes / no. A token that changed hands since still counts for whoever held it at creation (its current
+  holder casts the vote), so splitting tokens over fresh accounts after a proposal opens adds no holders (audit round
+  4 review, N3). It is rejected when `no × 2 ≥ electorate` **or** `holders_no × 2 ≥ holders_eligible`. Implementation:
+  a token's change of hands while any proposal may be open records `(time, previous holder)` (raw keys `zh`/`zi`).
+  While proposals are open, a token can change hands voluntarily (`nft_transfer(_call)`, a listing purchase) at most
+  16 times per `proposal_period_ns` (`E_TOO_MANY`; a refused purchase is refunded); recovery and transfer-call reverts
+  are never refused.
 
 Why both: the distinct-holder majority stops one account passing a `StepIn`, `ReplaceSurveyor`, `Freeze`, `Unfreeze` or
 `ExtendDeadline` alone while other accounts hold eligible tokens; the weight majority (net equity, capped at creation)
@@ -215,11 +221,15 @@ pending `ft_transfer_call` sees money that may leave):
   that credits a unit remembers when and how much surplus its reads saw and left unbooked (`spare`). For 5 minutes
   (`REPORT_SETTLE_NS`) after it, an `on_unit_deposit` of at most `spare` is booked normally (and uses that much up); a
   larger one is accepted (`"0"`, the money stays on the unit) but **not booked**, event
-  `deposit_deferred {unit_id, sender_id, amount}`. The app server then books it with `report_deposit({unit_id, amount})`
-  (two reads; it can never be booked twice). The unit contract can't signal earlier (its code is a global contract
+  `deposit_deferred {unit_id, sender_id, amount}`, and the amount is recorded as deferred on the unit (key `zd`). The
+  app server then books it with `report_deposit({unit_id, amount, deferred: true})`: two reads, capped at the recorded
+  deferred amount, which it uses up, so a retry after a timeout books nothing (review N6). The unit contract can't signal earlier (its code is a global contract
   fixed by hash), so this is the estate-side guard.
-- **Unbooked surplus** (finding 7): USDC on a unit that nobody reported is booked as `unattributed` by
-  `request_surplus_booking` → (7 days) → `finalize_surplus_booking`, then swept (`sweep_unattributed`).
+- **Unbooked surplus** (finding 7, review N1): USDC on an **empty** unit that nobody reported is moved out by
+  `request_surplus_booking` → (7 days) → `finalize_surplus_booking`, which books and transfers it in one flow. A
+  balance read can be inflated for a few blocks (an `ft_transfer_call` whose `ft_on_transfer` fails is refunded by
+  `ft_resolve_transfer` later), so on held or reserved units neither surplus booking nor `sweep_unattributed` is
+  allowed: a transient "surplus" can then only ever move the inflater's own money out of an empty unit, never escrow.
 
 Server call after a 1Click `SUCCESS`: the relayer signs `report_deposit` on the **estate** account (not the unit):
 `{ "unit_id": "<first label of the recipient>", "amount": "<swapDetails.amountOut>" }`, 0 deposit, 100 Tgas; on a failed
@@ -357,7 +367,7 @@ type ProposalView = {
   electorate: number; yes: number; no: number;   // weighted: whole USDC of min(paid − refunded_out, price); else token counts
   voted: string[];                               // unit ids that voted
   weighted: boolean;
-  holders_eligible: number; holders_yes: number; holders_no: number;   // distinct holders (non-Veto majority rule)
+  holders_eligible: number; holders_yes: number; holders_no: number;   // distinct holders at proposal creation (non-Veto rule)
   status: "Open" | "Executed" | "Rejected" | "Expired";
 };
 
@@ -449,15 +459,20 @@ Live estates are upgraded in place, so the borsh layout of the root `Estate` and
 New state lives under raw storage keys starting with `z` (the original collections use one-byte prefixes `0x00..0x07`):
 `zv` state version, `zx` latest proposal expiry, `zs` per-unit weight history, `zl` pending liens, `zu` surplus
 requests, `zr` playground submissions, `zt` last playground reset, `zn` pending `nft_transfer_call`s, `zw` last
-crediting report per unit, `zm` `ai_model` per evidence. Upgrade procedure: deploy the new code, then call `migrate`
-from the estate account (it can be the second action of the same transaction); `state_version` then reads 2. A future
-change that does need a new root layout would add a `#[private] #[init(ignore_state)]` migration that reads the old
-struct; `migrate` is where the stored version is dispatched on.
+crediting report per unit, `zm` `ai_model` per evidence, `zh` per-unit holder history and `zi` its index, `zd`
+deferred deposits per unit.
+
+Upgrade procedure — **always call `migrate` after every code upgrade**, even when nothing seems to need it: deploy the
+new code, then call `migrate` from the estate account (best as the second action of the same transaction, so no call
+runs between them). It is idempotent and returns the version; `state_version` then reads the current version (2; the
+review-N1/N3/N6 update added keys that start empty, so it needed no bump). A future change that does need a new root
+layout would add a `#[private] #[init(ignore_state)]` migration that reads the old struct; `migrate` is where the
+stored version is dispatched on.
 
 Storage (finding 13): holder setters (`set_guardians` ≤ 3, `set_beneficiary` 1, `set_lien` one pending offer per unit,
 `list_for_sale` one listing, `vote` entries inside a proposal paid for by `PROPOSAL_DEPOSIT`) take no storage deposit;
 each is bounded per unit and paid by the estate's balance. New per-unit/per-account keys are bounded too (weight history
-≤ 8 entries, playground submissions ≤ 5 timestamps).
+≤ 8 entries, holder history ≤ 16 + recoveries/reverts per period, playground submissions ≤ 5 timestamps).
 
 ---
 

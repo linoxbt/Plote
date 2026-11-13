@@ -40,7 +40,7 @@ export const GAS = {
   finish_recovery: 15,
   cancel_recovery: 10,
   request_surplus_booking: 50, // one balance read + callback
-  finalize_surplus_booking: 100, // two chained balance reads + callbacks, like report_deposit
+  finalize_surplus_booking: 150, // two chained balance reads, the booking and the transfer in one flow (the contract needs ≥ 150 Tgas)
   set_lien: 10,
   accept_lien: 10,
   clear_lien: 10,
@@ -128,8 +128,8 @@ export const estate = {
    * credits min(amount, surplus seen in two chained balance reads); fails E_BALANCE_PENDING (retry) if the unit's
    * books changed meanwhile, E_IN_FLIGHT while a transfer out is pending. No deposit.
    */
-  reportDeposit: (e: string, unit_id: string, amount: U128): TxSpec =>
-    fnCall(e, "report_deposit", { unit_id, amount }, GAS.report_deposit),
+  reportDeposit: (e: string, unit_id: string, amount: U128, deferred?: boolean): TxSpec =>
+    fnCall(e, "report_deposit", deferred ? { unit_id, amount, deferred: true } : { unit_id, amount }, GAS.report_deposit),
   refund: (e: string, unit_id: string): TxSpec => fnCall(e, "refund", { unit_id }, GAS.refund, ONE_YOCTO),
   withdrawExcess: (e: string, unit_id: string): TxSpec => fnCall(e, "withdraw_excess", { unit_id }, GAS.withdraw_excess, ONE_YOCTO),
   sweepUnattributed: (e: string, unit_id: string): TxSpec => fnCall(e, "sweep_unattributed", { unit_id }, GAS.sweep_unattributed),

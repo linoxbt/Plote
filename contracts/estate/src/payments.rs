@@ -224,7 +224,12 @@ impl Estate {
     /// pending. `deferred: true` books money `on_unit_deposit` accepted but deferred (event `deposit_deferred`): the
     /// credit is capped at what is still recorded as deferred on the unit and uses it up, so a retried deferred report
     /// can't book it twice (review N6).
-    pub fn report_deposit(&mut self, unit_id: String, amount: U128, deferred: Option<bool>) -> Promise {
+    pub fn report_deposit(
+        &mut self,
+        unit_id: String,
+        amount: U128,
+        deferred: Option<bool>,
+    ) -> Promise {
         ensure!(
             self.verdict_relayer.as_ref() == Some(&env::predecessor_account_id()),
             "E_NOT_RELAYER",
@@ -278,7 +283,9 @@ impl Estate {
         deferred: Option<bool>,
     ) -> PromiseOrValue<U128> {
         if surplus.unwrap_or(false) {
-            env::log_str("a surplus booking scheduled by an earlier build is ignored; request it again");
+            env::log_str(
+                "a surplus booking scheduled by an earlier build is ignored; request it again",
+            );
             return PromiseOrValue::Value(U128(0));
         }
         let unit = self.unchanged_unit(&unit_id, expected.0);
@@ -315,7 +322,9 @@ impl Estate {
         deferred: Option<bool>,
     ) -> U128 {
         if surplus.unwrap_or(false) {
-            env::log_str("a surplus booking scheduled by an earlier build is ignored; request it again");
+            env::log_str(
+                "a surplus booking scheduled by an earlier build is ignored; request it again",
+            );
             return U128(0);
         }
         let mut unit = self.unchanged_unit(&unit_id, expected.0);
@@ -565,11 +574,7 @@ impl Estate {
             return U128(0);
         };
         let second = read_balance_result().unwrap_or(0);
-        let credit = first
-            .0
-            .min(second)
-            .saturating_sub(expected.0)
-            .min(amount.0);
+        let credit = first.0.min(second).saturating_sub(expected.0).min(amount.0);
         if credit == 0 {
             env::log_str(&format!(
                 "unit {} holds nothing above its books; nothing booked",

@@ -41,7 +41,7 @@ const UNCERTAIN_SCOPE = "deferred-uncertain";
 /** report_deposit as the reporter; resolves when the transaction succeeded, throws otherwise. */
 export type ReportDeposit = (estate: string, unitId: string, amount: string) => Promise<void>;
 const reportWithReporter: ReportDeposit = async (estate, unitId, amount) => {
-  await callAsReporter(E.reportDeposit(estate, unitId, amount));
+  await callAsReporter(E.reportDeposit(estate, unitId, amount, true)); // deferred: capped at the recorded deferral
 };
 
 /** The unit and amount a deposit_deferred event asks to book, or null when the event is malformed. */

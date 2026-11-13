@@ -310,7 +310,14 @@ impl Env {
             serde_json::to_vec(&U128(second)).unwrap(),
         )]);
         self.c
-            .on_report_second(id.to_string(), U128(amount), expected, U128(first), None, None)
+            .on_report_second(
+                id.to_string(),
+                U128(amount),
+                expected,
+                U128(first),
+                None,
+                None,
+            )
             .0
     }
 
@@ -1990,7 +1997,10 @@ fn random_walk(mut seed: u64, steps: usize) -> HashMap<String, u32> {
                 }
             }
             7 => {
-                if u.unattributed.0 > USDC && u.in_flight.0 == 0 && u.status == UnitStatus::Available {
+                if u.unattributed.0 > USDC
+                    && u.in_flight.0 == 0
+                    && u.status == UnitStatus::Available
+                {
                     e.as_("anyone.testnet");
                     let _ = e.c.sweep_unattributed(id.into());
                     assert_exits(&e, &u, "sweep", &mut seen);
@@ -3057,7 +3067,8 @@ fn deposit_report_voided_by_transfer_out_between_reads() {
     panics(
         "E_BALANCE_PENDING",
         std::panic::AssertUnwindSafe(|| {
-            let _ = e.c.on_report_first("a-4b".into(), U128(1), expected, None, None);
+            let _ =
+                e.c.on_report_first("a-4b".into(), U128(1), expected, None, None);
         }),
     );
 }
@@ -4680,14 +4691,18 @@ fn finalize_surplus(e: &mut Env, id: &str, first: u128, second: u128) -> u128 {
     let req = e.c.get_surplus_request(id.into()).unwrap();
     e.as_("dev.testnet");
     let _ = e.c.finalize_surplus_booking(id.into());
-    assert!(e.c.get_surplus_request(id.into()).is_none(), "used up by the call");
+    assert!(
+        e.c.get_surplus_request(id.into()).is_none(),
+        "used up by the call"
+    );
     e.cb(vec![balance_bytes(first)]);
     match e.c.on_surplus_first(id.into(), req.amount, expected) {
         PromiseOrValue::Promise(_) => {}
         PromiseOrValue::Value(v) => return v.0,
     }
     e.cb(vec![balance_bytes(second)]);
-    e.c.on_surplus_second(id.into(), req.amount, expected, U128(first)).0
+    e.c.on_surplus_second(id.into(), req.amount, expected, U128(first))
+        .0
 }
 
 fn request_surplus(e: &mut Env, id: &str, who: &str, balance: u128) -> u128 {
@@ -4713,8 +4728,14 @@ fn r4_unbooked_surplus_recovery() {
         }),
     );
     let b = e.bal["a-1a"];
-    assert_eq!(request_surplus(&mut e, "a-1a", "plote.testnet", b), 500 * USDC);
-    assert_eq!(e.c.get_surplus_request("a-1a".into()).unwrap().amount.0, 500 * USDC);
+    assert_eq!(
+        request_surplus(&mut e, "a-1a", "plote.testnet", b),
+        500 * USDC
+    );
+    assert_eq!(
+        e.c.get_surplus_request("a-1a".into()).unwrap().amount.0,
+        500 * USDC
+    );
     e.land("a-1a", 300 * USDC); // more arrives after the request: not part of it
     e.as_("dev.testnet");
     panics(
@@ -4728,10 +4749,22 @@ fn r4_unbooked_surplus_recovery() {
     assert_eq!(finalize_surplus(&mut e, "a-1a", b, b), 500 * USDC);
     // booked and already on its way out, to recovery_id (no recent reservation)
     let outs = transfer_outs();
-    assert_eq!(outs, vec![(unit_acc("a-1a"), acc("plote.testnet"), 500 * USDC)]);
+    assert_eq!(
+        outs,
+        vec![(unit_acc("a-1a"), acc("plote.testnet"), 500 * USDC)]
+    );
     let u = e.unit("a-1a");
-    assert_eq!((u.paid.0, u.unattributed.0, u.in_flight.0), (0, 500 * USDC, 500 * USDC));
-    assert!(e.finish_out("a-1a", OutKind::SurplusSweep, "plote.testnet", 500 * USDC, true));
+    assert_eq!(
+        (u.paid.0, u.unattributed.0, u.in_flight.0),
+        (0, 500 * USDC, 500 * USDC)
+    );
+    assert!(e.finish_out(
+        "a-1a",
+        OutKind::SurplusSweep,
+        "plote.testnet",
+        500 * USDC,
+        true
+    ));
     let u = e.unit("a-1a");
     assert_eq!((u.unattributed.0, u.in_flight.0), (0, 0));
     assert_eq!(e.bal["a-1a"], 300 * USDC);
@@ -4750,7 +4783,7 @@ fn r4_unbooked_surplus_recovery() {
 #[test]
 fn r4_surplus_booking_never_reaches_escrow() {
     let mut e = three_holders(); // every unit held, 10 000 escrow each
-    // transient inflation on a held unit: the request is refused outright, as is a sweep
+                                 // transient inflation on a held unit: the request is refused outright, as is a sweep
     e.land("a-1a", 5_000 * USDC);
     for who in ["dev.testnet", "plote.testnet"] {
         e.as_(who);
@@ -4775,12 +4808,21 @@ fn r4_surplus_booking_never_reaches_escrow() {
     let mut e = Env::standard();
     e.land("a-1a", 5_000 * USDC);
     let b = e.bal["a-1a"];
-    assert_eq!(request_surplus(&mut e, "a-1a", "dev.testnet", b), 5_000 * USDC);
+    assert_eq!(
+        request_surplus(&mut e, "a-1a", "dev.testnet", b),
+        5_000 * USDC
+    );
     e.advance(SURPLUS_DELAY_NS);
     let b = e.bal["a-1a"];
     assert_eq!(finalize_surplus(&mut e, "a-1a", b, b), 5_000 * USDC);
     *e.bal.get_mut("a-1a").unwrap() = 0; // ft_resolve_transfer took it back
-    assert!(!e.finish_out("a-1a", OutKind::SurplusSweep, "plote.testnet", 5_000 * USDC, false));
+    assert!(!e.finish_out(
+        "a-1a",
+        OutKind::SurplusSweep,
+        "plote.testnet",
+        5_000 * USDC,
+        false
+    ));
     let u = e.unit("a-1a");
     assert_eq!((u.unattributed.0, u.in_flight.0, u.paid.0), (0, 0, 0));
     e.check_conservation();
@@ -4853,14 +4895,25 @@ fn r4_deferred_report_books_once() {
         let _ = e.c.report_deposit("a-1a".into(), U128(amount), Some(true));
         let b = e.bal["a-1a"];
         e.cb(vec![balance_bytes(b)]);
-        if let PromiseOrValue::Value(v) =
-            e.c.on_report_first("a-1a".into(), U128(amount.min(300 * USDC)), expected, None, Some(true))
-        {
+        if let PromiseOrValue::Value(v) = e.c.on_report_first(
+            "a-1a".into(),
+            U128(amount.min(300 * USDC)),
+            expected,
+            None,
+            Some(true),
+        ) {
             return v.0;
         }
         e.cb(vec![balance_bytes(b)]);
-        e.c.on_report_second("a-1a".into(), U128(amount.min(300 * USDC)), expected, U128(b), None, Some(true))
-            .0
+        e.c.on_report_second(
+            "a-1a".into(),
+            U128(amount.min(300 * USDC)),
+            expected,
+            U128(b),
+            None,
+            Some(true),
+        )
+        .0
     };
     // attesting more than was deferred books only the deferred amount
     assert_eq!(deferred(&mut e, 1_000 * USDC), 300 * USDC);
@@ -4871,7 +4924,8 @@ fn r4_deferred_report_books_once() {
     panics(
         "E_NOTHING_TO_SWEEP",
         std::panic::AssertUnwindSafe(|| {
-            let _ = e.c.report_deposit("a-1a".into(), U128(300 * USDC), Some(true));
+            let _ =
+                e.c.report_deposit("a-1a".into(), U128(300 * USDC), Some(true));
         }),
     );
 }
@@ -4880,7 +4934,12 @@ fn r4_deferred_report_books_once() {
 /// fresh accounts afterwards neither blocks nor passes anything.
 #[test]
 fn r4_holder_count_fixed_at_creation() {
-    let d = [T0 + 60 * MIN, T0 + 120 * MIN, T0 + 180 * MIN, T0 + 240 * MIN];
+    let d = [
+        T0 + 60 * MIN,
+        T0 + 120 * MIN,
+        T0 + 180 * MIN,
+        T0 + 240 * MIN,
+    ];
     let ids = ["a-1", "a-2", "a-3", "b-1", "c-1"];
     let units: Vec<(&str, u128, Vec<Instalment>)> =
         ids.iter().map(|i| (*i, PRICE, vec![])).collect();
@@ -4908,8 +4967,16 @@ fn r4_holder_count_fixed_at_creation() {
         e.c.vote(pid, false);
     }
     let p = e.c.get_proposal(pid).unwrap();
-    assert_eq!((p.holders_eligible, p.holders_no), (3, 1), "still one holder: alice");
-    assert_eq!(p.status, ProposalStatus::Open, "not rejected by fresh accounts");
+    assert_eq!(
+        (p.holders_eligible, p.holders_no),
+        (3, 1),
+        "still one holder: alice"
+    );
+    assert_eq!(
+        p.status,
+        ProposalStatus::Open,
+        "not rejected by fresh accounts"
+    );
     for who in ["bob.testnet", "carol.testnet"] {
         e.as_(who);
         e.c.vote(pid, true);

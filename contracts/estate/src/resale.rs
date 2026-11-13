@@ -177,7 +177,9 @@ impl Estate {
             0
         };
         if self.holder_history_full(&unit.id, Self::now()) {
-            return Err("E_TOO_MANY: the token changed hands too often while votes are open".into());
+            return Err(
+                "E_TOO_MANY: the token changed hands too often while votes are open".into(),
+            );
         }
         let lien = unit.lien.take();
         self.move_token(&mut unit, &seller, buyer, false);
