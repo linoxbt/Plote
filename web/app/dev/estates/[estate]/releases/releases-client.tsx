@@ -78,7 +78,7 @@ export function ReleasesClient({ slug }: { slug: string }) {
                         <td className="text-right"><MonoAmount value={u.paid} naira={false} account={u.account} /></td>
                         <td className="mono text-right">{u.approved_bps / 100}%</td>
                         <td className="text-right"><MonoAmount value={u.released} naira={false} /></td>
-                        <td className="text-right"><MonoAmount value={u.releasable_now} naira={false} className={can ? "text-orange" : ""} /></td>
+                        <td className="text-right"><MonoAmount value={u.releasable_now} naira={false} className={can ? "text-orange-ink" : ""} /></td>
                       </tr>
                     );
                   })}
@@ -90,7 +90,7 @@ export function ReleasesClient({ slug }: { slug: string }) {
         <BracketCard className="mt-6">
           <h2 className="mb-3 text-xl font-normal">History</h2>
           {!supabaseConfigured() ? <p className="text-sm text-muted">The event cache isn&apos;t connected; see the payout account on NearBlocks. Released to date: <MonoAmount value={e.totals.released} account={e.payout_id} /></p> : history.data?.length ? (
-            <ul className="divide-y divide-line text-sm">{history.data.map((h) => <li key={h.id} className="flex justify-between py-2"><span className="mono">{String(h.data.unit_id ?? "").toUpperCase()} · {formatUsd(String(h.data.amount ?? "0"))} → {String(h.data.to ?? "")}</span><a className="mono text-xs text-muted hover:text-orange" href={explorerTxUrl(h.tx_hash)} target="_blank" rel="noreferrer">{timeAgo(String(Date.parse(h.block_time) * 1e6))} ↗</a></li>)}</ul>
+            <ul className="divide-y divide-line text-sm">{history.data.map((h) => <li key={h.id} className="flex justify-between py-2"><span className="mono">{String(h.data.unit_id ?? "").toUpperCase()} · {formatUsd(String(h.data.amount ?? "0"))} → {String(h.data.to ?? "")}</span><a className="mono text-xs text-muted hover:text-orange-ink" href={explorerTxUrl(h.tx_hash)} target="_blank" rel="noreferrer">{timeAgo(String(Date.parse(h.block_time) * 1e6))} ↗</a></li>)}</ul>
           ) : <p className="text-sm text-muted">No releases yet.</p>}
         </BracketCard>
       </RequireWallet>

@@ -56,12 +56,12 @@ export default function PaymentsPage() {
                   ["1Click delivery from Base", "+ 2,500"],
                   ["Chip-in from Tolu", "+ 300"],
                 ].map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between rounded-2xl bg-black/30 px-5 py-4 ring-1 ring-white/10">
+                  <div key={k} className="flex items-center justify-between rounded-2xl bg-surface px-5 py-4 ring-1 ring-line">
                     <span className="text-sm text-text/80">{k}</span>
-                    <span className="mono text-sm text-orange">{v}</span>
+                    <span className="mono text-sm text-orange-ink">{v}</span>
                   </div>
                 ))}
-                <div className="flex items-center justify-between rounded-2xl bg-white/[0.06] px-5 py-4 ring-1 ring-white/20">
+                <div className="flex items-center justify-between rounded-2xl bg-surface-2 px-5 py-4 ring-1 ring-line">
                   <span className="text-sm">Booked as paid</span>
                   <span className="mono text-sm">8,800 USDC</span>
                 </div>

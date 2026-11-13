@@ -16,7 +16,7 @@ import { recentEvents, supabaseConfigured, type EventRecord } from "@/lib/supaba
 import type { DevStats, EstateView, MilestoneView } from "@/lib/types";
 
 function Chip({ href, children, external }: { href: string; children: ReactNode; external?: boolean }) {
-  const cls = "mono inline-flex min-h-8 items-center gap-1 bg-surface-2 px-2 text-xs hover:text-orange";
+  const cls = "mono inline-flex min-h-8 items-center gap-1 bg-surface-2 px-2 text-xs hover:text-orange-ink";
   return external ? <a className={cls} href={href} target="_blank" rel="noreferrer">{children} ↗</a> : <Link className={cls} href={href}>{children}</Link>;
 }
 

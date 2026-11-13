@@ -35,7 +35,7 @@ export function MilestonesClient({ slug }: { slug: string }) {
             return (
               <li key={m.index} className="relative">
                 <span className="absolute -left-[33px] top-5 bg-bg" aria-hidden>
-                  {done ? <CheckCircle2 className="h-4 w-4 text-orange" /> : <Circle className={clsx("h-4 w-4", m.status === "Missed" ? "text-red" : "text-muted")} />}
+                  {done ? <CheckCircle2 className="h-4 w-4 text-orange-ink" /> : <Circle className={clsx("h-4 w-4", m.status === "Missed" ? "text-red" : "text-muted")} />}
                 </span>
                 <BracketCard tone={done ? "orange" : m.status === "Missed" || m.status === "Vetoed" ? "red" : "default"} className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">

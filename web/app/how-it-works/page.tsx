@@ -59,7 +59,7 @@ export default function HowItWorks() {
             "The verdict lands on-chain. If it passed, the milestone is Verified and the surveyor signs; holders get a veto window.",
             "After the window, the developer claims: each unit sends exactly its share of what was paid (capped at the price) to the payout account.",
           ].map((t, i) => (
-            <li key={i}><BracketCard className="flex gap-3"><span className="mono text-orange">0{i + 1}</span><p className="text-sm">{t}</p></BracketCard></li>
+            <li key={i}><BracketCard className="flex gap-3"><span className="mono text-orange-ink">0{i + 1}</span><p className="text-sm">{t}</p></BracketCard></li>
           ))}
         </ol>
       </section>

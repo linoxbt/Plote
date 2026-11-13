@@ -27,8 +27,8 @@ function Dial({ score, isNew }: { score: number; isNew: boolean }) {
     <svg viewBox="0 0 128 128" className="h-40 w-40" role="img" aria-label={isNew ? "New on Plote, no score yet" : `Score ${score} out of 100`}>
       <circle cx="64" cy="64" r={r} stroke="rgba(255, 255, 255, 0.12)" strokeWidth="10" fill="none" />
       <circle cx="64" cy="64" r={r} stroke="var(--orange)" strokeWidth="10" fill="none" strokeDasharray={`${c * v} ${c}`} transform="rotate(-90 64 64)" />
-      <text x="64" y={isNew ? 62 : 70} textAnchor="middle" fill="var(--text)" fontFamily="var(--font-jet), monospace" fontSize={isNew ? 13 : 30}>{isNew ? "New on" : score}</text>
-      {isNew ? <text x="64" y="80" textAnchor="middle" fill="var(--text)" fontFamily="var(--font-jet), monospace" fontSize="13">Plote</text> : <text x="64" y="88" textAnchor="middle" fill="var(--muted)" fontFamily="var(--font-jet), monospace" fontSize="10">/ 100</text>}
+      <text x="64" y={isNew ? 62 : 70} textAnchor="middle" fill="var(--text)" fontFamily="var(--font-geist-mono), monospace" fontSize={isNew ? 13 : 30}>{isNew ? "New on" : score}</text>
+      {isNew ? <text x="64" y="80" textAnchor="middle" fill="var(--text)" fontFamily="var(--font-geist-mono), monospace" fontSize="13">Plote</text> : <text x="64" y="88" textAnchor="middle" fill="var(--muted)" fontFamily="var(--font-geist-mono), monospace" fontSize="10">/ 100</text>}
     </svg>
   );
 }
@@ -62,7 +62,7 @@ export function DeveloperClient({ account }: { account: string }) {
                     {mine.map(({ account: e, q }, i) => (
                       <span key={e}>
                         {i ? ", " : ""}
-                        <a className="underline hover:text-orange" href={`#sources-${estateSlug(e)}`}>{q.data!.name}</a>{" "}
+                        <a className="underline hover:text-orange-ink" href={`#sources-${estateSlug(e)}`}>{q.data!.name}</a>{" "}
                         <span className="text-muted/70">({INPUTS[c.key].map((k) => `${k} ${q.data!.stats[k]}`).join(" / ")})</span>
                       </span>
                     ))}
@@ -78,7 +78,7 @@ export function DeveloperClient({ account }: { account: string }) {
               return (
                 <BracketCard key={e} className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Link href={`/estates/${estateSlug(e)}`} className="text-xl font-normal hover:text-orange">{q.data!.name}</Link>
+                    <Link href={`/estates/${estateSlug(e)}`} className="text-xl font-normal hover:text-orange-ink">{q.data!.name}</Link>
                     <AccountChip account={e} />
                   </div>
                   <ul className="grid gap-2 sm:grid-cols-4">

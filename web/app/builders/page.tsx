@@ -36,7 +36,7 @@ export default function BuildersPage() {
                   <span>{k as string}</span>
                   <span className="mono text-muted">{v as string}</span>
                 </div>
-                <div className="h-1.5 rounded-full bg-white/10">
+                <div className="h-1.5 rounded-full bg-surface-2">
                   <div className={`h-1.5 rounded-full ${done ? "bg-orange" : "bg-white/0"}`} style={{ width: done ? "100%" : "0%" }} />
                 </div>
               </div>

@@ -69,7 +69,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
             <p className="text-muted">{u.label}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusBadge status={u.status} />
-              {holderIsMe ? <span className="mono text-xs text-orange">You hold this unit</span> : null}
+              {holderIsMe ? <span className="mono text-xs text-orange-ink">You hold this unit</span> : null}
             </div>
             <div className="mt-3"><span className="label">Price</span><MonoAmount value={u.price} account={u.account} size="lg" /></div>
           </div>
@@ -129,7 +129,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
                 <BracketCard className="space-y-4">
                   <PlanTable u={u} />
                   <p className="text-sm text-muted">
-                    Public watch page: <Link className="underline hover:text-orange" href={`/w/${s}/${u.id}`}>/w/{s}/{u.id}</Link>
+                    Public watch page: <Link className="underline hover:text-orange-ink" href={`/w/${s}/${u.id}`}>/w/{s}/{u.id}</Link>
                   </p>
                 </BracketCard>
               ) : null}

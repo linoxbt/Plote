@@ -24,9 +24,9 @@ export default function SecurityPage() {
         }
         art={
           <div className="relative flex aspect-square w-full max-w-[320px] items-center justify-center" aria-hidden>
-            <div className="absolute inset-0 rounded-full ring-1 ring-white/10" />
-            <div className="absolute inset-[14%] rounded-full ring-1 ring-white/10" />
-            <div className="flex h-28 w-28 items-center justify-center rounded-full bg-surface ring-1 ring-white/15">
+            <div className="absolute inset-0 rounded-full ring-1 ring-line" />
+            <div className="absolute inset-[14%] rounded-full ring-1 ring-line" />
+            <div className="flex h-28 w-28 items-center justify-center rounded-full bg-surface ring-1 ring-line">
               <Lock className="h-10 w-10 text-accent" strokeWidth={1.1} />
             </div>
           </div>

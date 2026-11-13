@@ -1,13 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Lexend } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Footer, Nav } from "@/components/nav";
 import { APP_URL } from "@/lib/config";
 import { MOTION_BOOT, MotionRoot } from "@/components/motion";
 
-const lexend = Lexend({ subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--font-lexend", display: "swap" });
-const jet = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-jet", display: "swap" });
+// Self-hosted at build time by next/font (no runtime font CDN): Geist for display + body, Geist Mono for labels and numbers.
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
+const geistMono = Geist_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-geist-mono", display: "swap" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),
@@ -27,15 +28,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#090909",
+  themeColor: "#f2f4f7",
   width: "device-width",
   initialScale: 1,
-  colorScheme: "dark",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${lexend.variable} ${jet.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: MOTION_BOOT }} />
       </head>

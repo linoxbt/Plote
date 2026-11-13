@@ -25,7 +25,7 @@ export function QrImage({ text, size = 220, label }: { text: string; size?: numb
       alive = false;
     };
   }, [text, size]);
-  return src ? <img src={src} width={size} height={size} alt={label} className="bg-text p-1" /> : <div className="skeleton" style={{ width: size, height: size }} aria-hidden />;
+  return src ? <img src={src} width={size} height={size} alt={label} className="bg-white p-1" /> : <div className="skeleton" style={{ width: size, height: size }} aria-hidden />;
 }
 
 /** The tracker URL for a wet quote; the query string lets the tracker repeat "send exactly X on Y" before 1Click sees the deposit. */

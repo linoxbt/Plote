@@ -114,7 +114,7 @@ export function CheckInput({
 export function CheckChip({ o }: { o: CheckOutcome }) {
   const name = o.ref ? `${unitDisplay(o.ref.unit)} · ${estateSlug(o.ref.estate)}` : "—";
   const map = {
-    taken: { t: "TAKEN", c: "text-orange bg-orange-dim/40", I: Lock },
+    taken: { t: "TAKEN", c: "text-orange-ink bg-orange-dim/40", I: Lock },
     handed_over: { t: "HANDED OVER", c: "text-accent bg-accent/10", I: Home },
     reserved: { t: "RESERVED", c: "text-amber bg-amber/10", I: Clock },
     available: { t: "AVAILABLE", c: "text-text bg-surface-2", I: Unlock },
@@ -161,7 +161,7 @@ export function CheckResult({ o, onShare }: { o: CheckOutcome; onShare?: () => v
   const slug = estateSlug(o.ref.estate);
   const unitHref = `/estates/${slug}/units/${o.ref.unit}`;
   const head = {
-    taken: { t: "TAKEN", c: "text-orange", tone: "orange" as const, I: Lock },
+    taken: { t: "TAKEN", c: "text-orange-ink", tone: "orange" as const, I: Lock },
     handed_over: { t: "HANDED OVER", c: "text-accent", tone: "accent" as const, I: Home },
     reserved: { t: "RESERVED", c: "text-amber", tone: "amber" as const, I: Clock },
     available: { t: "AVAILABLE", c: "text-text", tone: "default" as const, I: Unlock },

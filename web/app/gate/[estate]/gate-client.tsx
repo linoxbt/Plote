@@ -95,8 +95,8 @@ export function GateClient({ slug }: { slug: string }) {
         </div>
       ) : result ? (
         <div className={clsx("corners flex flex-col items-center gap-4 p-10 text-center", result.ok ? "corners-orange bg-orange-dim/30" : "corners-red bg-red/10")} role="alert">
-          {result.ok ? <CheckCircle2 className="h-32 w-32 text-orange" strokeWidth={1.25} aria-hidden /> : <XCircle className="h-32 w-32 text-red" strokeWidth={1.25} aria-hidden />}
-          <p className={clsx("font-display text-5xl font-medium", result.ok ? "text-orange" : "text-red")}>{result.ok ? "OPEN" : "DENIED"}</p>
+          {result.ok ? <CheckCircle2 className="h-32 w-32 text-orange-ink" strokeWidth={1.25} aria-hidden /> : <XCircle className="h-32 w-32 text-red" strokeWidth={1.25} aria-hidden />}
+          <p className={clsx("font-display text-5xl font-medium", result.ok ? "text-orange-ink" : "text-red")}>{result.ok ? "OPEN" : "DENIED"}</p>
           {result.unit ? <p className="mono text-3xl">{result.unit.toUpperCase()}</p> : null}
           <p className="text-lg">{result.ok ? `${result.label} · ${result.accountId}` : result.reason}</p>
           <Button variant="primary" onClick={start}><Camera className="h-4 w-4" aria-hidden /> Scan next</Button>

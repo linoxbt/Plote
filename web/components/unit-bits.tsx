@@ -122,7 +122,7 @@ export function PlanTable({ u }: { u: UnitView }) {
             <tr key={p.due_at} className="border-t border-line">
               <td className="mono py-2">{formatDate(p.due_at)}</td>
               <td className="py-2 text-right"><MonoAmount value={p.cumulative} naira={false} /></td>
-              <td className="mono py-2 text-right text-xs">{met ? <span className="text-orange">✓ met</span> : <span className="text-muted">open</span>}</td>
+              <td className="mono py-2 text-right text-xs">{met ? <span className="text-orange-ink">✓ met</span> : <span className="text-muted">open</span>}</td>
             </tr>
           );
         })}

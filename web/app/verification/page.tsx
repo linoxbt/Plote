@@ -37,7 +37,7 @@ export default function VerificationPage() {
         }
         art={
           <Dial label="verdict on-chain">
-            <ScanEye className="h-10 w-10 text-orange" strokeWidth={1.1} aria-hidden />
+            <ScanEye className="h-10 w-10 text-orange-ink" strokeWidth={1.1} aria-hidden />
           </Dial>
         }
       />
@@ -46,7 +46,7 @@ export default function VerificationPage() {
         <Heading eyebrow="Seven checks, in order" title={<>Fail fast. <Hl>Record everything.</Hl></>} lead="The worker stops at the first hard failure. Softened checks are kept as warnings and shown in amber on the proof page." />
         <ol className="mt-12 grid gap-4 md:grid-cols-2">
           {CHECKS.map(([t, b, mode], i) => (
-            <li key={t} className="flex gap-5 rounded-2xl bg-surface p-6 ring-1 ring-white/[0.08]">
+            <li key={t} className="flex gap-5 rounded-2xl bg-surface p-6 ring-1 ring-line">
               <span className="mono pt-1 text-sm text-accent">0{i + 1}</span>
               <div className="space-y-2">
                 <p className="text-lg">{t}</p>
@@ -67,7 +67,7 @@ export default function VerificationPage() {
               <svg viewBox="0 0 240 200" className="w-full max-w-[320px]" aria-hidden>
                 <path d="M30 60V30h30M180 30h30v30M210 140v30h-30M60 170H30v-30" stroke="#F4F4F5" strokeWidth="3" fill="none" />
                 <rect x="70" y="80" width="100" height="40" rx="6" fill="#F4F4F5" />
-                <text x="120" y="107" textAnchor="middle" fill="#090909" fontSize="20" fontFamily="var(--font-jet), monospace">K7RQ4M</text>
+                <text x="120" y="107" textAnchor="middle" fill="#090909" fontSize="20" fontFamily="var(--font-geist-mono), monospace">K7RQ4M</text>
               </svg>
             }
           >

@@ -69,8 +69,8 @@ export function AccountChip({ account, max = 22, className, label }: { account: 
     <span className={clsx("mono inline-flex max-w-full items-center gap-1 bg-surface-2 py-0.5 pl-2 text-sm", className)} title={account}>
       {label ? <span className="text-muted">{label}</span> : null}
       <span className="min-w-0 truncate">{truncateAccount(account, max)}</span>
-      <button type="button" onClick={copy} className="relative inline-flex h-7 w-7 items-center justify-center text-muted before:absolute before:-inset-2 before:content-[''] hover:text-orange" aria-label={`Copy ${account}`}>
-        {copied ? <BadgeCheck className="h-3.5 w-3.5 text-orange" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
+      <button type="button" onClick={copy} className="relative inline-flex h-7 w-7 items-center justify-center text-muted before:absolute before:-inset-2 before:content-[''] hover:text-orange-ink" aria-label={`Copy ${account}`}>
+        {copied ? <BadgeCheck className="h-3.5 w-3.5 text-orange-ink" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
       </button>
       <ChainLink account={account} />
       <span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span>
@@ -114,11 +114,11 @@ const PROPOSAL_BADGE: Record<ProposalStatus, BadgeDef> = {
 };
 
 const TONE = {
-  orange: "text-orange bg-orange/10 ring-1 ring-orange/25",
+  orange: "text-orange-ink bg-orange/10 ring-1 ring-orange/25",
   amber: "text-amber bg-amber/10 ring-1 ring-amber/25",
   red: "text-red bg-red/10 ring-1 ring-red/25",
   accent: "text-accent bg-accent/10 ring-1 ring-accent/25",
-  muted: "text-muted bg-white/[0.05] ring-1 ring-white/10",
+  muted: "text-muted bg-surface-2 ring-1 ring-line",
 };
 
 function Badge({ def, className, suffix }: { def: BadgeDef; className?: string; suffix?: string }) {
@@ -146,7 +146,7 @@ export function NetworkPill({ className }: { className?: string }) {
   const main = NETWORK === "mainnet";
   return (
     <span
-      className={clsx("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-normal", main ? "bg-accent/10 text-accent ring-1 ring-accent/30" : "bg-orange/10 text-orange ring-1 ring-orange/30", className)}
+      className={clsx("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-normal", main ? "bg-accent/10 text-accent ring-1 ring-accent/30" : "bg-orange/10 text-orange-ink ring-1 ring-orange/30", className)}
       title={main ? "Mainnet demo build" : "NEAR testnet — no real money"}
     >
       <span className={clsx("h-1.5 w-1.5 rounded-full", main ? "bg-accent" : "bg-orange")} aria-hidden />
@@ -166,7 +166,7 @@ export function CountdownChip({ until, label, endedLabel = "ended", tone = "ambe
     <span
       className={clsx(
         "mono inline-flex items-center gap-1.5 px-2 py-1 text-xs tabular-nums",
-        c.ended ? "bg-surface-2 text-muted" : tone === "red" ? "bg-red/10 text-red" : tone === "orange" ? "bg-orange-dim/40 text-orange" : "bg-amber/10 text-amber",
+        c.ended ? "bg-surface-2 text-muted" : tone === "red" ? "bg-red/10 text-red" : tone === "orange" ? "bg-orange-dim/40 text-orange-ink" : "bg-amber/10 text-amber",
         className,
       )}
       suppressHydrationWarning

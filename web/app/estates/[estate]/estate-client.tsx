@@ -39,7 +39,7 @@ export function EstateClient({ slug }: { slug: string }) {
             <h2 className="text-lg font-normal">At the gate</h2>
             <p className="text-sm text-muted">
               After handover, holders show a gate pass from their phone. Guards check it here against the chain — no login, nothing to install.
-              {" "}Developer? <Link href={`/dev/estates/${estateSlug(account)}`} prefetch={false} className="underline hover:text-orange">Open the console</Link>.
+              {" "}Developer? <Link href={`/dev/estates/${estateSlug(account)}`} prefetch={false} className="underline hover:text-orange-ink">Open the console</Link>.
             </p>
           </div>
           <LinkButton href={`/gate/${estateSlug(account)}`} size="sm" prefetch={false}><DoorOpen className="h-4 w-4" aria-hidden /> Gate scanner</LinkButton>

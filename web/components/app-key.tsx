@@ -48,7 +48,7 @@ export function AppKeyToggle({
 
   if (state === "active") {
     return (
-      <p className="mono flex flex-wrap items-center gap-2 text-xs text-orange">
+      <p className="mono flex flex-wrap items-center gap-2 text-xs text-orange-ink">
         <Icon className="h-3.5 w-3.5" aria-hidden /> {activeLabel}
         <Button size="sm" className="min-h-9 text-muted underline" onClick={async () => {
           const r = await run("Remove key", () => removeAppKey(accountId, contractId, role).then(() => true), { success: "Key deleted from your account." });

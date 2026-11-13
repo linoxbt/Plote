@@ -55,7 +55,7 @@ export default function SurveyorsPage() {
               <div className="glass w-full max-w-sm space-y-3 rounded-2xl p-6 mono text-sm" aria-hidden>
                 <p className="text-xs text-muted">Allowed by your key</p>
                 {["open_capture", "submit_evidence", "qs_sign"].map((m) => (
-                  <p key={m} className="flex items-center gap-2 text-orange">
+                  <p key={m} className="flex items-center gap-2 text-orange-ink">
                     <span className="h-1.5 w-1.5 rounded-full bg-orange" /> {m}
                   </p>
                 ))}

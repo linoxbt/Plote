@@ -23,7 +23,7 @@ export default function PrivacyPage() {
       </PageHeader>
       <div className="space-y-4">
         {ROWS.map(([where, what, keep]) => (
-          <section key={where} data-reveal className="rounded-2xl bg-surface p-6 ring-1 ring-white/10">
+          <section key={where} data-reveal className="rounded-2xl bg-surface p-6 ring-1 ring-line">
             <h2 className="text-xl">{where}</h2>
             <p className="mt-2 text-muted">{what}</p>
             <p className="mt-2 text-sm text-text-2/80">{keep}</p>

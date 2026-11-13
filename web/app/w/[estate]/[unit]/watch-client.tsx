@@ -59,7 +59,7 @@ export function WatchClient({ slug, unitId, chip }: { slug: string; unitId: stri
         <BracketCard className="p-2"><UnitImage e={e} u={u} ms={ms.data} /></BracketCard>
         <div className="space-y-3">
           <h1 className="text-[32px] font-normal leading-tight sm:text-[44px]">
-            <span className="mono">{unitDisplay(u.id)}</span> at {e.name} is <span className="text-orange">{built}% built</span>
+            <span className="mono">{unitDisplay(u.id)}</span> at {e.name} is <span className="text-orange-ink">{built}% built</span>
           </h1>
           <StatusBadge status={u.status} />
           <div className="flex flex-wrap gap-2">

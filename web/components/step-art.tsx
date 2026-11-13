@@ -4,7 +4,7 @@
 
 const S = { stroke: "var(--orange)", strokeWidth: 1.5, fill: "none", strokeLinecap: "square" as const, strokeLinejoin: "miter" as const };
 const MUTED = "var(--muted)";
-const EMPTY = "rgba(255, 255, 255, 0.12)";
+const EMPTY = "rgba(11, 18, 32, 0.08)";
 
 /** 1 · Reserve: a unit address tag; the lock closes on it. */
 function Reserve() {
@@ -26,7 +26,7 @@ function Pay() {
     <svg viewBox="0 0 96 64" className="h-16 w-24" aria-hidden>
       <path {...S} d="M24 30h48v26H24z" />
       <path {...S} d="M40 30h16" stroke="var(--surface)" strokeWidth={3} />
-      <text x="48" y="48" textAnchor="middle" fill={MUTED} fontSize="8" fontFamily="var(--font-jet), monospace">
+      <text x="48" y="48" textAnchor="middle" fill={MUTED} fontSize="8" fontFamily="var(--font-geist-mono), monospace">
         a-4b
       </text>
       <circle className="step-coin" cx="48" cy="12" r="6" fill="var(--accent)" />
@@ -54,7 +54,7 @@ function Release() {
         <rect key={i} x={8 + i * 20} y="40" width="16" height="6" fill={i === 0 ? "var(--orange)" : EMPTY} className={i === 1 ? "step-fill" : undefined} />
       ))}
       <path {...S} className="step-arrow" d="M36 26h22m-6-6 6 6-6 6" />
-      <text x="20" y="30" textAnchor="middle" fill={MUTED} fontSize="8" fontFamily="var(--font-jet), monospace">
+      <text x="20" y="30" textAnchor="middle" fill={MUTED} fontSize="8" fontFamily="var(--font-geist-mono), monospace">
         20%
       </text>
     </svg>

@@ -54,7 +54,7 @@ export function MilestoneTrack({ milestones, detailed = false, mobilisationBps =
 // ---------------- ProofChecklist ----------------
 
 const ICON = { pass: CheckCircle2, fail: XCircle, warn: AlertTriangle, pending: CircleDashed, skipped: MinusCircle };
-const COLOR = { pass: "text-orange", fail: "text-red", warn: "text-amber", pending: "text-muted", skipped: "text-muted" };
+const COLOR = { pass: "text-orange-ink", fail: "text-red", warn: "text-amber", pending: "text-muted", skipped: "text-muted" };
 const WORD = { pass: "Passed", fail: "Failed", warn: "Warning", pending: "Pending", skipped: "Skipped" };
 
 export function ProofChecklist({ evidence, geofenceRadius, compact = false }: { evidence: EvidenceView; geofenceRadius?: number; compact?: boolean }) {

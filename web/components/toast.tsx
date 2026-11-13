@@ -85,7 +85,7 @@ function ToastView({ t, onClose }: { t: Toast; onClose: () => void }) {
     >
       <div className="flex items-start gap-3">
         <Icon
-          className={clsx("mt-0.5 h-5 w-5 shrink-0", t.state === "pending" && "animate-spin text-amber", t.state === "success" && "text-orange", t.state === "error" && "text-red")}
+          className={clsx("mt-0.5 h-5 w-5 shrink-0", t.state === "pending" && "animate-spin text-amber", t.state === "success" && "text-orange-ink", t.state === "error" && "text-red")}
           strokeWidth={1.5}
           aria-hidden
         />
@@ -96,7 +96,7 @@ function ToastView({ t, onClose }: { t: Toast; onClose: () => void }) {
           </p>
           {t.message ? <p className="text-sm text-muted">{t.message}</p> : null}
           {t.hash ? (
-            <a className="mono mt-1 inline-block text-xs text-orange underline" href={explorerTxUrl(t.hash)} target="_blank" rel="noreferrer">
+            <a className="mono mt-1 inline-block text-xs text-orange-ink underline" href={explorerTxUrl(t.hash)} target="_blank" rel="noreferrer">
               View transaction ↗
             </a>
           ) : null}

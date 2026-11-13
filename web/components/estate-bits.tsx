@@ -19,7 +19,7 @@ export function EstateHeader({ e, slug, right }: { e: EstateView; slug: string; 
     <header className="mb-6 space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="mono mb-2 text-xs tracking-[0.12em] text-orange">ESTATE · {e.account}</p>
+          <p className="mono mb-2 text-xs tracking-[0.12em] text-orange-ink">ESTATE · {e.account}</p>
           <h1 className="text-3xl font-normal sm:text-[40px]">
             {e.name} <ChainLink account={e.account} label="Estate contract on NearBlocks" />
           </h1>
@@ -28,7 +28,7 @@ export function EstateHeader({ e, slug, right }: { e: EstateView; slug: string; 
             {e.location}
             {e.geofence.radius_m > 0 ? (
               <a
-                className="mono ml-2 text-xs underline hover:text-orange"
+                className="mono ml-2 text-xs underline hover:text-orange-ink"
                 href={`https://www.openstreetmap.org/?mlat=${e.geofence.lat_e6 / 1e6}&mlon=${e.geofence.lon_e6 / 1e6}#map=16/${e.geofence.lat_e6 / 1e6}/${e.geofence.lon_e6 / 1e6}`}
                 target="_blank"
                 rel="noreferrer"
@@ -51,7 +51,7 @@ export function EstateHeader({ e, slug, right }: { e: EstateView; slug: string; 
       <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <span className="flex items-center gap-2">
           <span className="text-muted">Developer</span>
-          <Link href={`/developers/${e.developer_id}`} className="mono underline hover:text-orange">
+          <Link href={`/developers/${e.developer_id}`} className="mono underline hover:text-orange-ink">
             {e.developer_id}
           </Link>
           <ChainLink account={e.developer_id} />
@@ -112,7 +112,7 @@ export function EscrowSummary({ e, units }: { e: EstateView; units?: UnitView[] 
 const CELL = {
   Available: "bg-surface-2 text-text",
   Reserved: "bg-amber/15 text-amber",
-  Allocated: "bg-orange-dim text-orange",
+  Allocated: "bg-orange-dim text-orange-ink",
   InDefault: "bg-red/15 text-red",
   HandedOver: "bg-accent/15 text-accent",
 } as const;
@@ -191,7 +191,7 @@ export function Activity({ estate, unit, limit = 15 }: { estate: string; unit?: 
       {q.data.map((r) => (
         <li key={r.id} className="flex items-start justify-between gap-3 py-2 text-sm">
           <span className="min-w-0">{describeEvent(r)}</span>
-          <a className="mono shrink-0 text-xs text-muted hover:text-orange" href={explorerTxUrl(r.tx_hash)} target="_blank" rel="noreferrer">
+          <a className="mono shrink-0 text-xs text-muted hover:text-orange-ink" href={explorerTxUrl(r.tx_hash)} target="_blank" rel="noreferrer">
             {timeAgo(String(new Date(r.block_time).getTime() * 1e6))} ↗
           </a>
         </li>
@@ -203,7 +203,7 @@ export function Activity({ estate, unit, limit = 15 }: { estate: string; unit?: 
 export function DevScoreChip({ e }: { e: EstateView }) {
   const s = devScore(e.stats);
   return (
-    <Link href={`/developers/${e.developer_id}`} className="mono inline-flex min-h-8 items-center gap-1 bg-surface-2 px-2 text-xs hover:text-orange">
+    <Link href={`/developers/${e.developer_id}`} className="mono inline-flex min-h-8 items-center gap-1 bg-surface-2 px-2 text-xs hover:text-orange-ink">
       {s.isNew ? "New on Plote" : `Score ${s.score}/100`}
     </Link>
   );

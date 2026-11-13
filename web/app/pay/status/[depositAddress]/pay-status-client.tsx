@@ -76,7 +76,7 @@ export function PayStatusClient({ depositAddress, hint }: { depositAddress: stri
             const done = !failed && (i < step || (i === step && st.status === "SUCCESS"));
             const active = !failed && i === step && st.status !== "SUCCESS";
             return (
-              <li key={t} className={clsx("flex items-center gap-2 border-l-2 pl-3 text-sm sm:border-l-0 sm:border-t-2 sm:pl-0 sm:pt-2", done ? "border-orange text-orange" : active ? "border-amber text-amber" : "border-line text-muted")} aria-current={active ? "step" : undefined}>
+              <li key={t} className={clsx("flex items-center gap-2 border-l-2 pl-3 text-sm sm:border-l-0 sm:border-t-2 sm:pl-0 sm:pt-2", done ? "border-orange text-orange-ink" : active ? "border-amber text-amber" : "border-line text-muted")} aria-current={active ? "step" : undefined}>
                 {done ? <Check className="h-4 w-4" aria-hidden /> : active ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <span className="mono">{i + 1}</span>}
                 {t}
               </li>

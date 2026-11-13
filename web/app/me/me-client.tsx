@@ -45,7 +45,7 @@ export function MeClient() {
                     </Link>
                     <div className="min-w-0 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Link href={`/me/units/${s}/${token.token_id}`} className="mono text-xl font-normal hover:text-orange">{unitDisplay(token.token_id)}</Link>
+                        <Link href={`/me/units/${s}/${token.token_id}`} className="mono text-xl font-normal hover:text-orange-ink">{unitDisplay(token.token_id)}</Link>
                         <StatusBadge status={u?.status} />
                         {refundable > 0n ? <span className="mono inline-flex items-center gap-1 bg-red/10 px-2 py-1 text-xs text-red"><AlertOctagon className="h-3.5 w-3.5" aria-hidden />REFUND OPEN</span> : null}
                       </div>

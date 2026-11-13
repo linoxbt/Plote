@@ -1,35 +1,70 @@
 @import "tailwindcss";
 
 /*
- * Plote design system: coredao.org's brand system (Plote keeps only its own logo).
- * Near-black canvas (#090909 / #121212 / #181717), one orange accent (#FF9211 fills, #FD8D37 highlights,
- * #E55D08 / #E97122 gradient depth) against a light-blue counter-glow (#51D1FF / #8DD8FE), Lexend 300,
- * 16px cards, 50px pill buttons 56px tall: white primary (#FBFCFC on #1D2023), translucent ghost.
- * Meanings: orange = verified / action / value, amber = pending / warning, sky ("info") = neutral notices,
- * red = refund / danger. Dark only.
+ * Plote design system — "plain numbers".
+ * A light, calm fintech look: pale cool-grey page (#F2F4F7), white cards with hairline borders (#E3E6EB), large soft radii,
+ * near-black ink (#0B1220), one strong accent (Plote orange) and a calm green for released / verified / handed-over.
+ *
+ * Orange is split by job so it stays readable on light backgrounds (WCAG AA):
+ *   --orange       #FF7A00  fills: primary buttons (ink text on it, 7.2:1), bars, dots, rings
+ *   --orange-ink   #B54700  orange TEXT and links (5.4:1 on white, 4.9:1 on the page)
+ *   --orange-strong #E25F00 the solid highlight block behind white display type (≥ 24px only; 3.6:1, AA large)
+ * Meanings: orange = action / value / verified, green ("accent") = released / handed over, amber = pending,
+ * sky ("info") = neutral notices, red = refund / danger. Every status also has an icon or text: never colour alone.
+ *
+ * `.theme-dark` re-scopes the same tokens for the one dark band on the landing page (and anything else that wants it).
  */
 :root {
-  --bg: #090909;
-  --bg-2: #0e0e0e;
-  --surface: #121212;
-  --surface-2: #181717;
-  --line: rgba(255, 255, 255, 0.1);
-  --text: #ffffff;
-  --text-2: #f6f6f7;
-  --muted: #a3a3a8;
-  --ink: #1d2023;
-  --orange: #ff9211;
-  --orange-dim: #4a2a0c;
-  --accent: #fd8d37;
-  --ember: #e55d08;
-  --flame: #e97122;
-  --sky: #51d1ff;
-  --sky-2: #8dd8fe;
-  --red: #f26b5b;
-  /* A real amber for pending / warnings (≈10:1 on #090909); sky stays the brand's counter-glow and "info". */
-  --amber: #f5b83d;
+  --bg: #f2f4f7;
+  --bg-2: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f4f6f9;
+  --line: #e3e6eb;
+  --line-strong: #cdd2da;
+  --text: #0b1220;
+  --text-2: #1f2937;
+  --muted: #5b6472;
+  --ink: #0b1220;
+  --orange: #ff7a00;
+  --orange-ink: #b54700;
+  --orange-strong: #e25f00;
+  --orange-dim: #ffe8d4;
+  --orange-soft: #fff4ea;
+  --accent: #0e7a52;
+  --accent-soft: #e8f5ef;
+  --ember: #e25f00;
+  --flame: #ff9211;
+  --sky: #0b6fa4;
+  --sky-2: #e6f1f8;
+  --red: #c2361f;
+  --amber: #985a00;
   --info: var(--sky);
+  --shadow-float: 0 1px 2px rgba(11, 18, 32, 0.04), 0 12px 32px -8px rgba(11, 18, 32, 0.12), 0 32px 64px -24px rgba(11, 18, 32, 0.14);
+  --shadow-card: 0 1px 2px rgba(11, 18, 32, 0.04);
+  color-scheme: light;
+}
+
+.theme-dark {
+  --bg: #0b1220;
+  --bg-2: #0b1220;
+  --surface: #121a2b;
+  --surface-2: #19233a;
+  --line: rgba(255, 255, 255, 0.12);
+  --line-strong: rgba(255, 255, 255, 0.24);
+  --text: #ffffff;
+  --text-2: #e7eaf0;
+  --muted: #a3abb8;
+  --orange-ink: #ff9a3d;
+  --orange-dim: rgba(255, 122, 0, 0.18);
+  --orange-soft: rgba(255, 122, 0, 0.12);
+  --accent: #4fd1a1;
+  --accent-soft: rgba(79, 209, 161, 0.14);
+  --red: #ff8a7a;
+  --amber: #f5b83d;
+  --sky: #7cc8f0;
   color-scheme: dark;
+  background-color: var(--bg);
+  color: var(--text);
 }
 
 @theme inline {
@@ -38,13 +73,18 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-text: var(--text);
   --color-text-2: var(--text-2);
   --color-muted: var(--muted);
   --color-ink: var(--ink);
   --color-orange: var(--orange);
+  --color-orange-ink: var(--orange-ink);
+  --color-orange-strong: var(--orange-strong);
   --color-orange-dim: var(--orange-dim);
+  --color-orange-soft: var(--orange-soft);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-ember: var(--ember);
   --color-flame: var(--flame);
   --color-sky: var(--sky);
@@ -52,9 +92,9 @@
   --color-red: var(--red);
   --color-amber: var(--amber);
   --color-info: var(--info);
-  --font-sans: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jet), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 html,
@@ -65,10 +105,11 @@ body {
 
 body {
   font-family: var(--font-sans);
-  font-weight: 300;
+  font-weight: 400;
   font-size: 16px;
-  line-height: 1.4;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   min-height: 100dvh;
   overflow-x: clip;
 }
@@ -78,30 +119,39 @@ h2,
 h3,
 h4 {
   font-family: var(--font-display);
-  font-weight: 300;
-  line-height: 1.1;
-  letter-spacing: normal;
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+}
+h1,
+h2 {
+  letter-spacing: -0.035em;
 }
 h3,
 h4 {
-  line-height: 1.4;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
 }
 strong,
 b {
-  font-weight: 500;
+  font-weight: 600;
 }
 p {
-  line-height: 1.4;
+  line-height: 1.55;
 }
 
 ::selection {
-  background: rgba(255, 146, 17, 0.35);
+  background: rgba(255, 122, 0, 0.25);
   color: var(--text);
 }
 
 :focus-visible {
-  outline: 2px solid var(--orange);
+  outline: 2px solid var(--orange-ink);
   outline-offset: 2px;
+  border-radius: 6px;
+}
+.theme-dark :focus-visible {
+  outline-color: var(--orange);
 }
 
 a {
@@ -113,189 +163,266 @@ a {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
-
-/* The highlighted word in a headline, Core-style. */
-.hl {
-  color: var(--accent);
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
-/* ---- cards: 16px rounded dark panels with a hairline (class name kept from v1 so every page restyles) ---- */
+/* Small uppercase mono label with a dot: "● HOW IT WORKS". */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.eyebrow::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--orange);
+  flex-shrink: 0;
+}
+.eyebrow-red::before {
+  background: var(--red);
+}
+
+/* The highlighted phrase in a headline: a solid orange block behind white type in h1, orange ink elsewhere. */
+.hl {
+  color: var(--orange-ink);
+}
+h1 .hl,
+.hl-block {
+  color: #fff;
+  background: var(--orange-strong);
+  padding: 0 0.1em 0.02em;
+  margin: 0 -0.02em;
+  border-radius: 4px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ---- cards: white, hairline, soft radius (class name kept from v1 so every page restyles) ---- */
 .corners {
   border-radius: 16px;
   background-color: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line);
-  transition: box-shadow 160ms ease-out, background-color 160ms ease-out;
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    var(--shadow-card);
+  transition:
+    box-shadow 160ms ease-out,
+    background-color 160ms ease-out;
 }
 .corners-hover:hover,
 .corners-hover:focus-within,
 .corners-active {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 0 0 1px var(--line-strong),
+    0 8px 24px -12px rgba(11, 18, 32, 0.18);
 }
-.corners-orange,
+.corners-orange {
+  box-shadow: inset 0 0 0 1px rgba(255, 122, 0, 0.55);
+}
 .corners-accent {
-  box-shadow: inset 0 0 0 1px rgba(255, 146, 17, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(14, 122, 82, 0.4);
 }
 .corners-red {
-  box-shadow: inset 0 0 0 1px rgba(242, 107, 91, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(194, 54, 31, 0.4);
 }
 .corners-amber {
-  box-shadow: inset 0 0 0 1px rgba(245, 184, 61, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(152, 90, 0, 0.35);
 }
 .corners-info {
-  box-shadow: inset 0 0 0 1px rgba(81, 209, 255, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(11, 111, 164, 0.35);
 }
 
-/* ---- glow panels: Core's orange + light-blue gradients ---- */
-.glow-accent {
-  background:
-    radial-gradient(at 100% 100%, rgb(233, 113, 34) 20%, rgba(208, 104, 63, 0.4) 40%, rgba(255, 140, 0, 0) 75%),
-    radial-gradient(circle at 0% 0%, rgba(81, 209, 255, 0.5) 0px, rgba(141, 216, 254, 0.5) 0px, rgba(0, 77, 102, 0) 30%),
-    var(--surface);
+/* Floating card (hero unit card, statement card). */
+.float-card {
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    var(--shadow-float);
+}
+
+/* ---- panels (v1 "glow" names kept, now calm and flat) ---- */
+.glow-accent,
+.glow-edge {
+  background: var(--surface);
 }
 .glow-sky {
-  background:
-    radial-gradient(at 0% 100%, rgb(233, 113, 34) 20%, rgba(208, 104, 63, 0.4) 40%, rgba(255, 140, 0, 0) 75%),
-    radial-gradient(circle at 100% 0%, rgba(81, 209, 255, 0.5) 0px, rgba(141, 216, 254, 0.5) 0px, rgba(0, 77, 102, 0) 30%),
-    var(--surface);
+  background: linear-gradient(180deg, #eaf0f6 0%, #f4f7fa 100%);
 }
 .glow-orange {
-  background:
-    linear-gradient(320deg, rgb(229, 93, 8) 10%, rgba(208, 104, 63, 0.8) 20%, rgba(255, 140, 0, 0) 45%),
-    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.3) 20%, rgba(255, 255, 255, 0) 40%),
-    var(--surface);
+  background: linear-gradient(180deg, var(--orange-soft) 0%, #fffaf5 100%);
 }
-.glow-edge {
-  background:
-    linear-gradient(to left top, rgb(233, 113, 34) 10%, rgba(208, 104, 63, 0.7) 40%, rgba(255, 140, 0, 0) 60%),
-    linear-gradient(to right bottom, rgba(81, 209, 255, 0.5), rgba(141, 216, 254, 0.5) 0px, rgba(0, 77, 102, 0) 30%),
-    var(--surface);
-}
-/* Page-level ambient glow behind a hero. */
 .hero-glow {
-  background:
-    radial-gradient(60% 70% at 100% 100%, rgba(233, 113, 34, 0.75) 0%, rgba(208, 104, 63, 0.3) 35%, rgba(255, 140, 0, 0) 70%),
-    radial-gradient(45% 50% at 0% 0%, rgba(81, 209, 255, 0.32) 0%, rgba(0, 77, 102, 0) 70%),
-    var(--bg);
+  background: var(--bg);
 }
 .text-gradient {
-  background: linear-gradient(135deg, rgb(125, 211, 254), rgb(239, 81, 0));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--orange-ink);
 }
 .glass {
-  background: rgba(78, 78, 78, 0.2);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    var(--shadow-card);
 }
 
-/* ---- buttons: Core pills ---- */
+/* ---- buttons: compact pills ---- */
 .btn {
   font-family: var(--font-sans);
-  font-size: 16px;
-  font-weight: 400;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  min-height: 56px;
-  padding: 0 1.75rem;
-  border-radius: 50px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  min-height: 48px;
+  padding: 0 1.4rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
   white-space: nowrap;
   transition:
     background-color 150ms ease-out,
     color 150ms ease-out,
     border-color 150ms ease-out,
+    box-shadow 150ms ease-out,
     opacity 150ms ease-out;
   cursor: pointer;
   user-select: none;
 }
 .btn:disabled,
 .btn[aria-disabled="true"] {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 .btn-primary {
-  background-color: #fbfcfc;
+  background-color: var(--orange);
   color: var(--ink);
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: #e6e7e8;
+  background-color: #ff8f2b;
 }
 .btn-ghost {
-  color: var(--text-2);
-  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  background-color: var(--surface);
+  border-color: var(--line);
 }
 .btn-ghost:hover:not(:disabled),
 .btn-ghost:focus-visible {
-  background-color: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.3);
+  border-color: var(--line-strong);
+  background-color: var(--surface-2);
+}
+.btn-ink {
+  background-color: var(--ink);
+  color: #fff;
+}
+.btn-ink:hover:not(:disabled) {
+  background-color: #1d2738;
+}
+.theme-dark .btn-ink {
+  background-color: #fff;
+  color: var(--ink);
 }
 .btn-danger {
-  background-color: var(--red);
-  border-color: transparent;
-  color: var(--ink);
+  background-color: #c2361f;
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: #a92c17;
 }
 .btn-accent {
-  background-color: var(--orange);
-  border-color: transparent;
-  color: var(--ink);
+  background-color: #0e7a52;
+  color: #fff;
 }
 .btn-accent:hover:not(:disabled) {
-  background-color: var(--accent);
+  background-color: #0b6845;
 }
 .btn-sm {
   min-height: 44px;
-  padding: 0 1.25rem;
+  padding: 0 1.05rem;
   font-size: 14px;
+}
+/* The round arrow inside a primary pill. */
+.btn-arrow {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  margin-right: -0.85rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
 }
 
 /* ---- inputs ---- */
 .input {
   width: 100%;
-  min-height: 52px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
-  padding: 0 1rem;
+  min-height: 48px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 0 0.95rem;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 15px;
-  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+  transition:
+    border-color 150ms ease-out,
+    box-shadow 150ms ease-out;
 }
 .input::placeholder {
-  color: #71717a;
+  color: #8a93a1;
+}
+.theme-dark .input::placeholder {
+  color: #7d8696;
 }
 .input:focus {
   border-color: var(--orange);
   outline: none;
-  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 3px rgba(255, 122, 0, 0.18);
 }
 textarea.input {
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 0.95rem;
   min-height: 96px;
+}
+select.input {
+  font-family: var(--font-sans);
 }
 .label {
   display: block;
   font-size: 13px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--muted);
   margin-bottom: 0.4rem;
 }
 
-/* ---- subtle dotted grid (kept for illustrations) ---- */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--orange);
+}
+
+/* ---- subtle dotted grid (illustrations) ---- */
 .survey-grid {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(11, 18, 32, 0.07) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
-/* ---- partner strip ---- */
+/* ---- ticker / marquee ---- */
 .marquee {
   display: flex;
   width: max-content;
-  animation: marquee 40s linear infinite;
+  animation: marquee 48s linear infinite;
+}
+.marquee:hover {
+  animation-play-state: paused;
 }
 @keyframes marquee {
   to {
@@ -305,7 +432,7 @@ textarea.input {
 
 /* ---- skeleton ---- */
 .skeleton {
-  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--line) 50%, var(--surface-2) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
   border-radius: 8px;
@@ -332,72 +459,86 @@ details > summary::-webkit-details-marker {
   display: none;
 }
 
-/* ---- motion (Core-style). The `motion` class is only set when the visitor hasn't asked for less motion. ---- */
+/* tables read as plain statements */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- motion. The `motion` class is only set when the visitor hasn't asked for less motion. ---- */
 .motion [data-reveal]:not(.is-in):not(.motion-failsafe *) {
   opacity: 0;
-  transform: translateY(28px);
+  transform: translateY(16px);
 }
 .motion [data-reveal] {
   transition:
-    opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 600ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .motion-failsafe [data-reveal] {
   opacity: 1;
   transform: none;
 }
-/* Hero copy rises in on load. */
 .motion .rise {
-  animation: rise 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: rise 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes rise {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: none; }
-}
-/* Glow panels and hero glows drift slowly, like light moving across the page. */
-.glow-accent,
-.glow-sky,
-.glow-orange,
-.glow-edge,
-.hero-glow {
-  background-size: 125% 125%;
-  background-position: 0% 0%;
-  animation: glow-drift 16s ease-in-out infinite alternate;
-}
-@keyframes glow-drift {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
   to {
-    background-position: 100% 100%;
+    opacity: 1;
+    transform: none;
   }
 }
-/* Soft blurred orbs that float behind heroes. */
-.orb {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(70px);
-  pointer-events: none;
-  animation: orb-float 14s ease-in-out infinite alternate;
+/* Statement lines fill in. */
+.stmt-line {
+  transition:
+    opacity 420ms ease-out,
+    color 420ms ease-out;
 }
-@keyframes orb-float {
-  0% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(6%, -8%, 0) scale(1.08); }
-  100% { transform: translate3d(-5%, 6%, 0) scale(0.96); }
+/* Live dot. */
+.live-dot {
+  position: relative;
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: inherit;
+  animation: live-ping 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes live-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
 }
 /* Slow spins for the orbit and dial illustrations; labels counter-rotate so they stay upright. */
 .spin-slow {
-  animation: spin 60s linear infinite;
+  animation: spin 80s linear infinite;
 }
 .spin-slow-reverse {
-  animation: spin 60s linear infinite reverse;
+  animation: spin 80s linear infinite reverse;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
-/* Dashed "not built yet" lines march; the unit marker pings. */
 .march {
   animation: march 1.6s linear infinite;
 }
 @keyframes march {
-  to { stroke-dashoffset: -20; }
+  to {
+    stroke-dashoffset: -20;
+  }
 }
 .ping {
   transform-box: fill-box;
@@ -405,20 +546,33 @@ details > summary::-webkit-details-marker {
   animation: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 @keyframes ping {
-  0% { transform: scale(1); opacity: 0.8; }
-  80%, 100% { transform: scale(3.2); opacity: 0; }
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
 }
 /* NFT drawing: parts fill in smoothly as the stage changes. */
 .nft-anim svg * {
-  transition: fill 700ms ease, stroke 700ms ease;
+  transition:
+    fill 700ms ease,
+    stroke 700ms ease;
 }
 .chip-progress {
   animation: chip-progress linear forwards;
   transform-origin: left;
 }
 @keyframes chip-progress {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 /* ---- how-it-works step illustrations (SPEC §12.5) — small, slow loops ---- */
@@ -428,17 +582,35 @@ details > summary::-webkit-details-marker {
   animation: step-shackle 3.2s ease-out infinite;
 }
 @keyframes step-shackle {
-  0%, 25% { transform: translateY(-4px); }
-  40%, 100% { transform: none; }
+  0%,
+  25% {
+    transform: translateY(-4px);
+  }
+  40%,
+  100% {
+    transform: none;
+  }
 }
 .step-coin {
   animation: step-coin 2.8s ease-in infinite;
 }
 @keyframes step-coin {
-  0% { transform: translateY(0); opacity: 0; }
-  15% { opacity: 1; }
-  55% { transform: translateY(26px); opacity: 1; }
-  70%, 100% { transform: translateY(26px); opacity: 0; }
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  55% {
+    transform: translateY(26px);
+    opacity: 1;
+  }
+  70%,
+  100% {
+    transform: translateY(26px);
+    opacity: 0;
+  }
 }
 .step-check {
   stroke-dasharray: 1;
@@ -446,32 +618,59 @@ details > summary::-webkit-details-marker {
   animation: step-check 3s ease-out infinite;
 }
 @keyframes step-check {
-  0%, 30% { stroke-dashoffset: 1; }
-  55%, 100% { stroke-dashoffset: 0; }
+  0%,
+  30% {
+    stroke-dashoffset: 1;
+  }
+  55%,
+  100% {
+    stroke-dashoffset: 0;
+  }
 }
 .step-fill {
   animation: step-fill 3.4s ease-out infinite;
 }
 @keyframes step-fill {
-  0%, 30% { fill: rgba(255, 255, 255, 0.12); }
-  50%, 100% { fill: var(--orange); }
+  0%,
+  30% {
+    fill: rgba(11, 18, 32, 0.08);
+  }
+  50%,
+  100% {
+    fill: var(--orange);
+  }
 }
 .step-arrow {
   animation: step-arrow 3.4s ease-out infinite;
 }
 @keyframes step-arrow {
-  0%, 45% { transform: translateX(-6px); opacity: 0; }
-  65% { opacity: 1; }
-  100% { transform: translateX(4px); opacity: 0; }
+  0%,
+  45% {
+    transform: translateX(-6px);
+    opacity: 0;
+  }
+  65% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(4px);
+    opacity: 0;
+  }
 }
 
-/* ---- landing hero block: floors rise in, then the unit marker pops (was framer-motion) ---- */
+/* ---- landing hero block: floors rise in, then the unit marker pops ---- */
 .motion .hero-floor {
   animation: hero-floor 500ms ease-out both;
 }
 @keyframes hero-floor {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .hero-dot {
   transform-box: fill-box;
@@ -481,36 +680,55 @@ details > summary::-webkit-details-marker {
   animation: hero-dot 300ms ease-out 1.8s both;
 }
 @keyframes hero-dot {
-  from { transform: scale(0); }
-  to { transform: scale(1); }
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
 }
 
-/* ---- celebration overlay + NFT reveal (was framer-motion) ---- */
+/* ---- celebration overlay + NFT reveal ---- */
 .motion .fade-in {
   animation: fade-in 300ms ease-out both;
 }
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .motion .nft-reveal {
   animation: nft-reveal 800ms ease-out both;
 }
 @keyframes nft-reveal {
-  from { opacity: 0; transform: perspective(800px) scale(0.9) rotateY(40deg); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: perspective(800px) scale(0.9) rotateY(40deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .confetti-bit {
   animation: confetti-fall var(--dur, 2s) ease-in var(--delay, 0s) both;
 }
 @keyframes confetti-fall {
-  from { transform: translateY(-20px) rotate(0deg); opacity: 1; }
-  to { transform: translateY(100vh) rotate(var(--rot, 360deg)); opacity: 0.2; }
+  from {
+    transform: translateY(-20px) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100vh) rotate(var(--rot, 360deg));
+    opacity: 0.2;
+  }
 }
 
 /*
- * Reduced motion. Kept LAST so it wins over every animation rule above at equal specificity
- * (it used to sit before the step illustrations, so .step-check's dashoffset stayed hidden).
+ * Reduced motion. Kept LAST so it wins over every animation rule above at equal specificity.
  */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -525,12 +743,7 @@ details > summary::-webkit-details-marker {
     stroke-dashoffset: 0;
   }
   .marquee,
-  .glow-accent,
-  .glow-sky,
-  .glow-orange,
-  .glow-edge,
-  .hero-glow,
-  .orb,
+  .live-dot::after,
   .spin-slow,
   .spin-slow-reverse,
   .march,
@@ -544,6 +757,9 @@ details > summary::-webkit-details-marker {
   .hero-dot,
   .confetti-bit {
     animation: none;
+  }
+  .live-dot::after {
+    display: none;
   }
   .step-coin {
     opacity: 1;

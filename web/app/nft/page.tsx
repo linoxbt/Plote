@@ -42,7 +42,7 @@ export default function NftPage() {
           {ABILITIES.map(([icon, t, b, call]) => (
             <FeatureCard key={t} icon={icon} title={t}>
               <p>{b}</p>
-              <code className="mono mt-4 inline-block rounded-full bg-white/[0.05] px-3 py-1 text-xs text-orange ring-1 ring-white/10">{call}</code>
+              <code className="mono mt-4 inline-block rounded-full bg-surface-2 px-3 py-1 text-xs text-orange-ink ring-1 ring-line">{call}</code>
             </FeatureCard>
           ))}
         </div>
@@ -58,7 +58,7 @@ export default function NftPage() {
 
       <Section label="Standards" className="!pt-0">
         <Heading eyebrow="Standards" title={<>Built on NEAR&apos;s <Hl>NFT standards</Hl>.</>} />
-        <div className="mt-10 rounded-2xl bg-surface px-2 ring-1 ring-white/[0.08] sm:px-4">
+        <div className="mt-10 rounded-2xl bg-surface px-2 ring-1 ring-line sm:px-4">
           <StatGrid
             items={[
               { value: "NEP-171", label: "Core: ownership and transfers" },

@@ -173,7 +173,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
             <div className="flex flex-wrap items-center gap-2"><span className="mono text-2xl font-normal">{unitDisplay(u.id)}</span><StatusBadge status={u.status} /></div>
             <p className="text-sm text-muted">{u.label}</p>
             <nav className="mono flex flex-wrap gap-x-3 gap-y-1 text-xs" aria-label="Sections">
-              {["overview", "pay", "refund", "sell", "beneficiary", "lien", "notifications", "danger"].map((x) => <a key={x} href={`#${x}`} className="inline-flex min-h-8 items-center text-muted hover:text-orange">{x}</a>)}
+              {["overview", "pay", "refund", "sell", "beneficiary", "lien", "notifications", "danger"].map((x) => <a key={x} href={`#${x}`} className="inline-flex min-h-8 items-center text-muted hover:text-orange-ink">{x}</a>)}
             </nav>
           </div>
           <div className="space-y-6">
@@ -309,7 +309,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
               {notify.isLoading ? <p className="text-sm text-muted" aria-busy="true">Checking whether email is available…</p> : !notify.data ? (
                 <p className="text-sm text-muted" role="note">
                   Email notifications aren&apos;t set up on this deployment, so there&apos;s nothing to subscribe to here. You can still follow every stage on the{" "}
-                  <Link className="underline hover:text-orange" href={`/w/${s}/${u.id}`}>watch page</Link>.
+                  <Link className="underline hover:text-orange-ink" href={`/w/${s}/${u.id}`}>watch page</Link>.
                 </p>
               ) : (
               <div className="grid gap-2 sm:grid-cols-[1fr_auto]">

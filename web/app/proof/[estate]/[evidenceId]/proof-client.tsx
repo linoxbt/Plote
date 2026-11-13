@@ -70,9 +70,9 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
         <Link href={`/estates/${estateSlug(account)}`} className="hover:text-text">{e.name}</Link> / <Link href={`/estates/${estateSlug(account)}/milestones`} className="hover:text-text">milestones</Link> / proof #{ev.id}
       </nav>
       <header className="mb-6 space-y-3">
-        <p className="mono text-xs tracking-[0.12em] text-orange">PROOF #{ev.id} · {m ? m.title.toUpperCase() : `MILESTONE ${ev.milestone + 1}`}</p>
+        <p className="mono text-xs tracking-[0.12em] text-orange-ink">PROOF #{ev.id} · {m ? m.title.toUpperCase() : `MILESTONE ${ev.milestone + 1}`}</p>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className={clsx("text-3xl font-normal sm:text-[40px]", pass ? "text-orange" : ev.status === "Pending" ? "text-amber" : "text-red")}>
+          <h1 className={clsx("text-3xl font-normal sm:text-[40px]", pass ? "text-orange-ink" : ev.status === "Pending" ? "text-amber" : "text-red")}>
             {pass ? "Passed" : ev.status === "Pending" ? "Checking…" : ev.status === "Fail" ? "Failed" : "Check error"}
           </h1>
           <StatusBadge kind="evidence" status={ev.status} />
@@ -87,7 +87,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
           <figure className={clsx("corners p-2", pass ? "corners-orange" : ev.status === "Pending" ? "corners-amber" : "corners-red")}>
             <img src={ev.url} alt={`Site photo for ${m?.title ?? "the milestone"}`} className="w-full bg-surface-2 object-contain" decoding="async" />
             <figcaption className="mono mt-2 break-all text-xs text-muted">
-              SHA-256 {ev.sha256} {v && !v.reasons.includes("hash_mismatch") ? <span className="text-orange">· hash matches on-chain commitment ✓</span> : null}
+              SHA-256 {ev.sha256} {v && !v.reasons.includes("hash_mismatch") ? <span className="text-orange-ink">· hash matches on-chain commitment ✓</span> : null}
             </figcaption>
           </figure>
 
@@ -136,7 +136,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
             <h2 className="text-lg font-normal">Challenge code</h2>
             <div className="grid grid-cols-2 gap-3">
               <div><p className="label">Issued on-chain</p><p className="mono text-2xl tracking-[0.2em]">{ev.challenge}</p></div>
-              <div><p className="label">Read by the model</p><p className={clsx("mono text-2xl tracking-[0.2em]", v?.challenge_read ? (v.reasons.some((r) => r.startsWith("challenge")) ? "text-red" : "text-orange") : "text-muted")}>{v?.challenge_read ?? "—"}</p></div>
+              <div><p className="label">Read by the model</p><p className={clsx("mono text-2xl tracking-[0.2em]", v?.challenge_read ? (v.reasons.some((r) => r.startsWith("challenge")) ? "text-red" : "text-orange-ink") : "text-muted")}>{v?.challenge_read ?? "—"}</p></div>
             </div>
             <p className="mono text-xs text-muted">Capture opened {formatDateTime(ev.challenge_opened_at)}</p>
           </BracketCard>
@@ -179,8 +179,8 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
             {aiModel ? <dl><KV k="Model">{aiModel}</KV></dl> : null}
             {v?.ai_chat_id && aiModel ? (
               <p className="text-sm">
-                <a className="underline hover:text-orange" href={`${NEAR_AI_URL}/signature/${encodeURIComponent(v.ai_chat_id)}?model=${encodeURIComponent(aiModel)}&signing_algo=ecdsa`} target="_blank" rel="noreferrer">NEAR AI signature ↗</a>{" · "}
-                <a className="underline hover:text-orange" href={`${NEAR_AI_URL}/attestation/report?model=${encodeURIComponent(aiModel)}`} target="_blank" rel="noreferrer">model attestation ↗</a>
+                <a className="underline hover:text-orange-ink" href={`${NEAR_AI_URL}/signature/${encodeURIComponent(v.ai_chat_id)}?model=${encodeURIComponent(aiModel)}&signing_algo=ecdsa`} target="_blank" rel="noreferrer">NEAR AI signature ↗</a>{" · "}
+                <a className="underline hover:text-orange-ink" href={`${NEAR_AI_URL}/attestation/report?model=${encodeURIComponent(aiModel)}`} target="_blank" rel="noreferrer">model attestation ↗</a>
               </p>
             ) : v?.ai_chat_id ? (
               <p className="break-all text-xs text-muted">NEAR AI chat <span className="mono">{v.ai_chat_id}</span>. This verdict doesn&apos;t record which model answered, so the signature and attestation links aren&apos;t shown.</p>
@@ -204,7 +204,7 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
               {v ? (
                 <span>
                   <span className="break-all">{v.worker_commit || "—"}</span>{" "}
-                  {pin.match === "matches" ? <span className="text-orange"><CheckCircle2 className="inline h-3.5 w-3.5" aria-hidden /> matches pin</span>
+                  {pin.match === "matches" ? <span className="text-orange-ink"><CheckCircle2 className="inline h-3.5 w-3.5" aria-hidden /> matches pin</span>
                     : pin.match === "differs" ? <span className="text-red">doesn&apos;t match the pin (the estate treats such a verdict as an error)</span>
                     : pin.kind === "project" ? <span className="text-muted">(the git commit it was built from; OutLayer ran the pinned WASM version)</span>
                     : null}

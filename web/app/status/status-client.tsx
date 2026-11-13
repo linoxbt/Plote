@@ -15,7 +15,7 @@ type Row = { name: string; level: Level; detail: string };
 
 const ICON = { green: CheckCircle2, amber: AlertTriangle, red: XCircle, loading: Loader2 };
 const WORD = { green: "Operational", amber: "Degraded", red: "Down", loading: "Checking" };
-const COLOR = { green: "text-orange", amber: "text-amber", red: "text-red", loading: "text-muted" };
+const COLOR = { green: "text-orange-ink", amber: "text-amber", red: "text-red", loading: "text-muted" };
 
 function RowView({ r }: { r: Row }) {
   const I = ICON[r.level];

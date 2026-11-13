@@ -93,7 +93,7 @@ export function NewEstateWizard() {
     <form onSubmit={handleSubmit((v) => { setConfig(v); setReviewErr(null); setStep(4); }, onInvalid)} className="space-y-6" noValidate>
       <ol className="flex gap-1 overflow-x-auto" aria-label="Steps">
         {STEPS.map((t, i) => (
-          <li key={t}><button type="button" onClick={() => setStep(i === 4 && !config ? step : i)} className={clsx("mono min-h-11 border-b-2 px-3 text-sm", i === step ? "border-orange text-orange" : "border-line text-muted")} aria-current={i === step ? "step" : undefined}>{i + 1}. {t}</button></li>
+          <li key={t}><button type="button" onClick={() => setStep(i === 4 && !config ? step : i)} className={clsx("mono min-h-11 border-b-2 px-3 text-sm", i === step ? "border-orange text-orange-ink" : "border-line text-muted")} aria-current={i === step ? "step" : undefined}>{i + 1}. {t}</button></li>
         ))}
       </ol>
       {reviewErr ? <p className="text-sm text-red" role="alert">{reviewErr}</p> : null}
@@ -124,7 +124,7 @@ export function NewEstateWizard() {
             </div>
           ))}
           <Field label="Mobilisation tranche (%)" htmlFor="mob" hint="0–10%, released when a unit is allocated." error={errors.mobilisation?.message}><input id="mob" className="input" inputMode="decimal" {...register("mobilisation")} /></Field>
-          <p className={clsx("mono text-sm", Math.abs(sum - 100) < 1e-9 ? "text-orange" : "text-red")}>Total {sum}% {Math.abs(sum - 100) < 1e-9 ? "✓" : "— must be 100%"}</p>
+          <p className={clsx("mono text-sm", Math.abs(sum - 100) < 1e-9 ? "text-orange-ink" : "text-red")}>Total {sum}% {Math.abs(sum - 100) < 1e-9 ? "✓" : "— must be 100%"}</p>
           {errors.milestones?.message || errors.milestones?.root?.message ? <p className="text-sm text-red">{errors.milestones?.message ?? errors.milestones?.root?.message}</p> : null}
         </div>
         <div className={step === 2 ? "space-y-4" : "hidden"}>
