@@ -5,28 +5,35 @@ import type { EstateView } from "@/lib/types";
 import { formatDuration, nsToMs } from "@/lib/format";
 import { useGenuineEstate } from "@/lib/hooks";
 
-export function PlaygroundBanner() {
-  return (
-    <div className="corners corners-amber flex items-start gap-3 bg-amber/5 p-3 text-sm" role="note">
-      <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-amber" strokeWidth={1.5} aria-hidden />
-      <p>
-        <span className="mono font-normal text-amber">PLAYGROUND</span> — a judge sandbox. Any wallet can act as surveyor, there&apos;s no
-        geofence, and an AI stage mismatch is a warning, not a fail. Hash, reuse, screen-photo and challenge checks still fail hard.
-      </p>
-    </div>
-  );
-}
-
-export function DemoBanner({ estate }: { estate: EstateView }) {
+/** One slim line for the testnet demo settings (both are fixed in the estate contract); details on tap. */
+export function DemoNotice({ estate }: { estate: EstateView }) {
   const p = estate.params;
+  const tags = [p.playground ? "Judge sandbox" : null, p.demo_mode ? "Short demo timers" : null].filter(Boolean).join(" · ");
   return (
-    <div className="corners corners-info flex items-start gap-3 bg-info/5 p-3 text-sm" role="note">
-      <Timer className="mt-0.5 h-4 w-4 shrink-0 text-info" strokeWidth={1.5} aria-hidden />
-      <p>
-        <span className="mono font-normal text-info">DEMO MODE</span> — short timers for the demo: veto window {formatDuration(nsToMs(p.veto_window_ns))}, grace{" "}
-        {formatDuration(nsToMs(p.grace_ns))}, votes {formatDuration(nsToMs(p.proposal_period_ns))}. A NEAR AI outage is only a warning, but the challenge code must still be read from the photo, so it can fail the check.
-      </p>
-    </div>
+    <details className="group rounded-full border border-line bg-white/70 px-4 py-1.5 text-xs text-muted open:rounded-2xl open:py-3">
+      <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+        <FlaskConical className="h-3.5 w-3.5 shrink-0 text-orange-ink" strokeWidth={1.75} aria-hidden />
+        <span>
+          <span className="mono uppercase tracking-wider text-ink">Testnet</span> · {tags}
+        </span>
+        <span className="ml-auto text-orange-ink underline-offset-2 group-open:hidden hover:underline">Details</span>
+      </summary>
+      <div className="mt-2 space-y-1.5 pl-5.5 text-[13px] leading-relaxed">
+        {p.playground ? (
+          <p>
+            Judge sandbox: any wallet can act as surveyor and there&apos;s no location fence, so you can try the photo check from anywhere. A stage
+            mismatch is a warning here; hash, reuse, screen-photo and code checks still fail hard.
+          </p>
+        ) : null}
+        {p.demo_mode ? (
+          <p>
+            <Timer className="mr-1 inline h-3.5 w-3.5 align-[-2px] text-info" strokeWidth={1.75} aria-hidden />
+            Short timers so you can watch it happen: veto window {formatDuration(nsToMs(p.veto_window_ns))}, grace {formatDuration(nsToMs(p.grace_ns))}, votes{" "}
+            {formatDuration(nsToMs(p.proposal_period_ns))}. Real estates use days. The code in the photo must still be read, so a check can fail.
+          </p>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -73,8 +80,7 @@ export function EstateBanners({ estate, account }: { estate: EstateView | undefi
     <div className="mb-6 space-y-2 empty:hidden">
       {account ? <NotGenuineBanner account={account} /> : null}
       <FrozenBanner estate={estate} />
-      {estate.params.playground ? <PlaygroundBanner /> : null}
-      {estate.params.demo_mode ? <DemoBanner estate={estate} /> : null}
+      {estate.params.playground || estate.params.demo_mode ? <DemoNotice estate={estate} /> : null}
     </div>
   );
 }
