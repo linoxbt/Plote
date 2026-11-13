@@ -59,7 +59,7 @@ export function UnitClient({ slug, unitId }: { slug: string; unitId: string }) {
       <nav className="mono mb-4 text-xs text-muted" aria-label="Breadcrumb">
         <Link href="/estates" className="hover:text-text">Estates</Link> / <Link href={`/estates/${s}`} className="hover:text-text">{e.name}</Link> / {unitDisplay(u.id)}
       </nav>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
         <div className="space-y-4">
           <BracketCard className="p-2">
             <UnitImage e={e} u={u} ms={ms.data} token={token.data} />

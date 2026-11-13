@@ -203,8 +203,9 @@ a {
 h1 .hl,
 .hl-block {
   color: #fff;
-  background: var(--orange-strong);
-  padding: 0 0.1em 0.02em;
+  /* Starts a little below the line box so it never covers the descenders of the line above. */
+  background: linear-gradient(to bottom, transparent 0.16em, var(--orange-strong) 0.16em);
+  padding: 0 0.1em 0.04em;
   margin: 0 -0.02em;
   border-radius: 4px;
   -webkit-box-decoration-break: clone;

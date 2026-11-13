@@ -65,9 +65,9 @@ export default function VerificationPage() {
           <Split
             visual={
               <svg viewBox="0 0 240 200" className="w-full max-w-[320px]" aria-hidden>
-                <path d="M30 60V30h30M180 30h30v30M210 140v30h-30M60 170H30v-30" stroke="#F4F4F5" strokeWidth="3" fill="none" />
-                <rect x="70" y="80" width="100" height="40" rx="6" fill="#F4F4F5" />
-                <text x="120" y="107" textAnchor="middle" fill="#090909" fontSize="20" fontFamily="var(--font-geist-mono), monospace">K7RQ4M</text>
+                <path d="M30 60V30h30M180 30h30v30M210 140v30h-30M60 170H30v-30" stroke="#0B1220" strokeWidth="3" fill="none" />
+                <rect x="70" y="80" width="100" height="40" rx="6" fill="#FFFFFF" stroke="#CDD2DA" />
+                <text x="120" y="107" textAnchor="middle" fill="#0B1220" fontSize="20" fontFamily="var(--font-geist-mono), monospace">K7RQ4M</text>
               </svg>
             }
           >

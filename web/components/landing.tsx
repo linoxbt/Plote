@@ -172,7 +172,7 @@ export function LiveReadPill() {
           Read from NEAR {NET} at {at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
         </span>
       ) : (
-        <span>Live from NEAR {NET}</span>
+        <span>Reading from NEAR {NET}…</span>
       )}
     </p>
   );
@@ -199,7 +199,7 @@ export function HeroUnit() {
   return (
     <div className="relative lg:h-[620px]">
       {/* calm panel with the token */}
-      <div className="survey-grid relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#e7edf5] to-[#f6f8fb] ring-1 ring-line max-lg:aspect-square sm:max-lg:aspect-[5/4] lg:absolute lg:inset-y-0 lg:left-14 lg:right-0">
+      <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#e7edf5] to-[#f6f8fb] ring-1 ring-line max-lg:aspect-square sm:max-lg:aspect-[5/4] lg:absolute lg:inset-y-0 lg:left-14 lg:right-0">
         <div className="absolute inset-x-3 top-3 flex flex-wrap items-start justify-between gap-2 sm:inset-x-4 sm:top-4">
           <div className="flex flex-wrap gap-1 rounded-full bg-surface/80 p-1 ring-1 ring-line backdrop-blur" role="group" aria-label="Show an estate">
             {data.map((d) => (
@@ -217,13 +217,13 @@ export function HeroUnit() {
               </button>
             ))}
           </div>
-          {chip ? (
-            <span className="hidden items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[13px] text-text ring-1 ring-line sm:inline-flex">
-              {chip.icon} {chip.text}
-            </span>
-          ) : null}
         </div>
-        <div className="absolute right-4 top-16 flex w-[46%] justify-center sm:right-8 sm:w-[40%] lg:right-8 lg:top-24 lg:w-[48%]">
+        {chip ? (
+          <span className="absolute bottom-4 right-4 hidden items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[13px] text-text ring-1 ring-line lg:bottom-5 lg:right-5 lg:inline-flex">
+            {chip.icon} {chip.text}
+          </span>
+        ) : null}
+        <div className="absolute right-4 top-16 flex w-[46%] justify-center sm:right-8 sm:w-[40%] lg:right-8 lg:top-[72px] lg:w-[44%]">
           {u && current.e ? (
             <HouseNFT
               className="w-full max-w-[300px] rounded-2xl shadow-[var(--shadow-float)]"
@@ -345,15 +345,19 @@ export function LiveTicker() {
   ];
   const row = (dup: boolean) => (
     <ul className="flex shrink-0 items-center" aria-hidden={dup || undefined}>
-      {items.map(([k, v]) => (
-        <li key={k} className="flex items-center gap-2.5 whitespace-nowrap px-6 text-[15px]">
-          <span className="text-muted">{k}</span>
-          <span className="font-medium tabular-nums text-text">{v === null ? (t.loading ? "…" : "—") : v}</span>
-          <span className="ml-6 h-1 w-1 rounded-full bg-line-strong" aria-hidden />
-        </li>
-      ))}
+      {items.map(([k, v]) => {
+        const val = v === null ? (t.loading ? "…" : "—") : v;
+        return (
+          <li key={k} className="flex items-center gap-2.5 whitespace-nowrap px-6 text-[15px]">
+            {/* The looping copy draws its text with CSS so the DOM (and screen readers, and text search) hold each figure once. */}
+            {dup ? <span className="text-muted before:content-[attr(data-t)]" data-t={k} /> : <span className="text-muted">{k}</span>}
+            {dup ? <span className="font-medium tabular-nums text-text before:content-[attr(data-t)]" data-t={val} /> : <span className="font-medium tabular-nums text-text">{val}</span>}
+            <span className="ml-6 h-1 w-1 rounded-full bg-line-strong" aria-hidden />
+          </li>
+        );
+      })}
       <li className="whitespace-nowrap px-6 text-[15px] text-muted">
-        Live from NEAR {NET} · every number links to the chain
+        {dup ? <span className="before:content-[attr(data-t)]" data-t={`Live from NEAR ${NET} · every number links to the chain`} /> : <>Live from NEAR {NET} · every number links to the chain</>}
       </li>
     </ul>
   );
@@ -442,7 +446,7 @@ export function EstateCards() {
             data-reveal
             className="group flex flex-col overflow-hidden rounded-[20px] bg-surface ring-1 ring-line transition-shadow duration-300 hover:shadow-[0_16px_40px_-20px_rgba(11,18,32,0.35)]"
           >
-            <div className="survey-grid relative flex h-56 items-end justify-center overflow-hidden bg-gradient-to-br from-[#e7edf5] to-[#f6f8fb]">
+            <div className="relative flex h-56 items-end justify-center overflow-hidden bg-gradient-to-br from-[#e7edf5] to-[#f6f8fb]">
               <span className="absolute left-4 top-4 rounded-full bg-surface px-3 py-1 text-xs font-medium ring-1 ring-line">{estateTag(d.slug)}</span>
               {u && e ? (
                 <HouseNFT
@@ -704,7 +708,7 @@ export function RealProofs() {
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <div data-reveal className="flex min-h-[300px] flex-col justify-between rounded-[20px] bg-orange p-6 text-ink">
+      <div data-reveal className="flex min-h-[220px] flex-col justify-between rounded-[20px] bg-orange p-6 text-ink lg:min-h-[300px]">
         <p className="mono text-[11px] font-medium uppercase tracking-[0.14em]">Proofs on record</p>
         <div>
           <p className="text-[72px] font-medium leading-none tracking-[-0.05em] tabular-nums">{t.proofsPassed ?? "—"}</p>

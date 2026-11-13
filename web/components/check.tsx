@@ -177,7 +177,7 @@ export function CheckResult({ o, onShare }: { o: CheckOutcome; onShare?: () => v
           {unitDisplay(o.ref.unit)} · {v.label ?? ""}
         </p>
       </div>
-      <dl className="grid gap-3 sm:grid-cols-2">
+      <dl className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
         <div>
           <dt className="label">Unit account</dt>
           <dd>

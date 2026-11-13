@@ -36,7 +36,7 @@ export default function Landing() {
             <div className="rise">
               <LiveReadPill />
             </div>
-            <h1 className="rise text-[44px] leading-[1.03] [animation-delay:80ms] sm:text-[64px] lg:text-[58px] xl:text-[68px]">
+            <h1 className="rise text-[44px] leading-[1.1] [animation-delay:80ms] sm:text-[64px] lg:text-[58px] xl:text-[68px]">
               Pay for the house{" "}
               <br />
               <span className="hl">you can see.</span>
@@ -158,7 +158,7 @@ export default function Landing() {
               Real numbers.
             </h2>
           </div>
-          <p className="max-w-sm text-sm text-muted sm:text-right">No testimonials, no stock photos. Every card below is a proof, a release or a refund read live from NEAR.</p>
+          <p className="max-w-sm text-sm text-muted sm:text-right">No testimonials, no stock photos. Every card below is a proof, a release or a refund, read straight from the chain.</p>
         </div>
         <RealProofs />
       </Section>

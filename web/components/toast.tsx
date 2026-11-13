@@ -77,10 +77,10 @@ function ToastView({ t, onClose }: { t: Toast; onClose: () => void }) {
     <div
       role={t.state === "error" ? "alert" : "status"}
       className={clsx(
-        "corners pointer-events-auto w-full max-w-sm bg-surface-2 p-4 shadow-lg",
-        t.state === "success" && "corners-orange",
-        t.state === "error" && "corners-red",
-        t.state === "pending" && "corners-amber",
+        "pointer-events-auto w-full max-w-sm rounded-2xl border-l-4 bg-surface p-4 shadow-[var(--shadow-float)] ring-1 ring-line",
+        t.state === "success" && "border-l-orange",
+        t.state === "error" && "border-l-red",
+        t.state === "pending" && "border-l-amber",
       )}
     >
       <div className="flex items-start gap-3">
