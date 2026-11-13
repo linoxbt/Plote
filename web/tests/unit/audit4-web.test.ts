@@ -18,7 +18,7 @@ import { messageForCode } from "@/lib/errors";
 import { assertFtCallAccepted, depositSuccessText, ftCallOutcome, lastDepositOutcome } from "@/lib/tx-outcome";
 import type { CaptureView, MilestoneView } from "@/lib/types";
 
-const HASH = "61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD";
+const HASH = "21YwLKPbLk6z4zPRS1gr9p553PW1Hb65CgiBRqJ9d3WF";
 const deps = (codeHash: string | null) => ({ estates: ["harmattan-court.plote.testnet"], root: "plote.testnet", hashes: [HASH], codeHashOf: vi.fn(async () => codeHash) });
 
 describe("estate genuineness (audit 4 critical)", () => {
@@ -325,7 +325,7 @@ describe("final review follow-ups", () => {
   it("the pre-upgrade estate build is no longer a genuine estate by default", async () => {
     const OLD = "J31YPbxD3kVvoezwLtMkiMW4FE52r51rRPbamEg9beNX";
     if (!process.env.NEXT_PUBLIC_ESTATE_CODE_HASHES) {
-      expect(ESTATE_CODE_HASHES).toEqual(["61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD"]);
+      expect(ESTATE_CODE_HASHES).toEqual(["21YwLKPbLk6z4zPRS1gr9p553PW1Hb65CgiBRqJ9d3WF"]);
       const g = await checkEstate("new-estate.plote.testnet", { estates: [], root: "plote.testnet", codeHashOf: async () => OLD });
       expect(g.genuine).toBe(false);
     }

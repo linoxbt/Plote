@@ -15,7 +15,7 @@ import { viewAccount } from "./near";
  * hash is deliberately not listed: an estate still on it isn't the audited code. Override with
  * NEXT_PUBLIC_ESTATE_CODE_HASHES (comma-separated) when a new build is published.
  */
-const DEFAULT_ESTATE_CODE_HASHES = "61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD";
+const DEFAULT_ESTATE_CODE_HASHES = "21YwLKPbLk6z4zPRS1gr9p553PW1Hb65CgiBRqJ9d3WF";
 
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
 

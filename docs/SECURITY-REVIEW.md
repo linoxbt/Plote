@@ -150,9 +150,9 @@ independent audit.**
 What was deployed and checked live on NEAR testnet (12–13 Nov):
 
 - **Contracts:** all three estates (`harmattan-court`, `baobab-heights`, `playground` `.plote.testnet`) run the
-  reproducible build of commit `99f6a77` (`99f6a77db831a8f5658d8d1d13b3cfa5415f60c8`): wasm sha256
-  `4a572e3e11df139fdf7b12742149c1add0792f56b04cbd73690e25fbee9ece6a`, `code_hash`
-  `61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD`, built in the pinned `sourcescan/cargo-near:0.22.0-rust-1.97.0` image.
+  reproducible build of commit `92fc822` (`92fc8221a9210e75c4d13b0d572b904be720a9fd`): wasm sha256
+  `0effcc46c6ed4c3b29f88872b6f6e076e4559af8e087b65be5c03df8f56bd6a8`, `code_hash`
+  `21YwLKPbLk6z4zPRS1gr9p553PW1Hb65CgiBRqJ9d3WF`, built in the pinned `sourcescan/cargo-near:0.22.0-rust-1.97.0` image.
   Upgraded in place with state intact, then `migrate` → `state_version` 2. `config/estate-wasm.sha256` pins the sha256
   and revision; `.github/workflows/reproducible.yml` rebuilds the pinned revision and fails if the hash differs or the
   contract sources changed since it.
@@ -185,7 +185,7 @@ merged and tested, waiting on a testnet configuration change;
 
 | # | Finding | Status |
 |---|---|---|
-| A4-C1 | **Fake-estate payments.** The web app treated any account under the root (or typed into a URL) as a Plote estate, so a look-alike contract could be shown with Plote's pages and take buyers' payments | **Fixed (live)** — only genuine estates are treated as Plote: those in `NEXT_PUBLIC_ESTATES`, or subaccounts of the root account whose `code_hash` is in `NEXT_PUBLIC_ESTATE_CODE_HASHES` (default `61CGp8J2…`, `J31YPbxD…`); the app refuses to build a payment to anything else (`assertPayable`), including nested look-alike accounts |
+| A4-C1 | **Fake-estate payments.** The web app treated any account under the root (or typed into a URL) as a Plote estate, so a look-alike contract could be shown with Plote's pages and take buyers' payments | **Fixed (live)** — only genuine estates are treated as Plote: those in `NEXT_PUBLIC_ESTATES`, or subaccounts of the root account whose `code_hash` is in `NEXT_PUBLIC_ESTATE_CODE_HASHES` (default `21YwLKPb…`, `J31YPbxD…`); the app refuses to build a payment to anything else (`assertPayable`), including nested look-alike accounts |
 
 ### High
 
@@ -248,6 +248,22 @@ merged and tested, waiting on a testnet configuration change;
 New error codes: `E_VERDICT_MISMATCH`, `E_TIMELOCK`, `E_RATE_LIMIT`, `E_NFT_PENDING`, `E_NOTHING_OWED` (INTERFACE §1.5,
 `web/lib/errors.ts`). New verifier reasons: `gps_device_missing`, `url_not_allowed`; new contract reason
 `verdict_unbound`.
+
+### Final independent review (13 Nov)
+
+A reviewer who wrote none of the fixes re-checked every Audit 4 finding against the code and the live chain. Audit 4's
+Critical and High findings were confirmed fixed; it found these, now fixed and live in the build of `92fc822`
+(code_hash `21YwLKPb…`, sha256 `0effcc46…`, all three estates upgraded and migrated on 13 Nov):
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| F-N1 | High | Surplus booking could be timed against a transient balance (a failing `ft_transfer_call`) to book money that wasn't there, then `sweep_unattributed` moved a holder's escrow | **Fixed (live)** — booking only on empty units (no holder, reservation, booked escrow or transfer in flight), not while frozen; finalize books and transfers in one flow (a failed transfer unbooks); the request is used up by finalize; `sweep_unattributed` only on Available units |
+| F-N2 | Medium | Mainnet configs had `verdict_relayer: null`, so 1Click and deferred deposits could never be booked | **Fixed** — mainnet template names the reporter; `deploy-estate.ts` refuses mainnet without it |
+| F-N3 | Medium | The distinct-holder majority counted current holders, so splitting tokens after a proposal opened changed the count | **Fixed (live)** — holders counted as of proposal creation (history of hand changes while proposals are open; at most 16 hand changes per token per proposal period) |
+| F-N4 | Low/Med | A deferred deposit showed as "paid" | **Fixed (live)** — shown as received and being credited |
+| F-N5 | Low | Migration 0006 was not safe to re-run | **Fixed** — the backfill only stamps pre-migration rows |
+| F-N6 | Low | A deferred report retried after a timeout could book twice | **Fixed (live)** — `report_deposit(..., deferred: true)` is capped at the recorded deferral and uses it up; the server checks indexed bookings before any retry |
+| — | High (partial) | Two false claims remained on the home and how-it-works pages | **Fixed (live)** |
 
 ### Still open after Audit 4
 

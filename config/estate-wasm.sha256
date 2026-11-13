@@ -3,6 +3,6 @@
 # After a reviewed contract change: build with `cargo near build reproducible-wasm --manifest-path contracts/estate/Cargo.toml`
 # (or run the workflow), deploy that artifact (scripts/upgrade-estate-code.ts --expected-hash <sha256>), then replace
 # the two lines below (sha256, and `rev <commit>` = the commit that was built) in the same commit. Lines starting with # are notes.
-# Deployed 2026-11-12 to harmattan-court, baobab-heights and playground (.plote.testnet): code_hash 61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD.
-4a572e3e11df139fdf7b12742149c1add0792f56b04cbd73690e25fbee9ece6a
-rev 99f6a77db831a8f5658d8d1d13b3cfa5415f60c8
+# Deployed 2026-11-13 to harmattan-court, baobab-heights and playground (.plote.testnet): code_hash 21YwLKPbLk6z4zPRS1gr9p553PW1Hb65CgiBRqJ9d3WF.
+0effcc46c6ed4c3b29f88872b6f6e076e4559af8e087b65be5c03df8f56bd6a8
+rev 92fc8221a9210e75c4d13b0d572b904be720a9fd

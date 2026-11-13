@@ -179,7 +179,7 @@ flowchart LR
 | Judge sandbox estate | [`playground.plote.testnet`](https://testnet.nearblocks.io/address/playground.plote.testnet), 60 units at $1,000 | ✅ Live. Foundation Approved and its 20 % released for the two allocated units, `p-55` and `p-56` (see the proof below); roofing is the next open stage |
 | Demo estate | [`harmattan-court.plote.testnet`](https://testnet.nearblocks.io/address/harmattan-court.plote.testnet), 6 units | ✅ Live. `a-4b` and `b-3b` allocated; all four milestones Open (no photo evidence yet) |
 | Refund-demo estate | [`baobab-heights.plote.testnet`](https://testnet.nearblocks.io/address/baobab-heights.plote.testnet), 5 units, foundation deadline missed | ✅ Live. The judge wallet holds `b-2a`, `b-2b` and `b-2c`, refunds open |
-| Estate code (all three estates) | NEAR `code_hash` `61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD` (sha256 `4a572e3e11df139fdf7b12742149c1add0792f56b04cbd73690e25fbee9ece6a`), the reproducible build of commit `99f6a77`. Upgraded in place with state intact, then `migrate` → `state_version` 2 | ✅ Reproducible: see [Reproducible build](#reproducible-build) |
+| Estate code (all three estates) | NEAR `code_hash` `21YwLKPbLk6z4zPRS1gr9p553PW1Hb65CgiBRqJ9d3WF` (sha256 `0effcc46c6ed4c3b29f88872b6f6e076e4559af8e087b65be5c03df8f56bd6a8`), the reproducible build of commit `92fc822`. Upgraded in place with state intact, then `migrate` → `state_version` 2 | ✅ Reproducible: see [Reproducible build](#reproducible-build) |
 | Unit code (global, by hash) | `75ddgBuGJQYJKgjiBkvZ6FVsMnGFfJvtYCrs3A6aFxb9` (105,621 B) | ✅ Published |
 | Test USDC | [`musdc.plote.testnet`](https://testnet.nearblocks.io/address/musdc.plote.testnet) | ✅ Live |
 | Verifier project | `plote.testnet/plote-verifier` on `outlayer.testnet` | ✅ Published |
@@ -352,7 +352,7 @@ just seed          # demo purchases and proofs (see docs/SPEC.md §13.9)
 | Item | Cost |
 |---|---|
 | Unit code published once as a global contract (105.6 KB; global deploys burn 10 NEAR per 100 KB) | **10.56 NEAR, burned** |
-| Each estate account (≈ 666 KB contract ≈ 6.7 NEAR of storage, plus headroom) | about 8 NEAR |
+| Each estate account (≈ 682 KB contract ≈ 6.7 NEAR of storage, plus headroom) | about 8 NEAR |
 | Verification budget per estate (0.05 NEAR per photo check) | 2 NEAR |
 | Units | 0.035 NEAR each |
 | Role accounts (developer, surveyor, relayer, 4 buyers, judge) | 16.5 NEAR |
@@ -371,7 +371,7 @@ just web
 | Variable | Where | Purpose |
 |---|---|---|
 | `NEXT_PUBLIC_NETWORK`, `NEXT_PUBLIC_RPC_URL`, `NEXT_PUBLIC_ESTATES`, `NEXT_PUBLIC_USDC_ID`, `NEXT_PUBLIC_APP_URL` … | public | network, RPC, estates shown, token, the app's https URL (never localhost in production) |
-| `NEXT_PUBLIC_ESTATE_CODE_HASHES` | public, optional | comma-separated base58 code hashes of genuine estate builds. An account is treated as a Plote estate only if it is in `NEXT_PUBLIC_ESTATES`, or is a subaccount of `NEXT_PUBLIC_ROOT_ACCOUNT` whose `code_hash` is in this list. Default: `61CGp8J2…` and `J31YPbxD…` |
+| `NEXT_PUBLIC_ESTATE_CODE_HASHES` | public, optional | comma-separated base58 code hashes of genuine estate builds. An account is treated as a Plote estate only if it is in `NEXT_PUBLIC_ESTATES`, or is a subaccount of `NEXT_PUBLIC_ROOT_ACCOUNT` whose `code_hash` is in this list. Default: `21YwLKPb…` and `J31YPbxD…` |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | read-only cache (row-level security allows select on public tables only) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **server only** | signed photo upload URLs, poller writes |
 | `RELAYER_ACCOUNT_ID`, `RELAYER_PRIVATE_KEY` | **server only** | gasless meta-transactions (NEP-366) for surveyor calls |
@@ -391,10 +391,10 @@ Every variable has a testnet default, so the app builds and renders with no env 
 `Cargo.toml` (`sourcescan/cargo-near:0.22.0-rust-1.97.0`), so anyone can rebuild them and compare the hash with what is
 deployed (`view_account` → `code_hash`).
 
-**The live testnet estates run the reproducible artifact of commit `99f6a77`**
-(`99f6a77db831a8f5658d8d1d13b3cfa5415f60c8`): estate sha256
-`4a572e3e11df139fdf7b12742149c1add0792f56b04cbd73690e25fbee9ece6a`, NEAR code hash
-`61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD` on playground, harmattan-court and baobab-heights. It was deployed with
+**The live testnet estates run the reproducible artifact of commit `92fc822`**
+(`92fc8221a9210e75c4d13b0d572b904be720a9fd`): estate sha256
+`0effcc46c6ed4c3b29f88872b6f6e076e4559af8e087b65be5c03df8f56bd6a8`, NEAR code hash
+`21YwLKPbLk6z4zPRS1gr9p553PW1Hb65CgiBRqJ9d3WF` on playground, harmattan-court and baobab-heights. It was deployed with
 `scripts/upgrade-estate-code.ts --expected-hash …` as an in-place upgrade (state intact), followed by `migrate`
 (`state_version` 2).
 
@@ -454,7 +454,7 @@ cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings 
 
 The build follows [`docs/SPEC.md`](docs/SPEC.md); [`docs/INTERFACE.md`](docs/INTERFACE.md) is authoritative on names and types. A full spec-versus-code audit was run, and every finding was fixed except these known, deliberate deviations:
 
-- **Estate WASM size:** about 666 KB against a target of about 400 KB, with every size optimisation applied. Meeting the target would mean restructuring the contract. The only cost is storage (about 6.7 NEAR per estate).
+- **Estate WASM size:** about 682 KB against a target of about 400 KB, with every size optimisation applied. Meeting the target would mean restructuring the contract. The only cost is storage (about 6.7 NEAR per estate).
 - **AI outages can't pass a check:** the challenge code must be read by the AI and fails hard (§6.1), so a NEAR AI outage never passes a photo, even in demo mode. Since Audit 4 such a verdict is stored as Error rather than Fail: the milestone reopens and the 0.05 NEAR check fee returns to the estate's budget.
 - **"Could" items C8 and C9** (vanity unit names, the service-charge screen) are not built, per the spec's scope rule.
 
