@@ -9,11 +9,13 @@
 //                    Also read from EXPECTED_SHA256 if the flag is absent.
 //   --wasm           a specific file (default: the local build, target/near/plote_estate/plote_estate.wasm).
 //   --i-know         required with NEAR_ENV=mainnet: real money; prefer the locked-key path in docs/LAUNCH.md §3.
-// After each upgrade it prints the code_hash the chain reports, which must equal the expected hash.
+// After each upgrade it calls `migrate` from the estate account (50 Tgas; idempotent, also run when the code was already
+// current, so a re-run finishes a failed migration) and prints state_version, plus the code_hash the chain reports,
+// which must equal the expected hash.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { NETWORK, account, base58, log, provider, usage, view, wasm } from "./lib.js";
+import { NETWORK, TGAS, account, base58, call, log, provider, usage, view, wasm } from "./lib.js";
 
 const argv = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
@@ -50,19 +52,25 @@ for (const id of ids) {
   if (!before || !Object.keys(before).length) usage(`${id}: get_estate returned nothing; not an estate?`);
   const current = (await provider.viewAccount({ accountId: id })).code_hash;
   if (current === codeHash) {
-    log(`= ${id} already runs code_hash ${codeHash}; skipped`);
-    continue;
+    log(`= ${id} already runs code_hash ${codeHash}; not redeployed`);
+  } else {
+    await account(id).deployContract(code);
+    const after = stable(await view(id, "get_estate", {}));
+    // New code may add fields to the view; every field that existed before must read the same.
+    const changed = Object.keys(before).filter((k) => JSON.stringify(after[k]) !== JSON.stringify(before[k]));
+    if (changed.length) usage(`${id}: estate view changed after the upgrade (${changed.join(", ")}); check state compatibility`);
+    const deployed = (await provider.viewAccount({ accountId: id })).code_hash;
+    if (deployed !== codeHash) usage(`✗ ${id}: chain reports code_hash ${deployed}, expected ${codeHash}`);
+    log(`✓ ${id} upgraded, state intact. Deployed code_hash: ${deployed} (was ${current})`);
   }
-  await account(id).deployContract(code);
-  const after = stable(await view(id, "get_estate", {}));
-  if (JSON.stringify(after) !== JSON.stringify(before)) usage(`${id}: estate view changed after the upgrade; check state compatibility`);
-  const deployed = (await provider.viewAccount({ accountId: id })).code_hash;
-  if (deployed !== codeHash) usage(`✗ ${id}: chain reports code_hash ${deployed}, expected ${codeHash}`);
-  log(`✓ ${id} upgraded, state intact. Deployed code_hash: ${deployed} (was ${current})`);
+  // migrate is #[private]: only the estate account itself may call it.
+  const version = await call<number>(account(id), id, "migrate", {}, { gas: 50n * TGAS });
+  const reported = await view<number>(id, "state_version", {});
+  log(`✓ ${id} migrated: state_version ${reported}${version !== undefined && version !== reported ? ` (migrate returned ${version})` : ""}`);
 }
 
 // get_estate includes `now` (block time), which differs on every read; compare everything else.
-function stable(v: unknown) {
+function stable(v: unknown): Record<string, unknown> {
   const { now: _now, ...rest } = (v ?? {}) as Record<string, unknown>;
   return rest;
 }

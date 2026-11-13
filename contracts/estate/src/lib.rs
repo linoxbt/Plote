@@ -102,6 +102,10 @@ pub const GAS_ON_BALANCE: Gas = Gas::from_tgas(10);
 pub const GAS_ON_REPORT_FIRST: Gas = Gas::from_tgas(35);
 /// `on_report_second` credits (may mint the NFT, cure a default, update open proposals' electorates).
 pub const GAS_ON_REPORT_SECOND: Gas = Gas::from_tgas(20);
+/// `on_surplus_second` books the surplus and starts its transfer out (`GAS_TRANSFER_OUT` + `GAS_ON_OUT`).
+pub const GAS_ON_SURPLUS_SECOND: Gas = Gas::from_tgas(55);
+/// `on_surplus_first` schedules the second read (`GAS_FT_BALANCE`) and `on_surplus_second`.
+pub const GAS_ON_SURPLUS_FIRST: Gas = Gas::from_tgas(70);
 pub const GAS_TRANSFER_OUT: Gas = Gas::from_tgas(25);
 /// `on_out` for releases, excess and sweeps (read + write one bounded unit record and the root state).
 pub const GAS_ON_OUT: Gas = Gas::from_tgas(15);

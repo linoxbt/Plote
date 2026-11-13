@@ -21,7 +21,7 @@ import { formatDuration, formatUsd, nsToMs, parseUsdc, shareOf, toBig, unitDispl
 import { assertPayable } from "@/lib/genuine";
 import { useEstate, useGenuineEstate, useMilestones, useUnit, useUsdcBalance, useUsdcRegistered } from "@/lib/hooks";
 import { sendTx, sendTxs, type TxResult, type TxSpec } from "@/lib/near";
-import { assertFtCallAccepted } from "@/lib/tx-outcome";
+import { assertFtCallAccepted, depositSuccessText, lastDepositOutcome } from "@/lib/tx-outcome";
 import { FAUCET_AMOUNT, usdc } from "@/lib/usdc";
 
 const STEPS = ["Reserve", "Pay", "Done"];
@@ -62,6 +62,12 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
       qc.invalidateQueries({ queryKey: ["my-positions"] }),
     ]);
 
+  /** Refresh now, and again in 20 s and 60 s when the deposit was received but not booked yet. */
+  const refreshSoon = async (o: { status: string } | null) => {
+    await refresh();
+    if (o?.status === "deferred") for (const ms of [20_000, 60_000]) setTimeout(() => void refresh(), ms);
+  };
+
   const amountBase = (() => {
     try { return amountStr ? parseUsdc(amountStr) : minBase.toString(); } catch { return null; }
   })();
@@ -95,8 +101,8 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
       const r = await run(`Reserve ${unitDisplay(u.id)} and pay ${formatUsd(base)}`, async () => {
         await assertPayable(account, u);
         return checkPaid(await sendTxs([E.reserve(account, u.id), ...payTxs(base)]), base);
-      }, { success: "Reserved and paid. Wallet payments count straight away; the token mints once they reach the minimum." });
-      if (r) await refresh();
+      }, { success: (res) => depositSuccessText(lastDepositOutcome(res, base) ?? { status: "accepted" }, "Reserved and paid. The payment is credited to the unit; the token mints once your payments reach the minimum.") });
+      if (r) await refreshSoon(lastDepositOutcome(r, base));
     } else {
       setAmountErr(null);
       const r = await run(`Reserve ${unitDisplay(u.id)}`, async () => {
@@ -115,8 +121,8 @@ export function BuyClient({ slug, unitId, method: initialMethod }: { slug: strin
     const r = await run(`Pay ${formatUsd(base)} into ${unitDisplay(u.id)}`, async () => {
       await assertPayable(account, u);
       return checkPaid(await sendTxs(payTxs(base)), base);
-    }, { success: "Payment accepted by the unit's own account." });
-    if (r) await refresh();
+    }, { success: (res) => depositSuccessText(lastDepositOutcome(res, base) ?? { status: "accepted" }, "Payment credited to the unit's own account.") });
+    if (r) await refreshSoon(lastDepositOutcome(r, base));
   };
 
   const presets: [string, bigint][] = [["10%", shareOf(u.price, 1000)], ["25%", shareOf(u.price, 2500)], ["Full", toBig(u.price) - toBig(u.paid)]];

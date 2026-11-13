@@ -8,17 +8,17 @@ import { captureEligibility, captureReuse, nextCapturable } from "@/lib/capture"
 import { buildEstateConfig, firstErrorStep, GEOFENCE_MIN_M, nearNeeded, type WizardValues } from "@/lib/estate-config";
 import { accountNetworkMismatch } from "@/lib/estates";
 import { PloteError } from "@/lib/errors";
-import { assertPayable, checkEstate, isDirectSubaccount, parseCodeHashes } from "@/lib/genuine";
+import { assertPayable, checkEstate, ESTATE_CODE_HASHES, isDirectSubaccount, parseCodeHashes } from "@/lib/genuine";
 import { isOptimizableImage, supabaseImagePattern } from "@/lib/images";
 import { accountsTouchedBy, afterOwnTx, callNoPopup, fnCall, isKeyError, KeyUnusableError, parseView, viewFinality, type TxResult, type TxSpec } from "@/lib/near";
 import { pinProblem } from "@/lib/phone-key";
 import { verifierPin } from "@/lib/proof";
 import { MilestoneViewSchema, SurplusRequestSchema, UnitViewSchema } from "@/lib/schemas";
 import { messageForCode } from "@/lib/errors";
-import { assertFtCallAccepted, ftCallOutcome } from "@/lib/tx-outcome";
+import { assertFtCallAccepted, depositSuccessText, ftCallOutcome, lastDepositOutcome } from "@/lib/tx-outcome";
 import type { CaptureView, MilestoneView } from "@/lib/types";
 
-const HASH = "J31YPbxD3kVvoezwLtMkiMW4FE52r51rRPbamEg9beNX";
+const HASH = "61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD";
 const deps = (codeHash: string | null) => ({ estates: ["harmattan-court.plote.testnet"], root: "plote.testnet", hashes: [HASH], codeHashOf: vi.fn(async () => codeHash) });
 
 describe("estate genuineness (audit 4 critical)", () => {
@@ -303,5 +303,31 @@ describe("audit 4 follow-up", () => {
     expect(parseView({ at: "1", amount: "5", ready_at: "604800000000001" }, SurplusRequestSchema.nullable(), "x")).toMatchObject({ amount: "5" });
     expect(parseView(null, SurplusRequestSchema.nullable(), "x")).toBeNull();
     expect(() => parseView({ at: 1 }, SurplusRequestSchema, "x")).toThrow();
+  });
+});
+
+describe("final review follow-ups", () => {
+  const deferredEvent = { standard: "plote", version: "1.0.0", event: "deposit_deferred", data: [{ unit_id: "a-1", sender_id: "bob.testnet", amount: "1000000" }] };
+
+  it("a deferred deposit (used in full, deposit_deferred) is received but not reported as credited", () => {
+    const r = tx({ returnValue: "1000000", events: [deferredEvent] });
+    const o = assertFtCallAccepted(r, "1000000", "deposit");
+    expect(o.status).toBe("deferred");
+    expect(depositSuccessText(o, "Payment credited.")).toMatch(/received.*credited to the unit shortly/i);
+    expect(depositSuccessText(o, "Payment credited.")).not.toMatch(/mint/i);
+    expect(lastDepositOutcome([tx({}), r], "1000000")?.status).toBe("deferred");
+    // without a return value the event alone still means "received"
+    expect(ftCallOutcome(tx({ events: [deferredEvent] }), "1000000", "deposit").status).toBe("deferred");
+    // a booked deposit stays "accepted"
+    expect(depositSuccessText(ftCallOutcome(tx({ returnValue: "1000000" }), "1000000", "deposit"), "Payment credited.")).toBe("Payment credited.");
+  });
+
+  it("the pre-upgrade estate build is no longer a genuine estate by default", async () => {
+    const OLD = "J31YPbxD3kVvoezwLtMkiMW4FE52r51rRPbamEg9beNX";
+    if (!process.env.NEXT_PUBLIC_ESTATE_CODE_HASHES) {
+      expect(ESTATE_CODE_HASHES).toEqual(["61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD"]);
+      const g = await checkEstate("new-estate.plote.testnet", { estates: [], root: "plote.testnet", codeHashOf: async () => OLD });
+      expect(g.genuine).toBe(false);
+    }
   });
 });

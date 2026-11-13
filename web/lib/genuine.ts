@@ -10,8 +10,12 @@ import { ESTATES, ROOT_ACCOUNT } from "./config";
 import { PloteError } from "./errors";
 import { viewAccount } from "./near";
 
-/** The reproducible build of affdf57 (README "Reproducible build"). New hashes are appended after an upgrade. */
-const DEFAULT_ESTATE_CODE_HASHES = "61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD,J31YPbxD3kVvoezwLtMkiMW4FE52r51rRPbamEg9beNX";
+/**
+ * The estate build every live estate runs after the audit-4 upgrade (README "Reproducible build"). The pre-upgrade
+ * hash is deliberately not listed: an estate still on it isn't the audited code. Override with
+ * NEXT_PUBLIC_ESTATE_CODE_HASHES (comma-separated) when a new build is published.
+ */
+const DEFAULT_ESTATE_CODE_HASHES = "61CGp8J2MpTr2DYpCVSCotWEQeuGdbVhDWAv2iuA2VxD";
 
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
 

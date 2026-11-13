@@ -71,7 +71,7 @@ export default function HowItWorks() {
             <thead><tr className="border-b border-line"><th className="label py-2">Movement</th><th className="label py-2">From → to</th><th className="label py-2">When</th></tr></thead>
             <tbody>
               {[
-                ["Payment", "buyer (or family) → unit account", "any time; credited to the holder or reserver by sync"],
+                ["Payment", "buyer (or family) → unit account", "while reserved or held; a wallet payment is credited in the same transaction, a cross-chain one when Plote's reporter reports it and the estate sees it in two balance reads (sync only checks)"],
                 ["Release", "unit account → developer payout", "a milestone is verified, signed, and its veto window passed"],
                 ["Refund", "unit account → holder", "a deadline + grace passed without approval, or a freeze opened refunds"],
                 ["Excess", "unit account → holder", "you paid more than the price"],

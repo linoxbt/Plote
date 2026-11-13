@@ -19,7 +19,7 @@ import { formatDate, formatUsd, parseUsdc, pct, unitDisplay } from "@/lib/format
 import { useEstate, useEvidenceList, useMilestones, useUnit } from "@/lib/hooks";
 import { assertPayable } from "@/lib/genuine";
 import { sendTx } from "@/lib/near";
-import { assertFtCallAccepted } from "@/lib/tx-outcome";
+import { assertFtCallAccepted, depositSuccessText, lastDepositOutcome } from "@/lib/tx-outcome";
 import { chipins, supabaseConfigured } from "@/lib/supabase";
 import { usdc } from "@/lib/usdc";
 import type { EvidenceView } from "@/lib/types";
@@ -186,16 +186,18 @@ function ChipInForm({ estate, unitAccount, unitId }: { estate: string; unitAccou
       const res = await sendTx(usdc.ftTransferCall(unitAccount, base, msg));
       assertFtCallAccepted(res, base, "deposit");
       return res;
-    }, { success: "Thank you — the unit's account accepted the money." });
+    }, { success: (res) => depositSuccessText(lastDepositOutcome(res, base) ?? { status: "accepted" }, "Thank you — the money is credited to the unit.") });
     if (r) {
       try {
         await fetch("/api/chipin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate, unit: unitId, txHash: r.hash, sender: accountId, displayName: name, note }) });
       } catch { /* the wall is best-effort; the payment is on-chain */ }
-      await Promise.all([
+      const refresh = () => Promise.all([
         qc.invalidateQueries({ queryKey: ["unit", estate, unitId] }),
         qc.invalidateQueries({ queryKey: ["chipins", estate, unitId] }),
         qc.invalidateQueries({ queryKey: ["usdc-bal"] }),
       ]);
+      await refresh();
+      if (lastDepositOutcome(r, base)?.status === "deferred") for (const ms of [20_000, 60_000]) setTimeout(() => void refresh(), ms);
     }
   };
   return (

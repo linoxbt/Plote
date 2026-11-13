@@ -20,7 +20,7 @@ type Toast = {
 };
 
 type Ctx = {
-  run: <T extends TxResult | TxResult[] | void | unknown>(title: string, fn: () => Promise<T>, opts?: { success?: string }) => Promise<T | undefined>;
+  run: <T extends TxResult | TxResult[] | void | unknown>(title: string, fn: () => Promise<T>, opts?: { success?: string | ((res: T) => string) }) => Promise<T | undefined>;
   push: (t: Omit<Toast, "id">) => void;
 };
 
@@ -39,13 +39,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     if (t.state !== "pending") setTimeout(() => remove(id), t.state === "success" ? 8000 : 20000);
   }, []);
 
-  const run = useCallback(async <T,>(title: string, fn: () => Promise<T>, opts?: { success?: string }) => {
+  const run = useCallback(async <T,>(title: string, fn: () => Promise<T>, opts?: { success?: string | ((res: T) => string) }) => {
     const id = nextId++;
     setToasts((ts) => [...ts.slice(-3), { id, state: "pending", title, message: "Waiting for the wallet and the network…" }]);
     try {
       const res = await fn();
       const r = (Array.isArray(res) ? res[res.length - 1] : res) as TxResult | undefined;
-      update(id, { state: "success", message: opts?.success ?? "Done.", hash: r && typeof r === "object" && "hash" in r ? r.hash : undefined });
+      const message = typeof opts?.success === "function" ? opts.success(res) : opts?.success;
+      update(id, { state: "success", message: message ?? "Done.", hash: r && typeof r === "object" && "hash" in r ? r.hash : undefined });
       setTimeout(() => remove(id), 8000);
       return res;
     } catch (e) {

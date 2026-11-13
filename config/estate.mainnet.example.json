@@ -7,7 +7,7 @@
   "payout": "developer-payout.near",
   "surveyor": "surveyor.near",
   "recovery": "plote.near",
-  "verdict_relayer": null,
+  "verdict_relayer": "<reporter account, e.g. reporter.plote.near — must equal REPORTER_ACCOUNT_ID in Vercel; required, can't be changed after deploy>",
   "verify_mode": "outlayer",
   "outlayer": "outlayer.near",
   "verifier": {

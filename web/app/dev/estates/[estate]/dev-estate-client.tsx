@@ -104,7 +104,7 @@ export function DevEstateClient({ slug }: { slug: string }) {
             {units.data ? (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[680px] text-sm">
-                  <thead><tr className="text-left"><th className="label">Unit</th><th className="label">Status</th><th className="label text-right">Price</th><th className="label text-right">Paid</th><th className="label text-right">Released</th><th className="label text-right">Instalments</th>{canBook ? <th className="label text-right">Unreported USDC</th> : null}</tr></thead>
+                  <thead><tr className="text-left"><th className="label">Unit</th><th className="label">Status</th><th className="label text-right">Price</th><th className="label text-right">Paid</th><th className="label text-right">Released</th><th className="label text-right">Instalments</th>{canBook ? <th className="label text-right" title="Stray USDC on units with no holder, reservation or booked escrow">Stray USDC</th> : null}</tr></thead>
                   <tbody>
                     {units.data.map((u) => {
                       const nowNs = BigInt(msToNs(now));
@@ -207,16 +207,24 @@ function expectedBalance(u: Pick<UnitView, "paid" | "unattributed" | "released" 
 }
 
 /**
- * USDC on a unit that nobody reported (e.g. a plain transfer outside 1Click) can only be booked as `unattributed`
- * by the developer or recovery account: request (one balance read) → 7 days → finalize (two reads) → sweep.
+ * Stray USDC sitting on a unit nobody holds or reserves, with no escrow booked on it (e.g. a plain transfer outside
+ * 1Click to an unsold unit), can be cleared by the developer or recovery account: request (one balance read) → 7 days →
+ * finalize, which books it and sends it on in one step, like a sweep (to the last reserver within the late-claim
+ * window, otherwise the recovery account). Units with a holder, a reservation or booked escrow aren't eligible.
  */
+function surplusEligible(u: UnitView): boolean {
+  const escrow = toBig(u.paid) - toBig(u.released) - toBig(u.refunded_out);
+  return u.ready && !u.holder && !u.reservation && escrow <= 0n && toBig(u.in_flight) === 0n;
+}
+
 function SurplusCell({ estate, u }: { estate: string; u: UnitView }) {
   const { run } = useTx();
   const qc = useQueryClient();
   const now = useNow(30_000);
-  const bal = useQuery({ queryKey: ["usdc-bal", u.account], queryFn: () => usdc.balanceOf(u.account), staleTime: 60_000, retry: 0, enabled: u.ready });
-  const req = useQuery({ queryKey: ["surplus-request", estate, u.id], queryFn: () => E.getSurplusRequest(estate, u.id), staleTime: 60_000, retry: 0, enabled: u.ready });
-  if (!u.ready) return <span className="mono text-xs text-muted">—</span>;
+  const eligible = surplusEligible(u);
+  const bal = useQuery({ queryKey: ["usdc-bal", u.account], queryFn: () => usdc.balanceOf(u.account), staleTime: 60_000, retry: 0, enabled: eligible });
+  const req = useQuery({ queryKey: ["surplus-request", estate, u.id], queryFn: () => E.getSurplusRequest(estate, u.id), staleTime: 60_000, retry: 0, enabled: eligible });
+  if (!eligible) return <span className="mono text-xs text-muted" title="Only units with no holder, no reservation and no booked escrow">—</span>;
   const surplus = bal.data ? toBig(bal.data) - expectedBalance(u) : 0n;
   const r = req.data ?? null;
   const refresh = () => Promise.all([
@@ -231,9 +239,9 @@ function SurplusCell({ estate, u }: { estate: string; u: UnitView }) {
         <MonoAmount value={r.amount} naira={false} />
         {ready ? (
           <Button size="sm" onClick={async () => {
-            const x = await run(`Book surplus on ${unitDisplay(u.id)}`, () => sendTx(E.finalizeSurplusBooking(estate, u.id)), { success: "Booked as unattributed. Anyone can now sweep it back (to the last reserver within the late-claim window, else the recovery account)." });
+            const x = await run(`Clear stray USDC on ${unitDisplay(u.id)}`, () => sendTx(E.finalizeSurplusBooking(estate, u.id)), { success: "Booked and sent on in one step: to the last reserver if their reservation ended within the late-claim window, otherwise to the recovery account." });
             if (x) await refresh();
-          }}>Book it</Button>
+          }}>Book and send on</Button>
         ) : <CountdownChip until={r.ready_at} label="bookable in" tone="amber" />}
       </span>
     );
@@ -241,9 +249,9 @@ function SurplusCell({ estate, u }: { estate: string; u: UnitView }) {
   if (surplus <= 0n) return <span className="mono text-xs text-muted">{bal.isLoading ? "…" : "none"}</span>;
   return (
     <span className="flex flex-wrap items-center justify-end gap-2">
-      <span className="mono text-xs text-amber" title="USDC on the unit above its books, which no payment booked">{formatUsd(surplus.toString())}</span>
+      <span className="mono text-xs text-amber" title="USDC on this unsold unit that no payment booked">{formatUsd(surplus.toString())}</span>
       <Button size="sm" onClick={async () => {
-        const x = await run(`Request surplus booking on ${unitDisplay(u.id)}`, () => sendTx(E.requestSurplusBooking(estate, u.id)), { success: "Recorded. It can be booked in 7 days, if it's still there." });
+        const x = await run(`Request surplus booking on ${unitDisplay(u.id)}`, () => sendTx(E.requestSurplusBooking(estate, u.id)), { success: "Recorded. In 7 days, if it's still there and the unit is still unsold, it can be booked and sent on." });
         if (x) await refresh();
       }}>Start 7-day booking</Button>
     </span>

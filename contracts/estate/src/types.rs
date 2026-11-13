@@ -125,6 +125,9 @@ pub enum OutKind {
     /// unit to the estate's own USDC account and is credited to `owed` for the reserver (`withdraw_owed`).
     /// Appended last so the borsh tags of the variants above are unchanged.
     OwedEscrow,
+    /// `finalize_surplus_booking` (audit round 4 review, N1): the surplus it just booked as `unattributed` leaves at once;
+    /// if the transfer fails the booking is undone. Appended last (OutKind is only a callback argument, never stored).
+    SurplusSweep,
 }
 
 #[near(serializers = [borsh])]

@@ -19,7 +19,7 @@ const ABILITIES: [ReactNode, string, string][] = [
   [<LifeBuoy key="l" className="h-5 w-5" strokeWidth={1.5} />, "Gets you refunds", "If a deadline passes, the token is what lets you pull your money back."],
   [<Repeat key="r" className="h-5 w-5" strokeWidth={1.5} />, "Sells in one step", "List it; a buyer pays, you're paid and the token moves in a single transaction."],
   [<ListChecks key="c" className="h-5 w-5" strokeWidth={1.5} />, "Protects you if you fall behind", "Miss instalments and it's resold for what you paid, minus a fixed 5%. Not forfeited."],
-  [<Vote key="v" className="h-5 w-5" strokeWidth={1.5} />, "Gives you a vote", "One per unit: replace the surveyor, veto a sign-off or freeze payments."],
+  [<Vote key="v" className="h-5 w-5" strokeWidth={1.5} />, "Gives you a vote", "Weighted by what you've paid in, net of refunds and capped at its weight when the vote opened: replace the surveyor, veto a sign-off or freeze payments. Everything but a veto also needs most holders and a quorum."],
   [<DoorOpen key="d" className="h-5 w-5" strokeWidth={1.5} />, "Opens the gate", "After handover, it's your gate pass and service-charge account."],
 ];
 

@@ -8,9 +8,15 @@
 //  sold / nft_transfer  → the unit changed hands: its subscriptions of anyone but the new holder are deleted.
 //  deposit_deferred     → an ft_transfer_call the estate accepted but didn't book (it landed within 5 minutes of a
 //                          report_deposit, INTERFACE §1.2.1): booked with report_deposit({unit_id, amount}) signed by
-//                          the reporter key. Idempotent on-chain (two balance reads; a repeat finds no surplus and
-//                          credits "0"), so any failure is simply retried next run, at most DEFERRED_PER_RUN per run.
-//                          Never closed as stale: the money is on the unit until it is booked.
+//                          the reporter key, at most DEFERRED_PER_RUN per run. Never closed as stale: the money is on
+//                          the unit until it is booked. Before each attempt the events table is checked for a later
+//                          deposit_synced (source "report") of exactly that amount on the unit: if one is there, the
+//                          deferral is already booked and is closed without reporting again. A refused report (E_*)
+//                          booked nothing and is retried next run. A report whose outcome is unknown (timeout,
+//                          network) leaves a marker (used_nonces, scope "deferred-uncertain", UNCERTAIN_WAIT_MS) so
+//                          no retry happens until the poller has had time to index a report that did land; only
+//                          then, if no matching deposit_synced appeared, is it reported again (the estate's two
+//                          balance reads would also credit "0" for money already booked).
 //  Older than STALE_MS   → emails and transfers are stamped without action (no stale emails after an outage).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -28,6 +34,9 @@ const EMAIL_EVENTS = ["qs_signed", "released"];
 const TRANSFER_EVENTS = ["sold", "nft_transfer"];
 const DEFERRED_EVENTS = ["deposit_deferred"];
 export const DEFERRED_PER_RUN = 5; // each is a transaction of a few seconds
+/** After a report_deposit with an unknown outcome, wait this long (several poll runs) before trying again. */
+export const UNCERTAIN_WAIT_MS = 60 * 60_000;
+const UNCERTAIN_SCOPE = "deferred-uncertain";
 
 /** report_deposit as the reporter; resolves when the transaction succeeded, throws otherwise. */
 export type ReportDeposit = (estate: string, unitId: string, amount: string) => Promise<void>;
@@ -42,12 +51,12 @@ export function deferredDeposit(ev: Pick<PendingEvent, "unit" | "data">): { unit
   return unit && /^[1-9][0-9]{0,38}$/.test(amount) ? { unit, amount } : null;
 }
 
-export type PendingEvent = { id: number; estate: string; unit: string | null; event: string; data: Record<string, unknown>; block_time: string };
+export type PendingEvent = { id: number; estate: string; unit: string | null; event: string; data: Record<string, unknown>; block_time: string; block_height?: number | string };
 export type Subscription = { account: string; unit: string; email: string };
 export type FollowUpReport = {
   pending: number; done: number; emails: number; emailFailures: number; unsubscribed: number; stale: number; emailsConfigured: boolean;
   /** deposit_deferred rows booked with report_deposit this run, and the ones that failed (retried next run). */
-  depositsReported: number; depositErrors: string[];
+  depositsReported: number; depositsAlreadyBooked: number; depositErrors: string[];
 };
 
 /** One subscription per address (lower-cased), the first unit wins: the email names that unit. */
@@ -92,7 +101,7 @@ export async function runFollowUps(
   const emailsConfigured = notifyConfigured();
   const reportDeposit = opts.report ?? reportWithReporter;
   const reporterReady = opts.reporterReady ?? !!reporterCredentials();
-  const report: FollowUpReport = { pending: 0, done: 0, emails: 0, emailFailures: 0, unsubscribed: 0, stale: 0, emailsConfigured, depositsReported: 0, depositErrors: [] };
+  const report: FollowUpReport = { pending: 0, done: 0, emails: 0, emailFailures: 0, unsubscribed: 0, stale: 0, emailsConfigured, depositsReported: 0, depositsAlreadyBooked: 0, depositErrors: [] };
 
   // Emails and transfers older than STALE_MS are closed without action (deferred deposits never are).
   const stale = await sb
@@ -109,7 +118,7 @@ export async function runFollowUps(
   const kinds = [...(emailsConfigured ? EMAIL_EVENTS : []), ...TRANSFER_EVENTS, ...DEFERRED_EVENTS];
   const r = await sb
     .from(TABLES.events)
-    .select("id,estate,unit,event,data,block_time")
+    .select("id,estate,unit,event,data,block_time,block_height")
     .is("notified_at", null)
     .eq("network", NETWORK)
     .in("estate", ESTATES)
@@ -131,6 +140,10 @@ export async function runFollowUps(
       } else if (!reporterReady) {
         done = false;
         report.depositErrors.push(`${ev.estate}/${dep.unit}: deposit of ${dep.amount} waits for report_deposit, but the reporter key isn't configured`);
+      } else if (await alreadyBooked(sb, ev, dep)) {
+        report.depositsAlreadyBooked++; // a report that landed (e.g. after a timeout) booked it: never report twice
+      } else if (await uncertainSince(sb, ev.id, now)) {
+        continue; // an earlier report's outcome is unknown: wait for the poller to index it
       } else if (deferredTried >= DEFERRED_PER_RUN) {
         continue; // next run
       } else {
@@ -139,10 +152,15 @@ export async function runFollowUps(
           await reportDeposit(ev.estate, dep.unit, dep.amount);
           report.depositsReported++;
         } catch (e) {
-          done = false; // safe to repeat: the estate books at most the surplus it sees, never twice
+          done = false;
           logError("plote:deferred-deposit-failed", e, { estate: ev.estate, unit: dep.unit });
-          const code = e instanceof PloteError ? e.code : null;
-          report.depositErrors.push(`${ev.estate}/${dep.unit}: report_deposit for a deferred deposit of ${dep.amount} failed${code ? ` (${code})` : ""}; retried next run`);
+          const refused = e instanceof PloteError && e.code.startsWith("E_");
+          if (refused) {
+            report.depositErrors.push(`${ev.estate}/${dep.unit}: report_deposit for a deferred deposit of ${dep.amount} was refused (${(e as PloteError).code}); retried next run`);
+          } else {
+            await markUncertain(sb, ev.id, now);
+            report.depositErrors.push(`${ev.estate}/${dep.unit}: report_deposit for a deferred deposit of ${dep.amount} didn't confirm; it is re-checked against indexed events before any retry (in ${UNCERTAIN_WAIT_MS / 60_000} min)`);
+          }
         }
       }
     } else if (TRANSFER_EVENTS.includes(ev.event)) {
@@ -180,4 +198,35 @@ export async function runFollowUps(
     report.done++;
   }
   return report;
+}
+
+/**
+ * True when the events table already holds a deposit_synced booked by a report (source "report") on this unit, after
+ * the deferral, for exactly the deferred amount: that report booked it. (A different report of the same amount on the
+ * same unit right after would also match; the money then stays unbooked on the unit and request_surplus_booking can
+ * still book it — never a double booking.)
+ */
+export async function alreadyBooked(sb: SupabaseClient, ev: PendingEvent, dep: { unit: string; amount: string }): Promise<boolean> {
+  const r = await sb
+    .from(TABLES.events)
+    .select("data,block_height")
+    .eq("network", NETWORK)
+    .eq("estate", ev.estate)
+    .eq("unit", dep.unit)
+    .eq("event", "deposit_synced")
+    .gt("block_height", Number(ev.block_height ?? 0))
+    .limit(50);
+  if (r.error) throw new Error(`events: ${r.error.message}`);
+  return ((r.data ?? []) as { data: Record<string, unknown> }[]).some((x) => x.data?.source === "report" && String(x.data?.new_money ?? "") === dep.amount);
+}
+
+async function uncertainSince(sb: SupabaseClient, eventId: number, now: number): Promise<boolean> {
+  const r = await sb.from("used_nonces").select("nonce").eq("scope", UNCERTAIN_SCOPE).eq("nonce", String(eventId)).gt("expires_at", new Date(now).toISOString()).limit(1);
+  if (r.error) throw new Error(`used_nonces: ${r.error.message}`); // fail closed: no retry without the marker check
+  return (r.data ?? []).length > 0;
+}
+
+async function markUncertain(sb: SupabaseClient, eventId: number, now: number): Promise<void> {
+  const r = await sb.from("used_nonces").upsert({ scope: UNCERTAIN_SCOPE, nonce: String(eventId), expires_at: new Date(now + UNCERTAIN_WAIT_MS).toISOString() });
+  if (r.error) throw new Error(`used_nonces: ${r.error.message}`); // the run stops; the next one re-checks the events table first
 }

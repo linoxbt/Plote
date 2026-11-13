@@ -17,7 +17,7 @@ import { formatUsd, nsToMs, parseUsdc, toBig, unitDisplay } from "@/lib/format";
 import { assertPayable } from "@/lib/genuine";
 import { useEstate, useMilestones, useNftToken, useNow, usePendingLien, useUnit, useUsdcBalance } from "@/lib/hooks";
 import { bytesToBase64, getWallet, sendTx, sendTxs, type TxResult, type TxSpec } from "@/lib/near";
-import { assertFtCallAccepted } from "@/lib/tx-outcome";
+import { assertFtCallAccepted, depositSuccessText } from "@/lib/tx-outcome";
 import { notifyMessage, timestampedNonce } from "@/lib/nep413";
 import { isRegistered, usdc } from "@/lib/usdc";
 
@@ -111,13 +111,13 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
     ]);
 
   /** `check` runs on the result (e.g. a payment refused by the unit throws, so the toast shows a failure). */
-  const exec = async (title: string, spec: TxSpec | TxSpec[], success?: string, check?: (r: TxResult[]) => Promise<void> | void) => {
+  const exec = async (title: string, spec: TxSpec | TxSpec[], success?: string | (() => string), check?: (r: TxResult[]) => Promise<void> | void) => {
     setErr(null);
     const r = await run(title, async (): Promise<unknown> => {
       const res = Array.isArray(spec) ? await sendTxs(spec) : [await sendTx(spec)];
       await check?.(res);
       return Array.isArray(spec) ? res : res[0];
-    }, { success });
+    }, { success: typeof success === "function" ? () => success() : success });
     if (r) await refresh();
     return r;
   };
@@ -209,9 +209,11 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
                 const specs: TxSpec[] = [];
                 if (accountId && !(await isRegistered(accountId).catch(() => true))) specs.push(usdc.storageDeposit(accountId));
                 specs.push(usdc.ftTransferCall(u.account, base, ""));
-                await exec(`Pay ${formatUsd(base)} into ${unitDisplay(u.id)}`, specs, "Payment accepted by the unit's own account.", (res) => {
-                  assertFtCallAccepted(res[res.length - 1], base, "deposit");
+                let deferred = false;
+                const ok = await exec(`Pay ${formatUsd(base)} into ${unitDisplay(u.id)}`, specs, () => depositSuccessText({ status: deferred ? "deferred" : "accepted" }, "Payment credited to the unit's own account."), (res) => {
+                  deferred = assertFtCallAccepted(res[res.length - 1], base, "deposit").status === "deferred";
                 });
+                if (ok && deferred) for (const ms of [20_000, 60_000]) setTimeout(() => void refresh(), ms);
               }}>Pay from NEAR wallet</Button>
               <p className="text-xs text-muted">Family can pay too, from the <Link className="underline" href={`/w/${s}/${u.id}?chip=1`}>watch page</Link>.</p>
             </Section>

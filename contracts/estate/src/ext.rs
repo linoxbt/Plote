@@ -21,6 +21,9 @@
 //! | `zn` + unit id | `u64` | an `nft_transfer_call` of this token is pending since (cleared by the resolve callback) |
 //! | `zw` + unit id | `u64` | when a `report_deposit` last credited this unit |
 //! | `zm` + evidence id (u64 LE) | `String` | the AI model a verdict named (`ai_model`, optional) |
+//! | `zh` + unit id | `Vec<(u64, AccountId)>` | holder history: (changed_at, holder before the change), oldest first |
+//! | `zi` | value `Vec<String>` | unit ids that have a holder history (so views read only those) |
+//! | `zd` + unit id | `u128` | USDC accepted by `on_unit_deposit` but deferred (not booked), not yet reported |
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::{env, near, AccountId};
@@ -39,6 +42,9 @@ pub(crate) const K_PLAYGROUND_RESET: &[u8] = b"zt";
 pub(crate) const P_NFT_PENDING: &[u8] = b"zn";
 pub(crate) const P_LAST_REPORT: &[u8] = b"zw";
 pub(crate) const P_AI_MODEL: &[u8] = b"zm";
+pub(crate) const P_HOLDER_HISTORY: &[u8] = b"zh";
+pub(crate) const K_HOLDER_INDEX: &[u8] = b"zi";
+pub(crate) const P_DEFERRED: &[u8] = b"zd";
 
 /// A lien offered by the holder (`set_lien`) that the lender hasn't accepted yet. `holder` is who offered it: if the
 /// token changes hands before `accept_lien`, the offer is void.

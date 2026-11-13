@@ -51,7 +51,7 @@ export function VotesClient({ slug }: { slug: string }) {
           Each allocation token allocated before a proposal opened votes once, cast by whoever holds it, weighted by its net equity, min(paid − refunded,
           price) in whole USDC, and never more than it weighed when the proposal opened (a top-up afterwards adds nothing). The total weight is fixed
           when the proposal opens. A veto passes when yes is more than half of
-          that weight. Every other kind also needs a majority of the distinct holders, and enough units sold to reach the quorum (at least 3 tokens and
+          that weight. Every other kind also needs a majority of the distinct holders (counted as of when the proposal opened), and enough units sold to reach the quorum (at least 3 tokens and
           a quarter of the units). Opening a proposal costs a 0.05 NEAR deposit, kept by the estate.
         </p>
         {isHolder ? <LoginKeyToggle contractId={account} /> : accountId ? <p className="text-sm text-muted">You don&apos;t hold a token in this estate, so you can&apos;t vote here.</p> : null}

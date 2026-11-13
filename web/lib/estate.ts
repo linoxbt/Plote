@@ -133,9 +133,9 @@ export const estate = {
   refund: (e: string, unit_id: string): TxSpec => fnCall(e, "refund", { unit_id }, GAS.refund, ONE_YOCTO),
   withdrawExcess: (e: string, unit_id: string): TxSpec => fnCall(e, "withdraw_excess", { unit_id }, GAS.withdraw_excess, ONE_YOCTO),
   sweepUnattributed: (e: string, unit_id: string): TxSpec => fnCall(e, "sweep_unattributed", { unit_id }, GAS.sweep_unattributed),
-  /** Developer or recovery_id: record the unit's unreported USDC surplus (starts the 7-day delay). No deposit. */
+  /** Developer or recovery_id, on a unit with no holder, reservation or booked escrow: record its stray USDC (starts the 7-day delay). No deposit. */
   requestSurplusBooking: (e: string, unit_id: string): TxSpec => fnCall(e, "request_surplus_booking", { unit_id }, GAS.request_surplus_booking),
-  /** Developer or recovery_id, ≥ 7 days after the request: book what is still seen as `unattributed` (E_TIMELOCK before). */
+  /** Developer or recovery_id, ≥ 7 days after the request: book what is still seen and send it on, like a sweep (E_TIMELOCK before). */
   finalizeSurplusBooking: (e: string, unit_id: string): TxSpec => fnCall(e, "finalize_surplus_booking", { unit_id }, GAS.finalize_surplus_booking),
   listForSale: (e: string, unit_id: string, ask: U128): TxSpec => fnCall(e, "list_for_sale", { unit_id, ask }, GAS.list_for_sale, ONE_YOCTO),
   cancelListing: (e: string, unit_id: string): TxSpec => fnCall(e, "cancel_listing", { unit_id }, GAS.cancel_listing, ONE_YOCTO),

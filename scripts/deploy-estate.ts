@@ -113,6 +113,11 @@ function assertMainnetSafe() {
   if (p.demo_mode) problems.push("params.demo_mode must be false (demo timers are minutes, not weeks)");
   if (p.playground) problems.push("params.playground must be false (anyone could act as surveyor)");
   if (Number(p.veto_window_ns ?? 0) < 24 * 3600 * 1e9) problems.push("params.veto_window_ns should be at least 24 h on mainnet");
+  // report_deposit (1Click deliveries, deferred ft_transfer_call deposits) only accepts the verdict_relayer, which
+  // can't be changed after deploy: without one those deposits could never be booked. Must equal REPORTER_ACCOUNT_ID.
+  if (!cfg.verdict_relayer || /[<>]/.test(String(cfg.verdict_relayer))) {
+    problems.push("verdict_relayer must be set to the deposit reporter account (the web app's REPORTER_ACCOUNT_ID); it can't be changed after deploy");
+  }
   if (problems.length) usage(`✗ ${path} is not safe for mainnet:\n  - ${problems.join("\n  - ")}`);
 }
 

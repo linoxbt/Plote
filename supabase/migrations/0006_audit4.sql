@@ -34,7 +34,9 @@ create unique index if not exists events_receipt_log_key on events (tx_hash, rec
 --    inserting loses nothing. The poller inserts those events with notified_at null and everything else stamped.
 --    Rows cached before this are stamped now (no historic emails).
 alter table events add column if not exists notified_at timestamptz;
-update events set notified_at = now() where notified_at is null;
+-- Only rows cached before this migration (no receipt_id): a re-run must never close pending follow-ups (e.g. a
+-- deposit_deferred still waiting for report_deposit).
+update events set notified_at = now() where notified_at is null and receipt_id is null;
 create index if not exists events_follow_up_idx on events (id) where notified_at is null;
 
 -- 3. poll_cursor: a listing that didn't reach the cursor is continued next run from the saved NearBlocks token

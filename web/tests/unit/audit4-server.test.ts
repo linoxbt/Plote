@@ -6,7 +6,8 @@ import { resolveAppUrl } from "@/lib/config";
 import { cleanupDeletes, parseMaxGasTgas } from "@/lib/server/env";
 import { pollerFreshness, publicView } from "@/lib/server/health";
 import { relayerCredentials, reporterCredentials } from "@/lib/server/relayer";
-import { DEFERRED_PER_RUN, dedupeByEmail, deferredDeposit, newHolder, runFollowUps } from "@/lib/server/follow-ups";
+import { DEFERRED_PER_RUN, UNCERTAIN_WAIT_MS, dedupeByEmail, deferredDeposit, newHolder, runFollowUps } from "@/lib/server/follow-ups";
+import { PloteError } from "@/lib/errors";
 import { verifyGatePassServer, ReplayCheckUnavailable, type GateDeps } from "@/lib/server/gate";
 import { redact } from "@/lib/server/alert";
 import { KeyPair } from "near-api-js";
@@ -157,13 +158,13 @@ describe("poller: one row per real event", () => {
 describe("follow-ups: emails and subscription clean-up from pending rows", () => {
   type Row = Record<string, unknown>;
   /** A tiny PostgREST-ish fake over two tables. */
-  function fakeDb(events: Row[], subs: Row[]) {
+  function fakeDb(events: Row[], subs: Row[], nonces: Row[] = []) {
     const from = (table: string) => {
       const filters: ((r: Row) => boolean)[] = [];
       let op: "select" | "update" | "delete" = "select";
       let patch: Row = {};
       let lim = Infinity;
-      const rows = () => (table === "events" ? events : subs);
+      const rows = () => (table === "events" ? events : table === "used_nonces" ? nonces : subs);
       const exec = () => {
         const hit = rows().filter((r) => filters.every((f) => f(r)));
         if (op === "update") hit.forEach((r) => Object.assign(r, patch));
@@ -179,6 +180,11 @@ describe("follow-ups: emails and subscription clean-up from pending rows", () =>
         is: (c: string, v: unknown) => (filters.push((r) => (r[c] ?? null) === v), q),
         in: (c: string, v: unknown[]) => (filters.push((r) => v.includes(r[c])), q),
         lt: (c: string, v: string) => (filters.push((r) => String(r[c]) < v), q),
+        gt: (c: string, v: string | number) => (filters.push((r) => (typeof v === "number" ? Number(r[c]) > v : String(r[c]) > v)), q),
+        upsert: (row: Row) => {
+          rows().push(row);
+          return Promise.resolve({ data: null, error: null });
+        },
         order: () => q,
         limit: (n: number) => ((lim = n), q),
         then: (res: (x: unknown) => unknown) => Promise.resolve(exec()).then(res),
@@ -235,12 +241,12 @@ describe("follow-ups: emails and subscription clean-up from pending rows", () =>
   it("books a deferred deposit with report_deposit, retries a failure, and never closes it as stale", async () => {
     const old = new Date(now - 10 * 86_400_000).toISOString();
     const events: Row[] = [
-      { id: 1, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_deferred", data: { unit_id: "a-1", sender_id: "x.testnet", amount: "2500000" }, block_time: old, notified_at: null },
-      { id: 2, network: "testnet", estate: ESTATE, unit: "a-2", event: "deposit_deferred", data: { unit_id: "a-2", sender_id: "x.testnet", amount: "100" }, block_time: recent, notified_at: null },
+      { id: 1, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_deferred", data: { unit_id: "a-1", sender_id: "x.testnet", amount: "2500000" }, block_time: old, block_height: 10, notified_at: null },
+      { id: 2, network: "testnet", estate: ESTATE, unit: "a-2", event: "deposit_deferred", data: { unit_id: "a-2", sender_id: "x.testnet", amount: "100" }, block_time: recent, block_height: 11, notified_at: null },
     ];
     let failA2 = true;
     const report = vi.fn(async (_e: string, unit: string) => {
-      if (unit === "a-2" && failA2) throw new Error("E_BALANCE_PENDING: books changed");
+      if (unit === "a-2" && failA2) throw new PloteError("E_BALANCE_PENDING", "E_BALANCE_PENDING: books changed");
     });
     const r1 = await runFollowUps(fakeDb(events, []), { now, report, reporterReady: true });
     expect(report).toHaveBeenCalledWith(ESTATE, "a-1", "2500000");
@@ -254,6 +260,43 @@ describe("follow-ups: emails and subscription clean-up from pending rows", () =>
     expect(report).toHaveBeenCalledTimes(3); // a-1 once, a-2 twice; nothing reported again once done
     await runFollowUps(fakeDb(events, []), { now, report, reporterReady: true });
     expect(report).toHaveBeenCalledTimes(3);
+  });
+
+  it("after a report with an unknown outcome: waits, then closes it if the report landed, never reporting twice", async () => {
+    const events: Row[] = [
+      { id: 1, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_deferred", data: { unit_id: "a-1", amount: "700" }, block_time: recent, block_height: 50, notified_at: null },
+    ];
+    const nonces: Row[] = [];
+    const report = vi.fn(async () => {
+      throw new Error("RPC timeout");
+    });
+    const db = fakeDb(events, [], nonces);
+    const r1 = await runFollowUps(db, { now, report, reporterReady: true });
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(r1.depositErrors[0]).toContain("didn't confirm");
+    expect(nonces).toHaveLength(1); // marker: no retry for UNCERTAIN_WAIT_MS
+    await runFollowUps(db, { now: now + 5 * 60_000, report, reporterReady: true });
+    expect(report).toHaveBeenCalledTimes(1); // waiting
+    // The timed-out report did land: the poller indexed its deposit_synced.
+    events.push({ id: 2, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_synced", data: { unit_id: "a-1", new_money: "700", source: "report" }, block_time: recent, block_height: 51, notified_at: "x" });
+    const r3 = await runFollowUps(db, { now: now + UNCERTAIN_WAIT_MS + 1, report, reporterReady: true });
+    expect(report).toHaveBeenCalledTimes(1); // not reported a second time
+    expect(r3.depositsAlreadyBooked).toBe(1);
+    expect(events[0].notified_at).not.toBeNull();
+  });
+
+  it("retries an uncertain report after the wait when no matching booking was indexed", async () => {
+    const events: Row[] = [
+      { id: 1, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_deferred", data: { unit_id: "a-1", amount: "700" }, block_time: recent, block_height: 50, notified_at: null },
+      // An earlier report (before the deferral) and one of another amount don't count.
+      { id: 2, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_synced", data: { new_money: "700", source: "report" }, block_time: recent, block_height: 40, notified_at: "x" },
+      { id: 3, network: "testnet", estate: ESTATE, unit: "a-1", event: "deposit_synced", data: { new_money: "5", source: "report" }, block_time: recent, block_height: 60, notified_at: "x" },
+    ];
+    const nonces: Row[] = [{ scope: "deferred-uncertain", nonce: "1", expires_at: new Date(now - 1).toISOString() }]; // expired
+    const report = vi.fn(async () => undefined);
+    const r = await runFollowUps(fakeDb(events, [], nonces), { now, report, reporterReady: true });
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(r.depositsReported).toBe(1);
   });
 
   it("leaves deferred deposits pending (and says so) without a reporter key", async () => {

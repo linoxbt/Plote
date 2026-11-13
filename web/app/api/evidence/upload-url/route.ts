@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     return jsonError("RPC_UNAVAILABLE", "Couldn't read the estate contract.", 503);
   }
   if (!est.params.playground && est.surveyor_id !== b.accountId) return jsonError("E_NOT_SURVEYOR", "Only the estate's surveyor can upload evidence.", 403);
-  for (const [key, limit, windowMs] of uploadLimits(b.accountId, est.params.playground, b.estate)) {
+  for (const [key, limit, windowMs] of uploadLimits(b.accountId, est.params.playground, b.estate, clientIp(req))) {
     const rl = await rateLimitShared(key, limit, windowMs);
     if (!rl.ok) {
       const msg = windowMs >= HOUR_MS ? `The playground allows a few uploads per hour. Try again in ${Math.ceil(rl.retryAfterS / 60)} min.` : "Too many uploads. Wait a minute.";

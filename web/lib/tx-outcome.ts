@@ -2,7 +2,10 @@
 // refuses the money: `ft_on_transfer` returns the amount unused and `ft_resolve_transfer` gives it back to the sender.
 // So a green transaction is not a payment. The transaction's own return value is `ft_resolve_transfer`'s: the amount
 // the receiver kept ("0" when it refused everything). The estate also logs why it refused:
-//   - unit deposit (`on_unit_deposit`): "deposit of N from X bounced: <why>"; accepted → `deposit_synced` event
+//   - unit deposit (`on_unit_deposit`): "deposit of N from X bounced: <why>"; accepted → `deposit_synced` event;
+//     received but not booked yet → `deposit_deferred` event (within 5 min of a cross-chain report on the same unit the
+//     estate keeps the money on the unit and Plote's reporter books it with `report_deposit` shortly; until then it
+//     isn't in `paid`, so it can't mint a token or count toward an instalment)
 //   - listing purchase (estate `ft_on_transfer`): "purchase rejected: E_CODE: <why>"; accepted → `sold` event
 //   - wrong token: "E_BAD_TOKEN: …"
 
@@ -12,8 +15,11 @@ import type { TxResult } from "./near";
 export type FtCallKind = "deposit" | "purchase";
 
 export type FtCallOutcome = {
-  /** "accepted": all (or, for a purchase, enough) of the amount was kept. "refused": none kept, money returned. */
-  status: "accepted" | "partial" | "refused" | "unknown";
+  /**
+   * "accepted": all (or, for a purchase, enough) of the amount was kept and booked. "deferred": the unit kept the money
+   * but hasn't booked it yet (it will be credited shortly). "refused": none kept, money returned.
+   */
+  status: "accepted" | "deferred" | "partial" | "refused" | "unknown";
   sent: bigint;
   used: bigint | null;
   refunded: bigint | null;
@@ -64,16 +70,18 @@ export function ftCallOutcome(r: Pick<TxResult, "returnValue" | "logs" | "events
   const used = toBigOrNull(r.returnValue);
   const refusal = refusalFromLogs(r.logs ?? []);
   const okEvent = (r.events ?? []).some((e) => e.event === (kind === "deposit" ? "deposit_synced" : "sold"));
+  const deferred = kind === "deposit" && (r.events ?? []).some((e) => e.event === "deposit_deferred");
   const base = { sent: amount, used, refunded: used === null ? null : amount - used, reason: refusal?.reason ?? null, code: refusal?.code ?? null };
   if (used !== null) {
     if (used === 0n) return { ...base, status: "refused", reason: base.reason ?? "The receiver didn't accept the USDC, so it was returned to you." };
-    if (used >= amount) return { ...base, status: "accepted", reason: null, code: null };
+    if (used >= amount) return { ...base, status: deferred && !okEvent ? "deferred" : "accepted", reason: null, code: null };
     // A purchase keeps the ask and returns any overpayment: that is a completed purchase.
     if (kind === "purchase" && okEvent) return { ...base, status: "accepted", reason: null, code: null };
     return { ...base, status: "partial" };
   }
   if (refusal) return { ...base, status: "refused", used: 0n, refunded: amount };
   if (okEvent) return { ...base, status: "accepted" };
+  if (deferred) return { ...base, status: "deferred", used: amount, refunded: 0n };
   return { ...base, status: "unknown" };
 }
 
@@ -83,7 +91,7 @@ export function ftCallOutcome(r: Pick<TxResult, "returnValue" | "logs" | "events
  */
 export function assertFtCallAccepted(r: TxResult, sent: string | bigint, kind: FtCallKind): FtCallOutcome {
   const o = ftCallOutcome(r, sent, kind);
-  if (o.status === "accepted") return o;
+  if (o.status === "accepted" || o.status === "deferred") return o;
   const what = kind === "deposit" ? "payment" : "purchase";
   let message: string;
   if (o.status === "refused") message = `Your ${what} was refused and the USDC came back to your account. ${o.reason ?? ""}`.trim();
@@ -92,4 +100,17 @@ export function assertFtCallAccepted(r: TxResult, sent: string | bigint, kind: F
   const err = new PloteError(o.code ?? (o.status === "unknown" ? "PAYMENT_UNCONFIRMED" : "PAYMENT_REFUNDED"), JSON.stringify({ status: o.status, used: o.used?.toString() ?? null, logs: r.logs?.slice(-6) }), message);
   (err as PloteError & { txHash?: string }).txHash = r.hash;
   throw err;
+}
+
+/** The success line for a deposit: a deferred one is received but not credited yet, so promise nothing about the token. */
+export function depositSuccessText(o: Pick<FtCallOutcome, "status">, booked: string): string {
+  return o.status === "deferred"
+    ? "Payment received by the unit's account. It will be credited to the unit shortly (a cross-chain payment to this unit was just booked, so Plote's reporter books yours next); refresh in a minute."
+    : booked;
+}
+
+/** The outcome of the last deposit in a list of results (the ft_transfer_call is always last). */
+export function lastDepositOutcome(res: TxResult | TxResult[] | undefined, sent: string): FtCallOutcome | null {
+  const last = Array.isArray(res) ? res[res.length - 1] : res;
+  return last && typeof last === "object" && "logs" in last ? ftCallOutcome(last, sent, "deposit") : null;
 }
