@@ -1990,7 +1990,7 @@ fn random_walk(mut seed: u64, steps: usize) -> HashMap<String, u32> {
                 }
             }
             7 => {
-                if u.unattributed.0 > USDC && u.in_flight.0 == 0 {
+                if u.unattributed.0 > USDC && u.in_flight.0 == 0 && u.status == UnitStatus::Available {
                     e.as_("anyone.testnet");
                     let _ = e.c.sweep_unattributed(id.into());
                     assert_exits(&e, &u, "sweep", &mut seen);
@@ -2718,7 +2718,8 @@ fn audit_late_payment_stays_with_its_reserver() {
     e.reserve("b-2a", "mallory.testnet");
     assert_eq!(e.unit("b-2a").status, UnitStatus::Reserved);
 
-    // sweep while the current reservation lapsed but wasn't ended → that reserver
+    // money on a unit whose reservation lapsed but wasn't ended: no sweep while Reserved (review N1); once the
+    // reservation is ended it goes to that reserver
     e.reserve("a-1a", "alice.testnet");
     e.as_1y("alice.testnet");
     let _ = e.c.cancel_reservation("a-1a".into());
@@ -2730,6 +2731,16 @@ fn audit_late_payment_stays_with_its_reserver() {
     assert_eq!(e.unit("a-1a").status, UnitStatus::Reserved);
     assert_eq!(e.unit("a-1a").unattributed.0, 5 * USDC);
     e.as_("anyone.testnet");
+    panics(
+        "E_UNIT_TAKEN",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.sweep_unattributed("a-1a".into());
+        }),
+    );
+    assert!(matches!(
+        e.c.expire_reservation("a-1a".into()),
+        PromiseOrValue::Value(true)
+    ));
     let _ = e.c.sweep_unattributed("a-1a".into());
     assert_eq!(transfer_outs()[0].1, acc("dave.testnet"));
     e.finish_out("a-1a", OutKind::Sweep, "dave.testnet", 5 * USDC, true);
