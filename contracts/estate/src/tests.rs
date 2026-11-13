@@ -251,7 +251,7 @@ impl Env {
         self.report(id, surplus)
     }
 
-    /// `report_deposit(id, amount, None)` by the relayer, with both balance reads returning the simulated balance.
+    /// `report_deposit(id, amount)` by the relayer, with both balance reads returning the simulated balance.
     fn report(&mut self, id: &str, amount: u128) -> u128 {
         let b = self.bal[id];
         self.report_with(id, amount, b, b)
@@ -271,7 +271,7 @@ impl Env {
         let u = self.unit(id);
         let expected = U128(u.paid.0 + u.unattributed.0 - u.released.0 - u.refunded_out.0);
         self.as_("relayer.testnet");
-        let _ = self.c.report_deposit(id.to_string(), U128(amount));
+        let _ = self.c.report_deposit(id.to_string(), U128(amount), None);
         expected
     }
 
@@ -895,7 +895,7 @@ fn refund_failed_transfer_keeps_everything() {
     panics(
         "E_IN_FLIGHT",
         std::panic::AssertUnwindSafe(|| {
-            let _ = e.c.report_deposit("a-4b".into(), U128(1));
+            let _ = e.c.report_deposit("a-4b".into(), U128(1), None);
         }),
     );
     e.finish_out(
@@ -3034,7 +3034,7 @@ fn deposit_report_voided_by_transfer_out_between_reads() {
     panics(
         "E_NOT_RELAYER",
         std::panic::AssertUnwindSafe(|| {
-            let _ = e.c.report_deposit("a-4b".into(), U128(1));
+            let _ = e.c.report_deposit("a-4b".into(), U128(1), None);
         }),
     );
     let before = e.unit("a-4b").paid.0;
@@ -4661,11 +4661,38 @@ fn r4_lien_before_default_paid_first() {
     assert_eq!(u.status, UnitStatus::Allocated);
 }
 
-/// Finding 7: unbooked USDC on a unit can be booked as unattributed by the developer / recovery account, only after a
-/// 7-day request → finalize delay, only up to the surplus seen at both ends, never touching booked funds.
+/// Drive `finalize_surplus_booking` on `id` with both balance reads returning `first` / `second`; returns the amount
+/// booked (and transferred out).
+fn finalize_surplus(e: &mut Env, id: &str, first: u128, second: u128) -> u128 {
+    let u = e.unit(id);
+    let expected = U128(u.paid.0 + u.unattributed.0 - u.released.0 - u.refunded_out.0);
+    let req = e.c.get_surplus_request(id.into()).unwrap();
+    e.as_("dev.testnet");
+    let _ = e.c.finalize_surplus_booking(id.into());
+    assert!(e.c.get_surplus_request(id.into()).is_none(), "used up by the call");
+    e.cb(vec![balance_bytes(first)]);
+    match e.c.on_surplus_first(id.into(), req.amount, expected) {
+        PromiseOrValue::Promise(_) => {}
+        PromiseOrValue::Value(v) => return v.0,
+    }
+    e.cb(vec![balance_bytes(second)]);
+    e.c.on_surplus_second(id.into(), req.amount, expected, U128(first)).0
+}
+
+fn request_surplus(e: &mut Env, id: &str, who: &str, balance: u128) -> u128 {
+    let u = e.unit(id);
+    let expected = U128(u.paid.0 + u.unattributed.0 - u.released.0 - u.refunded_out.0);
+    e.as_(who);
+    let _ = e.c.request_surplus_booking(id.into());
+    e.cb(vec![balance_bytes(balance)]);
+    e.c.on_surplus_request(id.into(), expected).0
+}
+
+/// Finding 7 / review N1: stray USDC on an EMPTY unit is booked and moved out in one flow (request → 7 days →
+/// finalize), capped at the surplus seen at both ends; never more than the request recorded.
 #[test]
 fn r4_unbooked_surplus_recovery() {
-    let mut e = three_holders();
+    let mut e = Env::standard(); // a-1a is Available and empty
     e.land("a-1a", 500 * USDC); // a plain transfer nobody reported
     e.as_("mallory.testnet");
     panics(
@@ -4674,16 +4701,9 @@ fn r4_unbooked_surplus_recovery() {
             let _ = e.c.request_surplus_booking("a-1a".into());
         }),
     );
-    let expected = U128(10_000 * USDC);
-    e.as_("plote.testnet"); // recovery_id
-    let _ = e.c.request_surplus_booking("a-1a".into());
-    e.cb(vec![balance_bytes(e.bal["a-1a"])]);
-    assert_eq!(
-        e.c.on_surplus_request("a-1a".into(), expected).0,
-        500 * USDC
-    );
-    let req = e.c.get_surplus_request("a-1a".into()).unwrap();
-    assert_eq!(req.amount.0, 500 * USDC);
+    let b = e.bal["a-1a"];
+    assert_eq!(request_surplus(&mut e, "a-1a", "plote.testnet", b), 500 * USDC);
+    assert_eq!(e.c.get_surplus_request("a-1a".into()).unwrap().amount.0, 500 * USDC);
     e.land("a-1a", 300 * USDC); // more arrives after the request: not part of it
     e.as_("dev.testnet");
     panics(
@@ -4693,34 +4713,218 @@ fn r4_unbooked_surplus_recovery() {
         }),
     );
     e.advance(SURPLUS_DELAY_NS);
+    let b = e.bal["a-1a"];
+    assert_eq!(finalize_surplus(&mut e, "a-1a", b, b), 500 * USDC);
+    // booked and already on its way out, to recovery_id (no recent reservation)
+    let outs = transfer_outs();
+    assert_eq!(outs, vec![(unit_acc("a-1a"), acc("plote.testnet"), 500 * USDC)]);
+    let u = e.unit("a-1a");
+    assert_eq!((u.paid.0, u.unattributed.0, u.in_flight.0), (0, 500 * USDC, 500 * USDC));
+    assert!(e.finish_out("a-1a", OutKind::SurplusSweep, "plote.testnet", 500 * USDC, true));
+    let u = e.unit("a-1a");
+    assert_eq!((u.unattributed.0, u.in_flight.0), (0, 0));
+    assert_eq!(e.bal["a-1a"], 300 * USDC);
+    // a finalize without a (new) request is refused
+    e.as_("dev.testnet");
+    panics(
+        "E_BAD_ARGS",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.finalize_surplus_booking("a-1a".into());
+        }),
+    );
+}
+
+/// Review N1, the attack shape: a balance read inflated for a few blocks (an `ft_transfer_call` whose `ft_on_transfer`
+/// fails is refunded later) must never let the developer / recovery move holder or reserver escrow.
+#[test]
+fn r4_surplus_booking_never_reaches_escrow() {
+    let mut e = three_holders(); // every unit held, 10 000 escrow each
+    // transient inflation on a held unit: the request is refused outright, as is a sweep
+    e.land("a-1a", 5_000 * USDC);
+    for who in ["dev.testnet", "plote.testnet"] {
+        e.as_(who);
+        panics(
+            "E_UNIT_TAKEN",
+            std::panic::AssertUnwindSafe(|| {
+                let _ = e.c.request_surplus_booking("a-1a".into());
+            }),
+        );
+    }
+    e.c.units.get_mut("a-1a").unwrap().unattributed = 5_000 * USDC; // even if it were booked somehow
+    e.as_("anyone.testnet");
+    panics(
+        "E_UNIT_TAKEN",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.sweep_unattributed("a-1a".into());
+        }),
+    );
+
+    // an empty unit: inflated reads at request and finalize book the transient money and send it out at once; when
+    // USDC has refunded it meanwhile, the transfer fails and the booking is undone
+    let mut e = Env::standard();
+    e.land("a-1a", 5_000 * USDC);
+    let b = e.bal["a-1a"];
+    assert_eq!(request_surplus(&mut e, "a-1a", "dev.testnet", b), 5_000 * USDC);
+    e.advance(SURPLUS_DELAY_NS);
+    let b = e.bal["a-1a"];
+    assert_eq!(finalize_surplus(&mut e, "a-1a", b, b), 5_000 * USDC);
+    *e.bal.get_mut("a-1a").unwrap() = 0; // ft_resolve_transfer took it back
+    assert!(!e.finish_out("a-1a", OutKind::SurplusSweep, "plote.testnet", 5_000 * USDC, false));
+    let u = e.unit("a-1a");
+    assert_eq!((u.unattributed.0, u.in_flight.0, u.paid.0), (0, 0, 0));
+    e.check_conservation();
+
+    // a unit reserved between the request and the finalize: refused; reserved between finalize and its reads: nothing
+    let mut e = Env::standard();
+    e.land("a-1a", 700 * USDC);
+    let b = e.bal["a-1a"];
+    request_surplus(&mut e, "a-1a", "dev.testnet", b);
+    e.advance(SURPLUS_DELAY_NS);
+    e.reserve("a-1a", "bob.testnet");
+    e.as_("dev.testnet");
+    panics(
+        "E_UNIT_TAKEN",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.finalize_surplus_booking("a-1a".into());
+        }),
+    );
+    let mut e = Env::standard();
+    e.land("a-1a", 700 * USDC);
+    let b = e.bal["a-1a"];
+    request_surplus(&mut e, "a-1a", "dev.testnet", b);
+    e.advance(SURPLUS_DELAY_NS);
+    let req = e.c.get_surplus_request("a-1a".into()).unwrap();
     e.as_("dev.testnet");
     let _ = e.c.finalize_surplus_booking("a-1a".into());
-    let b = e.bal["a-1a"];
-    e.cb(vec![balance_bytes(b)]);
+    e.reserve("a-1a", "bob.testnet");
+    e.cb(vec![balance_bytes(700 * USDC)]);
     assert!(matches!(
-        e.c.on_report_first("a-1a".into(), U128(500 * USDC), expected, Some(true)),
-        PromiseOrValue::Promise(_)
+        e.c.on_surplus_first("a-1a".into(), req.amount, U128(0)),
+        PromiseOrValue::Value(U128(0))
     ));
-    e.cb(vec![balance_bytes(b)]);
-    let booked = e.c.on_report_second(
-        "a-1a".into(),
-        U128(500 * USDC),
-        expected,
-        U128(b),
-        Some(true),
-    );
-    assert_eq!(booked.0, 500 * USDC);
-    let u = e.unit("a-1a");
-    assert_eq!((u.paid.0, u.unattributed.0), (10_000 * USDC, 500 * USDC));
-    assert!(e.c.get_surplus_request("a-1a".into()).is_none());
-    // a unit with nothing above its books can't be requested
+    assert_eq!(e.unit("a-1a").unattributed.0, 0);
+    // a frozen estate refuses requests
+    e.c.frozen = Some(Freeze {
+        reason: "t".into(),
+        since: U64(e.now),
+        refunds_open: false,
+    });
     e.as_("dev.testnet");
-    let _ = e.c.request_surplus_booking("a-4b".into());
-    e.cb(vec![balance_bytes(e.bal["a-4b"])]);
+    panics(
+        "E_FROZEN",
+        std::panic::AssertUnwindSafe(|| {
+            let _ = e.c.request_surplus_booking("a-4b".into());
+        }),
+    );
+    // a zero finalize uses the request up
+    let mut e = Env::standard();
+    e.land("a-1a", 700 * USDC);
+    let b = e.bal["a-1a"];
+    request_surplus(&mut e, "a-1a", "dev.testnet", b);
+    e.advance(SURPLUS_DELAY_NS);
+    assert_eq!(finalize_surplus(&mut e, "a-1a", 0, 0), 0);
+    assert!(e.c.get_surplus_request("a-1a".into()).is_none());
+}
+
+/// Review N6: a deferred deposit is booked by a `deferred` report at most once, however often it is retried.
+#[test]
+fn r4_deferred_report_books_once() {
+    let mut e = three_holders();
+    e.land("a-1a", 2_000 * USDC); // a 1Click delivery...
+    assert_eq!(e.report("a-1a", 2_000 * USDC), 2_000 * USDC);
+    // ...and a wallet payment right after: deferred (the report's reads left nothing spare)
+    assert_eq!(e.wallet_pay("a-1a", "alice.testnet", 300 * USDC), 0);
+    assert!(logs_contain("deposit_deferred"));
+    let deferred = |e: &mut Env, amount: u128| -> u128 {
+        let u = e.unit("a-1a");
+        let expected = U128(u.paid.0 + u.unattributed.0 - u.released.0 - u.refunded_out.0);
+        e.as_("relayer.testnet");
+        let _ = e.c.report_deposit("a-1a".into(), U128(amount), Some(true));
+        let b = e.bal["a-1a"];
+        e.cb(vec![balance_bytes(b)]);
+        if let PromiseOrValue::Value(v) =
+            e.c.on_report_first("a-1a".into(), U128(amount.min(300 * USDC)), expected, None, Some(true))
+        {
+            return v.0;
+        }
+        e.cb(vec![balance_bytes(b)]);
+        e.c.on_report_second("a-1a".into(), U128(amount.min(300 * USDC)), expected, U128(b), None, Some(true))
+            .0
+    };
+    // attesting more than was deferred books only the deferred amount
+    assert_eq!(deferred(&mut e, 1_000 * USDC), 300 * USDC);
+    assert_eq!(e.unit("a-1a").paid.0, 12_300 * USDC);
+    // a retry (e.g. after a timeout), even with a transient surplus on the unit, books nothing
+    e.land("a-1a", 300 * USDC);
+    e.as_("relayer.testnet");
     panics(
         "E_NOTHING_TO_SWEEP",
         std::panic::AssertUnwindSafe(|| {
-            e.c.on_surplus_request("a-4b".into(), U128(10_000 * USDC));
+            let _ = e.c.report_deposit("a-1a".into(), U128(300 * USDC), Some(true));
+        }),
+    );
+}
+
+/// Review N3: holder majorities count the holder each token had when the proposal opened, so splitting tokens over
+/// fresh accounts afterwards neither blocks nor passes anything.
+#[test]
+fn r4_holder_count_fixed_at_creation() {
+    let d = [T0 + 60 * MIN, T0 + 120 * MIN, T0 + 180 * MIN, T0 + 240 * MIN];
+    let ids = ["a-1", "a-2", "a-3", "b-1", "c-1"];
+    let units: Vec<(&str, u128, Vec<Instalment>)> =
+        ids.iter().map(|i| (*i, PRICE, vec![])).collect();
+    let mut e = Env::new_with(params(false), d, &units);
+    for id in ["a-1", "a-2", "a-3"] {
+        e.buy(id, "alice.testnet", 8_500 * USDC);
+    }
+    e.buy("b-1", "bob.testnet", PRICE);
+    e.buy("c-1", "carol.testnet", PRICE);
+    let pid = e.propose(
+        "bob.testnet",
+        ProposalKind::Freeze {
+            reason: "no work".into(),
+            refunds_open: false,
+        },
+    );
+    assert_eq!(e.c.get_proposal(pid).unwrap().holders_eligible, 3);
+    // alice splits her tokens over fresh accounts after the proposal opened, and all of them vote no
+    for (id, to) in [("a-2", "alice2.testnet"), ("a-3", "alice3.testnet")] {
+        e.as_1y("alice.testnet");
+        e.c.nft_transfer(acc(to), id.into(), None, None);
+    }
+    for who in ["alice.testnet", "alice2.testnet", "alice3.testnet"] {
+        e.as_(who);
+        e.c.vote(pid, false);
+    }
+    let p = e.c.get_proposal(pid).unwrap();
+    assert_eq!((p.holders_eligible, p.holders_no), (3, 1), "still one holder: alice");
+    assert_eq!(p.status, ProposalStatus::Open, "not rejected by fresh accounts");
+    for who in ["bob.testnet", "carol.testnet"] {
+        e.as_(who);
+        e.c.vote(pid, true);
+    }
+    let p = e.c.get_proposal(pid).unwrap();
+    assert_eq!(p.status, ProposalStatus::Executed);
+    assert!(e.c.frozen.is_some());
+    // a proposal opened after the split sees the new holders
+    e.advance(11 * MIN);
+    let p2 = e.propose("carol.testnet", ProposalKind::Unfreeze);
+    assert_eq!(e.c.get_proposal(p2).unwrap().holders_eligible, 5);
+    // churning one token while votes are open is bounded
+    for k in 0..crate::votes::MAX_HOLDER_HISTORY {
+        let (from, to) = if k % 2 == 0 {
+            ("alice2.testnet", "zed.testnet")
+        } else {
+            ("zed.testnet", "alice2.testnet")
+        };
+        e.as_1y(from);
+        e.c.nft_transfer(acc(to), "a-2".into(), None, None);
+    }
+    e.as_1y("alice2.testnet");
+    panics(
+        "E_TOO_MANY",
+        std::panic::AssertUnwindSafe(|| {
+            e.c.nft_transfer(acc("zed.testnet"), "a-2".into(), None, None)
         }),
     );
 }
@@ -5247,6 +5451,7 @@ mod layout {
         let tag = |b: Vec<u8>| b[0];
         assert_eq!(tag(borsh::to_vec(&UnitStatus::HandedOver).unwrap()), 4);
         assert_eq!(tag(borsh::to_vec(&OutKind::OwedEscrow).unwrap()), 5);
+        assert_eq!(tag(borsh::to_vec(&OutKind::SurplusSweep).unwrap()), 6);
         assert_eq!(tag(borsh::to_vec(&MilestoneStatus::Missed).unwrap()), 5);
         assert_eq!(tag(borsh::to_vec(&EvidenceStatus::Error).unwrap()), 3);
         assert_eq!(tag(borsh::to_vec(&ProposalStatus::Expired).unwrap()), 3);
