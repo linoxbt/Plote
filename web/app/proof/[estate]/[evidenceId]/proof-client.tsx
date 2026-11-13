@@ -8,7 +8,7 @@ import { EstateBanners } from "@/components/banners";
 import { AccountChip, StatusBadge } from "@/components/chain";
 import { EvidenceThumb } from "@/components/evidence-image";
 import { ProofChecklist } from "@/components/milestones";
-import { StaticMap } from "@/components/static-map";
+import { EstateSiteMap, type MapPoint } from "@/components/satellite-map";
 import { BracketCard, ChainLink, Collapsible, ErrorState, KV, LoadingCard, Page, explorerTxUrl } from "@/components/ui";
 import { NEAR_AI_URL } from "@/lib/config";
 import { estateAccount, estateSlug } from "@/lib/estates";
@@ -53,8 +53,11 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
   // nearest previous photo by pHash (thumbnail side by side when < 16)
   const prior = (all.data ?? []).filter((x) => x.id !== ev.id && x.verdict?.phash && BigInt(x.id) < BigInt(ev.id));
   const nearest = v?.phash ? prior.map((x) => ({ x, d: hamming(v.phash, x.verdict!.phash) })).sort((a, b) => a.d - b.d)[0] : undefined;
-  const gps = v?.gps ? ([v.gps[0] / 1e6, v.gps[1] / 1e6] as [number, number]) : ev.device_gps ? ([ev.device_gps[0] / 1e6, ev.device_gps[1] / 1e6] as [number, number]) : null;
-  const center: [number, number] = [e.geofence.lat_e6 / 1e6, e.geofence.lon_e6 / 1e6];
+  // Points for the satellite map: the verdict's GPS when it came from the photo's EXIF, and the phone's GPS sent with the photo.
+  const mapPoints: MapPoint[] = [
+    ...(v?.gps && v.gps_source !== "device" ? [{ at: [v.gps[0] / 1e6, v.gps[1] / 1e6] as [number, number], label: `Photo GPS${v.distance_m != null ? ` · ${v.distance_m} m` : ""}`, kind: "photo" as const }] : []),
+    ...(ev.device_gps ? [{ at: [ev.device_gps[0] / 1e6, ev.device_gps[1] / 1e6] as [number, number], label: `Phone GPS${v?.gps_source === "device" && v.distance_m != null ? ` · ${v.distance_m} m` : ""}`, kind: "device" as const }] : []),
+  ];
   const exifMs = v?.exif_time ? nsToMs(v.exif_time) : null;
   const subMs = nsToMs(ev.submitted_at);
   // The model that judged the stage, as the worker recorded it; with no record we don't guess (and hide the links).
@@ -143,9 +146,12 @@ export function ProofClient({ slug, id }: { slug: string; id: string }) {
 
           <BracketCard className="space-y-3">
             <h2 className="text-lg font-normal">Location</h2>
-            {e.geofence.radius_m > 0 || gps ? (
-              <StaticMap center={gps && e.geofence.radius_m === 0 ? gps : center} radiusM={e.geofence.radius_m} pin={gps} pinLabel={v?.distance_m != null ? `${v.distance_m} m` : undefined} />
-            ) : null}
+            <EstateSiteMap
+              geofence={e.geofence}
+              points={mapPoints}
+              aspect="4 / 3"
+              noFence={mapPoints.length ? "No location fence on the playground — photos can be taken anywhere. This is where this photo says it was taken." : undefined}
+            />
             <dl>
               <KV k="Distance from site">{v?.distance_m != null ? `${v.distance_m} m` : "—"}</KV>
               <KV k="Geofence radius">{e.geofence.radius_m ? `${e.geofence.radius_m} m` : "none (Playground)"}</KV>

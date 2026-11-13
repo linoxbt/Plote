@@ -81,8 +81,9 @@ export function contentSecurityPolicy(env: CspEnv): string {
     ["media-src", ["'self'", "blob:", "mediastream:"]],
     ["connect-src", [...connect]],
     ["worker-src", ["'self'", "blob:"]],
-    // wallet deep links open through hidden iframes (hotwallet://, intent://, …)
-    ["frame-src", ["'self'", "https:", "hotwallet:", "intent:", "meteorwallet:", "intear:", "near-mobile-wallet:"]],
+    // wallet deep links open through hidden iframes (hotwallet://, intent://, …); Google satellite embeds
+    // (components/satellite-map.tsx) are listed explicitly so they keep working if `https:` is ever narrowed.
+    ["frame-src", ["'self'", "https:", "https://www.google.com", "https://maps.google.com", "https://*.google.com", "https://*.gstatic.com", "hotwallet:", "intent:", "meteorwallet:", "intear:", "near-mobile-wallet:"]],
     ["manifest-src", ["'self'"]],
     ["object-src", ["'none'"]],
     ["base-uri", ["'self'"]],

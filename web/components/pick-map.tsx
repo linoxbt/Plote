@@ -1,7 +1,7 @@
 "use client";
 
 // Click-to-pick location map (SPEC §13.6 "location pin + geofence radius"). Same OpenStreetMap tile approach as
-// StaticMap — plain <image> tiles in an SVG, no API key, no map library. Drag to pan, click to drop the pin,
+// the old static map — plain <image> tiles in an SVG, no API key, no map library. Drag to pan, click to drop the pin,
 // +/− to zoom (no wheel zoom, so the page still scrolls). The numeric lat/lon inputs next to it stay the keyboard / exact-entry fallback.
 
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";

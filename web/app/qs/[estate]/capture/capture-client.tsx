@@ -7,7 +7,7 @@ import { AlertTriangle, Camera, CheckCircle2, CircleDashed, Loader2, Upload, XCi
 import { clsx } from "clsx";
 import { EstateBanners } from "@/components/banners";
 import { CountdownChip, StatusBadge } from "@/components/chain";
-import { StaticMap } from "@/components/static-map";
+import { EstateSiteMap, type MapPoint } from "@/components/satellite-map";
 import { SignerBadge, useSurveyorSigner } from "@/components/surveyor";
 import { useTx } from "@/components/toast";
 import { BracketCard, Button, ErrorState, LinkButton, LoadingCard, Page } from "@/components/ui";
@@ -81,6 +81,7 @@ export function CaptureClient({ slug }: { slug: string }) {
   const [opening, setOpening] = useState<number | null>(null);
   const [pollStart, setPollStart] = useState<number>(0);
   const [locating, setLocating] = useState(false);
+  const [here, setHere] = useState<{ at: [number, number] | null; err: string | null; busy: boolean }>({ at: null, err: null, busy: false });
   const fileRef = useRef<HTMLInputElement>(null);
   const now = useNow(1000);
   const evidenceId = evidence?.id ?? null;
@@ -268,6 +269,32 @@ export function CaptureClient({ slug }: { slug: string }) {
   const center: [number, number] = [e.geofence.lat_e6 / 1e6, e.geofence.lon_e6 / 1e6];
   const loc = pre?.gps ?? pre?.device ?? null;
   const dist = loc && e.geofence.radius_m > 0 ? Math.round(haversineM(center, loc)) : null;
+  const youAt = pre?.device ?? here.at;
+  const hereDist = youAt && e.geofence.radius_m > 0 ? Math.round(haversineM(center, youAt)) : null;
+  const locateMe = async () => {
+    setHere((h) => ({ ...h, busy: true, err: null }));
+    try {
+      setHere({ at: await getDevicePosition(), err: null, busy: false });
+    } catch (er) {
+      setHere({ at: null, err: (er as Error).message, busy: false });
+    }
+  };
+  const sitePoints: MapPoint[] = youAt ? [{ at: youAt, label: `You are here${hereDist !== null ? ` · ${hereDist} m` : ""}`, kind: "you" }] : [];
+  const photoPoints: MapPoint[] = [
+    ...(pre?.gps ? [{ at: pre.gps, label: `Photo GPS${dist !== null && pre.gps === loc ? ` · ${dist} m` : ""}`, kind: "photo" as const }] : []),
+    ...(pre?.device ? [{ at: pre.device, label: "Phone GPS", kind: "device" as const }] : []),
+  ];
+  const siteCard = (
+    <BracketCard className="mt-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-normal">The site</h2>
+        {e.geofence.radius_m > 0 ? <Button size="sm" loading={here.busy} onClick={locateMe}>{youAt ? "Update my location" : "Show where I am"}</Button> : null}
+      </div>
+      {e.geofence.radius_m > 0 ? <p className="text-sm text-muted">Take the photo inside the dashed circle ({e.geofence.radius_m} m around the site){hereDist !== null ? <>: you are <strong className={hereDist <= e.geofence.radius_m ? "text-accent" : "text-red"}>{hereDist} m</strong> from the centre, {hereDist <= e.geofence.radius_m ? "inside" : "outside"} the fence.</> : "."}</p> : null}
+      {here.err ? <p className="text-xs text-amber">Couldn&apos;t read your location: {here.err}. Allow location for this site.</p> : null}
+      <EstateSiteMap geofence={e.geofence} points={sitePoints} aspect="4 / 3" />
+    </BracketCard>
+  );
   const age = pre?.exifTime ? now - pre.exifTime : null;
   const preChecks: { ok: boolean | null; text: string }[] = pre
     ? [
@@ -343,6 +370,8 @@ export function CaptureClient({ slug }: { slug: string }) {
         </BracketCard>
       ) : null}
 
+      {phase === "pick" || phase === "code" ? siteCard : null}
+
       {(phase === "preview" || phase === "uploading") && preview ? (
         <BracketCard className="space-y-4">
           <img src={preview} alt="Your photo" className="max-h-[50vh] w-full object-contain" />
@@ -360,7 +389,7 @@ export function CaptureClient({ slug }: { slug: string }) {
               <Button size="sm" loading={locating} onClick={retryLocation}>Try location again</Button>
             </BracketCard>
           ) : null}
-          {e.geofence.radius_m > 0 && pre ? <div className="max-w-xs"><StaticMap center={center} radiusM={e.geofence.radius_m} pin={loc} pinLabel={dist !== null ? `${dist} m` : undefined} /></div> : null}
+          {pre ? <EstateSiteMap geofence={e.geofence} points={photoPoints} aspect="4 / 3" noFence={photoPoints.length ? "No location fence on the playground — photos can be taken anywhere. This is where your photo and phone say you are." : undefined} /> : null}
           <p className="text-xs text-muted">These are hints. The real checks run in secure hardware after upload.</p>
           {phase === "uploading" ? (
             <div className="space-y-1"><p className="mono text-sm">Uploading original bytes… {progress}%</p><div className="h-2 bg-surface-2"><div className="h-full bg-orange" style={{ width: `${progress}%` }} /></div></div>

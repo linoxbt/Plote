@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { Activity as ActivityIcon, MapPin, Vote } from "lucide-react";
 import { estateSlug } from "@/lib/estates";
+import { googleMapsLinks } from "@/lib/satellite";
 import { describeEvent } from "@/lib/events";
 import { formatUsdc, pct, timeAgo, toBig, unitDisplay } from "@/lib/format";
 import { useEstate, useUnits } from "@/lib/hooks";
@@ -29,7 +30,7 @@ export function EstateHeader({ e, slug, right }: { e: EstateView; slug: string; 
             {e.geofence.radius_m > 0 ? (
               <a
                 className="mono ml-2 text-xs underline hover:text-orange-ink"
-                href={`https://www.openstreetmap.org/?mlat=${e.geofence.lat_e6 / 1e6}&mlon=${e.geofence.lon_e6 / 1e6}#map=16/${e.geofence.lat_e6 / 1e6}/${e.geofence.lon_e6 / 1e6}`}
+                href={googleMapsLinks([e.geofence.lat_e6 / 1e6, e.geofence.lon_e6 / 1e6], e.geofence.radius_m * 4).satellite}
                 target="_blank"
                 rel="noreferrer"
               >

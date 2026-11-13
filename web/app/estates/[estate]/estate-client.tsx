@@ -3,6 +3,7 @@
 import { EstateBanners } from "@/components/banners";
 import { Activity, EscrowSummary, EstateHeader, UnitGrid, useEstateData } from "@/components/estate-bits";
 import { MilestoneTrack } from "@/components/milestones";
+import { EstateSiteMap } from "@/components/satellite-map";
 import Link from "next/link";
 import { DoorOpen } from "lucide-react";
 import { BracketCard, ErrorState, LinkButton, LoadingCard, Page } from "@/components/ui";
@@ -26,6 +27,16 @@ export function EstateClient({ slug }: { slug: string }) {
           {ms.data ? <MilestoneTrack milestones={ms.data} detailed mobilisationBps={e.params.mobilisation_bps} /> : ms.error ? <ErrorState error={ms.error} /> : <LoadingCard lines={2} />}
         </BracketCard>
         <EscrowSummary e={e} units={units.data} />
+        <BracketCard className="space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-xl font-normal">The site</h2>
+            <p className="text-sm text-muted">{e.location}</p>
+          </div>
+          {e.geofence.radius_m > 0 ? (
+            <p className="text-sm text-muted">Every stage photo must be taken inside the dashed circle: {e.geofence.radius_m} m around the site. The check reads the photo&apos;s GPS and the phone&apos;s, and fails a photo taken outside it.</p>
+          ) : null}
+          <EstateSiteMap geofence={e.geofence} />
+        </BracketCard>
         <BracketCard>
           <h2 className="mb-4 text-xl font-normal">Units</h2>
           {units.data ? <UnitGrid estate={account} units={units.data} /> : units.error ? <ErrorState error={units.error} onRetry={() => units.refetch()} /> : <LoadingCard lines={3} />}

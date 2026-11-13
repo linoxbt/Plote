@@ -7,6 +7,8 @@ import { z } from "zod";
 import { clsx } from "clsx";
 import { Copy } from "lucide-react";
 import { PickMap } from "@/components/pick-map";
+import { SatelliteMap } from "@/components/satellite-map";
+import { isValidLatLon } from "@/lib/satellite";
 import { useWallet } from "@/components/wallet";
 import { BracketCard, Button, Field } from "@/components/ui";
 import { IS_MAINNET, NETWORK, ROOT_ACCOUNT } from "@/lib/config";
@@ -106,6 +108,12 @@ export function NewEstateWizard() {
             <p className="label">Location pin</p>
             <PickMap lat={lat} lon={lon} radiusM={radius} onPick={(la, lo) => { setValue("lat", la, { shouldValidate: true, shouldDirty: true }); setValue("lon", lo, { shouldValidate: true, shouldDirty: true }); }} />
             <p className="text-xs text-muted">Click the map to drop the pin (drag to move around). The dashed circle is the geofence photos must be taken inside. Or type exact coordinates below.</p>
+          </div>
+          <div className="space-y-2">
+            <p className="label">Satellite preview</p>
+            {isValidLatLon([lat, lon]) ? (
+              <SatelliteMap center={[lat, lon]} radiusM={radius >= 1 ? radius : 0} centerLabel="Chosen site" aspect="16 / 10" caption="Check the circle covers the plot you're building on: surveyors' photos must be taken inside it." />
+            ) : <p className="text-sm text-muted">Pick a point to see it from above.</p>}
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Latitude" htmlFor="lat" error={errors.lat?.message}><input id="lat" className="input" inputMode="decimal" {...register("lat")} /></Field>
