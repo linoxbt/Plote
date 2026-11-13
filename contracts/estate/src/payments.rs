@@ -1032,10 +1032,12 @@ impl Estate {
         unit.lien = None;
         unit.approvals.clear();
         self.clear_weight_history(&unit.id);
+        self.clear_holder_history(&unit.id);
         crate::ext::del(&crate::ext::key(
             crate::ext::P_PENDING_LIEN,
             unit.id.as_bytes(),
         ));
+        set_deferred(&unit.id, 0);
     }
 }
 

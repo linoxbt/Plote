@@ -1,0 +1,5 @@
+# SHA-256 of the reproducible verifier WASM (verifier/target/wasm32-wasip2/release/plote-verifier.wasm, built with
+# `cd verifier && ./build-wasm.sh`) = the OutLayer version key the estates pin. .github/workflows/verifier-build.yml
+# rebuilds it and fails when the build differs. After a reviewed verifier change: publish the new build on OutLayer,
+# repin the estates, then replace the line below with the new hash in the same commit. Lines starting with # are notes.
+07cf962632350d40bcdc4318d382af8f31aa49aab264b7b725add86dd415df6b

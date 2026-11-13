@@ -28,6 +28,9 @@ hard stop: don't take a deposit until all of them are ticked and the evidence is
 - [ ] Reporter account (`REPORTER_ACCOUNT_ID` / `REPORTER_PRIVATE_KEY`): each estate's `verdict_relayer`, which signs
       `submit_verdict` and `report_deposit`. Keep it separate from the relayer (it can book deposits, so it is the more
       sensitive key); required on mainnet. On testnet it falls back to the relayer key when unset.
+      **`REPORTER_ACCOUNT_ID` must equal the estate's `verdict_relayer`**, which is set at deploy and can't be changed:
+      `report_deposit` (1Click deliveries and `deposit_deferred` wallet deposits) only accepts that account, so
+      `scripts/deploy-estate.ts` refuses a mainnet config whose `verdict_relayer` is null or still a placeholder.
 - [ ] Surveyors use phone keys (`/qs/setup`): function-call only, allowance capped. Developers use the claim key from
       `/dev` for day-to-day calls.
 
@@ -41,10 +44,12 @@ hard stop: don't take a deposit until all of them are ticked and the evidence is
    `cargo near build reproducible-wasm --manifest-path contracts/estate/Cargo.toml` (and `unit`), or run the
    `reproducible-build` workflow, which publishes `hashes.txt`. Anyone can repeat it; the image is pinned by digest in
    each `Cargo.toml`. Deploy only that artifact: `scripts/upgrade-estate-code.ts --expected-hash <sha256>` refuses any
-   other WASM (and refuses mainnet without `--i-know`) and prints the deployed `code_hash`; `deploy-estate.ts` doesn't
+   other WASM (and refuses mainnet without `--i-know`), calls `migrate` from the estate account after each upgrade and
+   prints the deployed `code_hash` and `state_version`; `deploy-estate.ts` doesn't
    redeploy code or re-fund verification on an estate that is already initialised.
 2. `NEAR_ENV=mainnet` — publish the unit code (global, by hash), then deploy each estate with
-   `config/estate.mainnet.example.json` as the starting point (real deadlines, real geofence, real surveyor).
+   `config/estate.mainnet.example.json` as the starting point (real deadlines, real geofence, real surveyor, and
+   `verdict_relayer` = the reporter account, i.e. `REPORTER_ACCOUNT_ID`; it can't be changed later).
 3. Publish the verifier on OutLayer mainnet; pin its version key in the config; store the NEAR AI key with
    `scripts/outlayer-setup.ts` (mainnet usage: see `scripts/outlayer-setup.ts --help`), which uses the condition
    `Predecessor(Whitelist[estate])` (only runs requested by the estate contract can use it). `NEAR_AI_API_KEY` is an
@@ -104,8 +109,9 @@ hard stop: don't take a deposit until all of them are ticked and the evidence is
       per-instance memory and log `plote:rate-limit-fallback` / `plote:once-fallback` (NEP-413 nonces): alert on those
       in the Vercel logs. Relayed delegates and gate passes **fail closed** instead (503 `REPLAY_CHECK_UNAVAILABLE`,
       logged `plote:once-unavailable`). Relayed calls are counted per estate (300/min, 60/min on a playground), so the
-      public playground can't use up a real estate's quota; playground estates also have hourly caps per estate on
-      uploads (5 per account, 50 in total) and relayed captures and sign-offs (10 per account, 100 in total).
+      public playground can't use up a real estate's quota. Playground estates also have hourly caps on uploads (5 per
+      account, 10 per IP, 20 per /24 or /48 network, 300 per estate) and relayed captures and sign-offs (10 per
+      account, 20 per IP, 40 per network, 600 per estate), so throwaway accounts from one network can't lock others out.
 - [ ] Gate passes are checked server-side (`POST /api/gate/verify`), single use across guard devices.
 
 ## 5. Incidents

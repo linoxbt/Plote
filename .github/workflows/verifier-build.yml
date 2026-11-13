@@ -1,7 +1,9 @@
 # Reproducible build of the OutLayer verifier worker (verifier/README.md "Reproducible build").
 # Builds the wasm32-wasip2 release with the toolchain pinned in verifier/rust-toolchain.toml and the locked
 # dependencies, and publishes the WASM plus its SHA-256 (= the OutLayer version key the estates pin). Anyone can run
-# `cd verifier && ./build-wasm.sh` on the same commit and compare.
+# `cd verifier && ./build-wasm.sh` on the same commit and compare. The build is path-independent, so it runs at HEAD
+# and is compared with the pinned hash in config/verifier-wasm.sha256 (the build the estates pin on OutLayer): a
+# mismatch fails the job, with instructions to update that file after a reviewed verifier change.
 name: verifier-build
 on:
   workflow_dispatch:
@@ -21,7 +23,7 @@ jobs:
       run:
         working-directory: verifier
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # No build cache on purpose: the artifact must come from a clean build.
       - name: install the pinned toolchain (verifier/rust-toolchain.toml)
         run: |
@@ -53,7 +55,21 @@ jobs:
             echo ""
             echo "Reproduce: \`cd verifier && ./build-wasm.sh\`"
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - name: compare with config/verifier-wasm.sha256
+        run: |
+          built=$(sha256sum target/wasm32-wasip2/release/plote-verifier.wasm | cut -d' ' -f1)
+          pinned=$(grep -v '^[[:space:]]*#' ../config/verifier-wasm.sha256 | grep -Eo '[0-9a-f]{64}' | head -n1)
+          echo "built  verifier sha256: $built"
+          echo "pinned verifier sha256: ${pinned:-<none>}"
+          if [ "$built" != "$pinned" ]; then
+            echo "::error file=config/verifier-wasm.sha256::The reproducible verifier WASM ($built) is not the pinned build (${pinned:-none})."
+            echo "If this verifier change is intended and reviewed: publish this build on OutLayer, repin the estates to it,"
+            echo "then replace the hash in config/verifier-wasm.sha256 with $built in the same commit."
+            exit 1
+          fi
+          echo "OK: the verifier WASM matches the pinned build."
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: plote-verifier-wasm
           path: |

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectWindow, memoryStore, pollEstate, receiptEvents, type NbReceipt, type OutcomeReceipt, type PollDeps, type ReceiptRef } from "@/lib/server/poller";
 import { quoteTarget } from "@/lib/server/oneclick-server";
-import { RELAY_ESTATE_PER_MIN, RELAY_PLAYGROUND_PER_MIN, relayLimits, uploadLimits } from "@/lib/server/limits";
+import { PG_RELAY, PG_UPLOAD, RELAY_ESTATE_PER_MIN, RELAY_PLAYGROUND_PER_MIN, ipPrefix, relayLimits, uploadLimits } from "@/lib/server/limits";
 import { resolveAppUrl } from "@/lib/config";
 import { cleanupDeletes, parseMaxGasTgas } from "@/lib/server/env";
 import { pollerFreshness, publicView } from "@/lib/server/health";
@@ -347,13 +347,25 @@ describe("rate limits are per estate", () => {
     const pg = relayLimits("s.testnet", "1.1.1.1", PG, true, ["qs_sign"]);
     expect(real).toContainEqual([`relay-estate:${ESTATE}`, RELAY_ESTATE_PER_MIN, 60_000]);
     expect(pg).toContainEqual([`relay-estate:${PG}`, RELAY_PLAYGROUND_PER_MIN, 60_000]);
-    expect(pg).toContainEqual([`relay-pg:${PG}:all`, 100, 3600_000]);
+    expect(pg).toContainEqual([`relay-pg:${PG}:all`, PG_RELAY.estate, 3600_000]);
+    expect(pg).toContainEqual([`relay-pg-ip:${PG}:1.1.1.1`, PG_RELAY.ip, 3600_000]);
+    expect(pg).toContainEqual([`relay-pg-net:${PG}:1.1.1.0/24`, PG_RELAY.net, 3600_000]);
     const realKeys = new Set(real.map((l) => l[0]));
     expect(pg.filter(([k]) => !k.startsWith("relay:") && !k.startsWith("relay-ip:")).some(([k]) => realKeys.has(k))).toBe(false); // no shared bucket
     expect(real.some(([k]) => k === "relay:all")).toBe(false);
   });
+  it("one address or /24 can't use up the playground's estate-wide hourly backstop", () => {
+    // Throwaway accounts from one /24 hit the per-network cap long before the estate-wide one.
+    expect(PG_RELAY.net * 5).toBeLessThanOrEqual(PG_RELAY.estate / 2);
+    expect(PG_UPLOAD.net * 5).toBeLessThanOrEqual(PG_UPLOAD.estate / 2);
+    expect(PG_RELAY.ip).toBeLessThan(PG_RELAY.net);
+    expect(ipPrefix("203.0.113.77")).toBe("203.0.113.0/24");
+    expect(ipPrefix("2001:db8:abcd:12::1")).toBe("2001:db8:abcd::/48");
+    expect(ipPrefix("unknown")).toBe("unknown");
+  });
   it("uploads: playground caps per estate", () => {
-    expect(uploadLimits("a", true, PG)).toContainEqual([`upload-pg:${PG}:all`, 50, 3600_000]);
+    expect(uploadLimits("a", true, PG, "9.8.7.6")).toContainEqual([`upload-pg:${PG}:all`, PG_UPLOAD.estate, 3600_000]);
+    expect(uploadLimits("a", true, PG, "9.8.7.6")).toContainEqual([`upload-pg-net:${PG}:9.8.7.0/24`, PG_UPLOAD.net, 3600_000]);
     expect(uploadLimits("a", false, ESTATE)).toHaveLength(1);
   });
 });

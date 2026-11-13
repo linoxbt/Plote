@@ -317,9 +317,9 @@ describe("playground caps", () => {
   it("adds hourly caps for playground uploads and relayed captures", () => {
     expect(uploadLimits("a.testnet", false)).toEqual([["upload:a.testnet", 20, 60_000]]);
     expect(uploadLimits("a.testnet", true, ESTATE)).toContainEqual([`upload-pg:${ESTATE}:a.testnet`, 5, 3600_000]);
-    expect(uploadLimits("a.testnet", true, ESTATE)).toContainEqual([`upload-pg:${ESTATE}:all`, 50, 3600_000]);
+    expect(uploadLimits("a.testnet", true, ESTATE)).toContainEqual([`upload-pg:${ESTATE}:all`, 300, 3600_000]);
     expect(relayLimits("a.testnet", "1.2.3.4", ESTATE, true, ["submit_evidence"])).toContainEqual([`relay-pg:${ESTATE}:a.testnet`, 10, 3600_000]);
-    expect(relayLimits("a.testnet", "1.2.3.4", ESTATE, true, ["qs_sign"])).toHaveLength(5); // signing is capped on the playground too
+    expect(relayLimits("a.testnet", "1.2.3.4", ESTATE, true, ["qs_sign"])).toHaveLength(7); // signing is capped on the playground too
     expect(relayLimits("a.testnet", "1.2.3.4", "real.plote.testnet", false, ["submit_evidence"])).toHaveLength(3);
   });
 });
