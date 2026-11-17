@@ -2,6 +2,7 @@
 // The browser only talks to our /api/oneclick/* proxies; the JWT stays server-side.
 
 import { ONECLICK_EXPLORER } from "./config";
+import { PloteError } from "./errors";
 
 export type OneClickToken = {
   assetId: string;
@@ -97,7 +98,8 @@ export function explorerUrl(depositAddress: string): string {
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
   const j = (await res.json().catch(() => ({}))) as T & { code?: string; message?: string };
-  if (!res.ok) throw Object.assign(new Error(j.message ?? `HTTP ${res.status}`), { code: j.code ?? "UNKNOWN" });
+  // Keep the server's own sentence (e.g. UNIT_NOT_REGISTERED): it says what is wrong; a generic one doesn't.
+  if (!res.ok) throw new PloteError(j.code ?? "UNKNOWN", j.message ?? `HTTP ${res.status}`, j.message ?? undefined);
   return j;
 }
 

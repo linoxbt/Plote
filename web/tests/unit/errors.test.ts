@@ -36,3 +36,23 @@ describe("error mapping", () => {
     expect(explainError(p)).toEqual({ code: "E_LIEN", message: ERROR_MESSAGES.E_LIEN, raw: "raw text" });
   });
 });
+
+describe("1Click route errors keep the server's sentence", () => {
+  it("shows UNIT_NOT_REGISTERED's message instead of 'Something went wrong.'", async () => {
+    const { oneclick } = await import("@/lib/oneclick");
+    const { explainError } = await import("@/lib/errors");
+    const body = { code: "UNIT_NOT_REGISTERED", message: "That unit account isn't registered on USDC yet, so delivery would fail." };
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify(body), { status: 400 })) as typeof fetch;
+    try {
+      const err = await oneclick
+        .quote({ dry: true, originAsset: "x", amount: "2000000", refundTo: "0x0", recipient: "a-4b.harmattan-court.plote.near" } as never)
+        .then(() => null, (e: unknown) => e);
+      const e = explainError(err);
+      expect(e.code).toBe("UNIT_NOT_REGISTERED");
+      expect(e.message).toBe(body.message);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+});
