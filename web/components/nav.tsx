@@ -273,7 +273,10 @@ function NetworkSwitch() {
   );
 }
 
+/** Only the landing page carries the footer; every other page ends at its content. */
 export function Footer() {
+  const path = usePathname();
+  if (path !== "/") return null;
   return (
     <footer className="mt-24 border-t border-line bg-surface">
       <div className="mx-auto grid max-w-[1200px] gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.1fr_2fr] lg:px-8">
