@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Page, PageHeader } from "@/components/ui";
+import { TestnetOnlyNotice } from "@/components/testnet-only";
+import { ESTATES, IS_MAINNET } from "@/lib/config";
 import { CheckClient } from "./check-client";
 
 export const metadata: Metadata = {
@@ -17,7 +19,7 @@ export default async function CheckPage({ searchParams }: { searchParams: Promis
         Type a unit name like <span className="mono text-text">a-4b</span>, a full account like{" "}
         <span className="mono text-text">a-4b.harmattan-court.plote.testnet</span>, or paste a Plote link.
       </PageHeader>
-      <CheckClient initial={u} />
+      {IS_MAINNET && !ESTATES.length ? <TestnetOnlyNotice what="Unit checks are" /> : <CheckClient initial={u} />}
     </Page>
   );
 }

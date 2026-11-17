@@ -7,7 +7,8 @@ import { DevScoreChip } from "@/components/estate-bits";
 import { HouseNFT } from "@/components/house-nft";
 import { MonoAmount, StatusBadge } from "@/components/chain";
 import { BracketCard, EmptyState, ErrorState, LoadingCard } from "@/components/ui";
-import { ESTATES } from "@/lib/config";
+import { ESTATES, IS_MAINNET } from "@/lib/config";
+import { TestnetOnlyNotice } from "@/components/testnet-only";
 import { currentMilestone, nftApprovedCount } from "@/lib/estate";
 import { estateSlug } from "@/lib/estates";
 import { useAllEstates, useAllMilestones } from "@/lib/hooks";
@@ -21,7 +22,7 @@ export function EstatesClient() {
     () => Array.from(new Set(estates.map((x) => x.q.data?.location.split(",").pop()?.trim()).filter(Boolean) as string[])),
     [estates],
   );
-  if (!ESTATES.length) return <EmptyState title="No estates configured">Set NEXT_PUBLIC_ESTATES to the estate accounts this deployment shows.</EmptyState>;
+  if (!ESTATES.length) return IS_MAINNET ? <TestnetOnlyNotice what="Estates are" /> : <EmptyState title="No estates yet">No estates are listed on this site yet.</EmptyState>;
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
