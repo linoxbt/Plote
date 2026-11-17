@@ -1217,29 +1217,6 @@ export function PhoneMockup() {
   );
 }
 
-export function SourceLinks() {
-  const s = [
-    ["TechEconomy", "https://techeconomy.ng/?p=164669"],
-    ["Nigeria Housing Market", "https://www.nigeriahousingmarket.com/news/20-real-estate-scams-nigerian-property-buyers-must-avoid"],
-    ["allAfrica", "https://allafrica.com/stories/202601290263.html"],
-    ["Guardian Nigeria", "https://guardian.ng/property/diasporan-investors-drive-growth-expose-fault-lines-in-real-estate-sector/"],
-    ["Nation (Kenya)", "https://nation.africa/kenya/news/off-plan-scams-from-dream-homes-to-dust--5347430"],
-  ];
-  return (
-    <p className="text-xs text-muted">
-      Sources:{" "}
-      {s.map(([n, u], i) => (
-        <span key={n}>
-          <a href={u} target="_blank" rel="noreferrer" className="underline decoration-line-strong underline-offset-2 hover:text-text">
-            {n}
-          </a>
-          {i < s.length - 1 ? " · " : ""}
-        </span>
-      ))}
-    </p>
-  );
-}
-
 export function FinalCta() {
   return (
     <div className="space-y-4">

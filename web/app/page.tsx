@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, Building2, Camera, Check, Coins, Eye, FileText, Globe2, HelpCircle, Lock, Repeat, ShieldCheck, Store, Activity } from "lucide-react";
-import { CheckBand, EstateCards, HeroUnit, LiveReadPill, LiveTicker, OnRecord, RealProofs, SourceLinks, WatchItComeTogether } from "@/components/landing";
+import { CheckBand, EstateCards, HeroUnit, LiveReadPill, LiveTicker, OnRecord, RealProofs, WatchItComeTogether } from "@/components/landing";
 import { Container, Eyebrow, Faq, PillLink, Section, TextLink } from "@/components/site";
 import { DEMO_ESTATE_SLUG } from "@/lib/estates";
 import { FAQ } from "@/components/faq-data";
@@ -100,9 +100,6 @@ export default function Landing() {
                 </p>
               </div>
             ))}
-            <div className="md:col-span-3">
-              <SourceLinks />
-            </div>
             <div data-reveal className="rounded-[20px] bg-surface p-6 ring-1 ring-line md:col-span-3">
               <p className="text-[15px] font-medium">What Plote doesn&apos;t do</p>
               <ul className="mt-3 grid gap-x-8 gap-y-2 text-sm leading-relaxed text-muted md:grid-cols-2">
