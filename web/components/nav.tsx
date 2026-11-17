@@ -11,6 +11,7 @@ import { clsx } from "clsx";
 import { GITHUB_URL, IS_MAINNET, MAINNET_APP_URL, TESTNET_APP_URL } from "@/lib/config";
 import { Logo, Mark } from "./logo";
 import { NetworkPill } from "./chain";
+import { switchTarget } from "@/lib/network-switch";
 import { ConnectButton } from "./wallet";
 
 type NavLink = { href: string; label: string; note?: string };
@@ -179,9 +180,7 @@ export function Nav() {
             </ul>
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden 2xl:block">
-              <NetworkPill />
-            </span>
+            <NetworkToggle path={path} />
             <div className="hidden sm:block">
               <ConnectButton />
             </div>
@@ -242,6 +241,28 @@ export function Nav() {
         </div>
       ) : null}
     </header>
+  );
+}
+
+/** Header switch between the testnet app and the mainnet demo (served under /mainnet of the same site). */
+function NetworkToggle({ path }: { path: string }) {
+  const other = IS_MAINNET ? TESTNET_APP_URL : MAINNET_APP_URL;
+  if (!other) return <NetworkPill />;
+  const target = switchTarget(other, path);
+  const seg = "inline-flex min-h-9 items-center rounded-full px-3 text-xs transition-colors";
+  return (
+    <div role="group" aria-label="Network" className="inline-flex items-center rounded-full bg-surface-2 p-0.5 ring-1 ring-line">
+      {IS_MAINNET ? (
+        <a href={target} className={clsx(seg, "text-text-2 hover:text-text")}>Testnet</a>
+      ) : (
+        <span aria-current="true" className={clsx(seg, "bg-orange/15 font-medium text-orange-ink")}>Testnet</span>
+      )}
+      {IS_MAINNET ? (
+        <span aria-current="true" className={clsx(seg, "bg-accent/15 font-medium text-accent")}>Mainnet</span>
+      ) : (
+        <a href={target} className={clsx(seg, "text-text-2 hover:text-text")}>Mainnet</a>
+      )}
+    </div>
   );
 }
 

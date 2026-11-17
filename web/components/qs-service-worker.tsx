@@ -9,7 +9,7 @@ import { estateSlug } from "@/lib/estates";
 
 export function QsServiceWorker() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_BASE_PATH || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
     let cancelled = false;
     navigator.serviceWorker
       .register("/qs/sw.js", { scope: "/qs" })

@@ -6,7 +6,7 @@
 
 
 import bs58 from "bs58";
-import { NETWORK, RPC_URLS } from "./config";
+import { NETWORK, RPC_URLS, withBase } from "./config";
 import { afterOwnTx, bytesToBase64, type TxResult, type TxSpec } from "./near";
 import { hashNep413, type Nep413Payload } from "./nep413";
 import { PloteError } from "./errors";
@@ -183,7 +183,7 @@ export async function relayWithPhoneKey(accountId: string, spec: TxSpec): Promis
     actions: spec.actions.map((a) => actions.functionCall(a.method, a.args, BigInt(a.gas), BigInt(a.deposit))),
     blockHeightTtl: 120,
   });
-  const res = await fetch("/api/relay", {
+  const res = await fetch(withBase("/api/relay"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ signedDelegate: bytesToBase64(encodeSignedDelegate(signedDelegate)) }),

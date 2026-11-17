@@ -12,7 +12,7 @@ import { useTx } from "@/components/toast";
 import { useWallet } from "@/components/wallet";
 import { Bar, BracketCard, Button, EmptyState, ErrorState, Field, LoadingCard, Page } from "@/components/ui";
 import { copyText } from "@/lib/clipboard";
-import { APP_URL } from "@/lib/config";
+import { APP_URL, withBase } from "@/lib/config";
 import { approvedCount } from "@/lib/estate";
 import { estateAccount, estateSlug } from "@/lib/estates";
 import { formatDate, formatUsd, parseUsdc, pct, unitDisplay } from "@/lib/format";
@@ -189,7 +189,7 @@ function ChipInForm({ estate, unitAccount, unitId }: { estate: string; unitAccou
     }, { success: (res) => depositSuccessText(lastDepositOutcome(res, base) ?? { status: "accepted" }, "Thank you — the money is credited to the unit.") });
     if (r) {
       try {
-        await fetch("/api/chipin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate, unit: unitId, txHash: r.hash, sender: accountId, displayName: name, note }) });
+        await fetch(withBase("/api/chipin"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate, unit: unitId, txHash: r.hash, sender: accountId, displayName: name, note }) });
       } catch { /* the wall is best-effort; the payment is on-chain */ }
       const refresh = () => Promise.all([
         qc.invalidateQueries({ queryKey: ["unit", estate, unitId] }),

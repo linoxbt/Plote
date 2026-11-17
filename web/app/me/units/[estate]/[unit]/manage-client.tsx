@@ -20,6 +20,7 @@ import { bytesToBase64, getWallet, sendTx, sendTxs, type TxResult, type TxSpec }
 import { assertFtCallAccepted, depositSuccessText } from "@/lib/tx-outcome";
 import { notifyMessage, timestampedNonce } from "@/lib/nep413";
 import { isRegistered, usdc } from "@/lib/usdc";
+import { withBase } from "@/lib/config";
 
 /**
  * Whether this deployment can send milestone emails (GET /api/notify/status → { configured }). A 404 (older server),
@@ -32,7 +33,7 @@ function useNotifyConfigured() {
     retry: 0,
     queryFn: async (): Promise<boolean> => {
       try {
-        const res = await fetch("/api/notify/status", { headers: { accept: "application/json" } });
+        const res = await fetch(withBase("/api/notify/status"), { headers: { accept: "application/json" } });
         if (!res.ok) return false;
         const j = (await res.json()) as { configured?: unknown };
         return j.configured === true;
@@ -321,7 +322,7 @@ export function ManageClient({ slug, unitId }: { slug: string; unitId: string })
                     const message = notifyMessage(s, u.id, email);
                     const w = await getWallet();
                     const signed = await w.signMessage({ message, recipient: account, nonce });
-                    const res = await fetch("/api/notify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accountId, publicKey: signed.publicKey, signature: signed.signature, nonce: bytesToBase64(nonce), message, recipient: account, estate: account, unit: u.id, email }) });
+                    const res = await fetch(withBase("/api/notify"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ accountId, publicKey: signed.publicKey, signature: signed.signature, nonce: bytesToBase64(nonce), message, recipient: account, estate: account, unit: u.id, email }) });
                     const j = await res.json();
                     if (!res.ok) throw new Error(`${j.code}: ${j.message}`);
                   }, { success: "Check your inbox: click the link we sent to confirm." });

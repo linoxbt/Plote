@@ -97,6 +97,13 @@ export const ROOT_ACCOUNT = clean(process.env.NEXT_PUBLIC_ROOT_ACCOUNT) ?? d.roo
 export const GITHUB_URL = clean(process.env.NEXT_PUBLIC_GITHUB_URL) ?? "https://github.com/linoxbt/Plote";
 /** The mainnet-demo build URL (footer network switch). */
 export const MAINNET_APP_URL = clean(process.env.NEXT_PUBLIC_MAINNET_APP_URL);
+/**
+ * Where this build is mounted on its site. The mainnet demo is served under /mainnet of the testnet site (multi-zone:
+ * the testnet project rewrites /mainnet/* to the mainnet project, built with NEXT_PUBLIC_BASE_PATH=/mainnet), so one
+ * link carries both networks. Next prefixes <Link> and router paths itself; raw fetch()/<a> paths go through withBase.
+ */
+export const BASE_PATH = (clean(process.env.NEXT_PUBLIC_BASE_PATH) ?? "").replace(/\/$/, "");
+export const withBase = (path: string) => `${BASE_PATH}${path}`;
 export const TESTNET_APP_URL = clean(process.env.NEXT_PUBLIC_TESTNET_APP_URL);
 
 /**

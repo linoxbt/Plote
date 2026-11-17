@@ -103,3 +103,13 @@ describe("relayer allowlist", () => {
     expect(code(checkDelegate(sd("playground.plote.testnet", [{ transfer: { deposit: 1n } }]), opts))).toBe("ACTION_NOT_ALLOWED");
   });
 });
+
+describe("network switch", () => {
+  it("keeps shared pages and sends estate-specific pages to the other network's landing page", async () => {
+    const { switchTarget } = await import("@/lib/network-switch");
+    expect(switchTarget("https://plote-vert.vercel.app/mainnet", "/")).toBe("https://plote-vert.vercel.app/mainnet");
+    expect(switchTarget("https://plote-vert.vercel.app/mainnet", "/pay")).toBe("https://plote-vert.vercel.app/mainnet/pay");
+    expect(switchTarget("https://plote-vert.vercel.app/mainnet/", "/estates/playground")).toBe("https://plote-vert.vercel.app/mainnet");
+    expect(switchTarget("https://plote-vert.vercel.app", "/estates")).toBe("https://plote-vert.vercel.app/estates");
+  });
+});

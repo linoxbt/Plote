@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, AlertTriangle, XCircle, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 import { BracketCard, Button } from "@/components/ui";
-import { ESTATES, RPC_URLS } from "@/lib/config";
+import { ESTATES, RPC_URLS, withBase } from "@/lib/config";
 import { estate as E } from "@/lib/estate";
 import { explainError } from "@/lib/errors";
 import { timeAgo } from "@/lib/format";
@@ -60,7 +60,7 @@ export function StatusClient() {
   const health = useQuery({
     queryKey: ["status-health"],
     refetchInterval: 60_000,
-    queryFn: async () => (await fetch("/api/health")).json() as Promise<Record<string, { ok: boolean; detail: string; configured?: boolean }>>,
+    queryFn: async () => (await fetch(withBase("/api/health"))).json() as Promise<Record<string, { ok: boolean; detail: string; configured?: boolean }>>,
   });
 
   const rows: Row[] = [];

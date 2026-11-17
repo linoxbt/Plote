@@ -22,6 +22,7 @@ import { bytesToBase64 } from "@/lib/near";
 import { timestampedNonce, uploadMessage } from "@/lib/nep413";
 import { reasonBase } from "@/lib/proof";
 import type { EvidenceView } from "@/lib/types";
+import { withBase } from "@/lib/config";
 
 type Pre = { exifTime: number | null; gps: [number, number] | null; device: [number, number] | null; deviceErr: string | null };
 type Phase = "pick" | "code" | "preview" | "uploading" | "checking" | "verdict";
@@ -222,7 +223,7 @@ export function CaptureClient({ slug }: { slug: string }) {
         const nonce = timestampedNonce();
         const message = uploadMessage(account, sha);
         const signed = await signer.signNep413({ message, nonce, recipient: account });
-        const res = await fetch("/api/evidence/upload-url", {
+        const res = await fetch(withBase("/api/evidence/upload-url"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ estate: account, contentType, size: file.size, sha256: sha, ...signed, nonce: bytesToBase64(nonce), message, recipient: account, exif: pre ? { time: pre.exifTime, gps: pre.gps } : null }),
@@ -258,7 +259,7 @@ export function CaptureClient({ slug }: { slug: string }) {
       setPhase(ev && ev.status !== "Pending" ? "verdict" : "checking");
       // HTTPS-mode estates (SPEC 6.6): the server runs the worker on OutLayer's API and relays the verdict.
       if (e.verify_mode === "https" && id) {
-        void fetch("/api/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate: account, evidenceId: id }) }).catch(() => undefined);
+        void fetch(withBase("/api/verify"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate: account, evidenceId: id }) }).catch(() => undefined);
       }
     } catch (x) {
       setErr(x);

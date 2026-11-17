@@ -7,6 +7,7 @@ import { Button, Page } from "@/components/ui";
 import { estateAccount } from "@/lib/estates";
 import { explainError } from "@/lib/errors";
 import { useEstate } from "@/lib/hooks";
+import { withBase } from "@/lib/config";
 
 /** POST /api/gate/verify's answer, plus "retry": the check couldn't run (rate limit, NEAR unreachable), which is not a denial. */
 type GateResult =
@@ -18,7 +19,7 @@ type GateResult =
 async function verifyOnServer(estate: string, pass: string): Promise<GateResult> {
   let res: Response;
   try {
-    res = await fetch("/api/gate/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate, pass }) });
+    res = await fetch(withBase("/api/gate/verify"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ estate, pass }) });
   } catch {
     return { retry: true, reason: "No connection. Check the phone's signal and scan again." };
   }

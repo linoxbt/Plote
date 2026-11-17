@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CheckInput, CheckResult, loadRecent, runCheck, saveRecent, type CheckOutcome } from "@/components/check";
 import { LoadingCard } from "@/components/ui";
-import { APP_URL } from "@/lib/config";
+import { APP_URL, withBase } from "@/lib/config";
 
 export function CheckClient({ initial }: { initial: string }) {
   const [o, setO] = useState<CheckOutcome | null>(null);
@@ -63,7 +63,7 @@ export function CheckClient({ initial }: { initial: string }) {
           <ul className="flex flex-wrap gap-2">
             {recent.map((r) => (
               <li key={r}>
-                <a href={`/check?u=${encodeURIComponent(r)}`} className="mono corners corners-hover inline-flex min-h-11 items-center bg-surface px-3 text-sm">
+                <a href={withBase(`/check?u=${encodeURIComponent(r)}`)} className="mono corners corners-hover inline-flex min-h-11 items-center bg-surface px-3 text-sm">
                   {r}
                 </a>
               </li>
