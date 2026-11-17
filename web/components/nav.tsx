@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Menu, X } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, Menu, X } from "lucide-react";
 import { clsx } from "clsx";
 import { GITHUB_URL, IS_MAINNET, MAINNET_APP_URL, TESTNET_APP_URL } from "@/lib/config";
 import { Logo, Mark } from "./logo";
@@ -246,22 +246,76 @@ export function Nav() {
 
 /** Header switch between the testnet app and the mainnet demo (served under /mainnet of the same site). */
 function NetworkToggle({ path }: { path: string }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      button.current?.focus();
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
   const other = IS_MAINNET ? TESTNET_APP_URL : MAINNET_APP_URL;
   if (!other) return <NetworkPill />;
   const target = switchTarget(other, path);
-  const seg = "inline-flex min-h-9 items-center rounded-full px-3 text-xs transition-colors";
+  const options = [
+    { label: "Testnet", note: "Full escrow, test money", current: !IS_MAINNET, dot: "bg-orange" },
+    { label: "Mainnet", note: "Real cross-chain payment", current: IS_MAINNET, dot: "bg-accent" },
+  ];
+  const cur = options.find((o) => o.current)!;
   return (
-    <div role="group" aria-label="Network" className="inline-flex items-center rounded-full bg-surface-2 p-0.5 ring-1 ring-line">
-      {IS_MAINNET ? (
-        <a href={target} className={clsx(seg, "text-text-2 hover:text-text")}>Testnet</a>
-      ) : (
-        <span aria-current="true" className={clsx(seg, "bg-orange/15 font-medium text-orange-ink")}>Testnet</span>
-      )}
-      {IS_MAINNET ? (
-        <span aria-current="true" className={clsx(seg, "bg-accent/15 font-medium text-accent")}>Mainnet</span>
-      ) : (
-        <a href={target} className={clsx(seg, "text-text-2 hover:text-text")}>Mainnet</a>
-      )}
+    <div ref={box} className="relative">
+      <button
+        ref={button}
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-controls="network-menu"
+        aria-label={`Network: ${cur.label}. Change network`}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-11 items-center gap-2 rounded-full bg-surface px-3 text-sm text-text ring-1 ring-line transition-colors hover:bg-surface-2"
+      >
+        <span className={clsx("h-2 w-2 rounded-full", cur.dot)} aria-hidden />
+        {cur.label}
+        <ChevronDown className={clsx("h-4 w-4 text-muted transition-transform", open && "rotate-180")} strokeWidth={1.75} aria-hidden />
+      </button>
+      {open ? (
+        <ul id="network-menu" className="absolute right-0 top-full z-[60] mt-2 w-60 rounded-2xl bg-surface p-1.5 shadow-lg ring-1 ring-line">
+          {options.map((o) => (
+            <li key={o.label}>
+              {o.current ? (
+                <span aria-current="true" className="flex items-center gap-3 rounded-xl bg-surface-2 px-3 py-2.5">
+                  <span className={clsx("h-2 w-2 shrink-0 rounded-full", o.dot)} aria-hidden />
+                  <span className="flex-1">
+                    <span className="block text-sm font-medium text-text">{o.label}</span>
+                    <span className="block text-xs text-muted">{o.note}</span>
+                  </span>
+                  <Check className="h-4 w-4 text-text" strokeWidth={2} aria-hidden />
+                </span>
+              ) : (
+                <a href={target} className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-2">
+                  <span className={clsx("h-2 w-2 shrink-0 rounded-full", o.dot)} aria-hidden />
+                  <span className="flex-1">
+                    <span className="block text-sm font-medium text-text">{o.label}</span>
+                    <span className="block text-xs text-muted">{o.note}</span>
+                  </span>
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
