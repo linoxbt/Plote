@@ -55,6 +55,8 @@ export const NAV_GROUPS: { title: string; links: NavLink[] }[] = [
       { href: "/status", label: "System status" },
       { href: SPEC_URL, label: "Build spec" },
       { href: GITHUB_URL, label: "GitHub" },
+      { href: "/terms", label: "Terms" },
+      { href: "/privacy", label: "Privacy" },
     ],
   },
 ];
