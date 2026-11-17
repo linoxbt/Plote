@@ -24,6 +24,32 @@ export async function oneclickFetch(path: string, init: RequestInit = {}, timeou
   }
 }
 
+/**
+ * Is `account` registered on Circle USDC on NEAR mainnet? Used by a testnet build that quotes for the Mainnet Lite unit
+ * (its own RPC is testnet's). Throws when no mainnet RPC answers.
+ */
+export async function mainnetUsdcRegistered(account: string, rpcs = ["https://rpc.mainnet.fastnear.com", "https://rpc.mainnet.near.org"]): Promise<boolean> {
+  const args = Buffer.from(JSON.stringify({ account_id: account })).toString("base64");
+  const body = JSON.stringify({
+    jsonrpc: "2.0", id: "plote", method: "query",
+    params: { request_type: "call_function", finality: "final", account_id: MAINNET_USDC, method_name: "storage_balance_of", args_base64: args },
+  });
+  let last: unknown;
+  for (const url of rpcs) {
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body, cache: "no-store", signal: AbortSignal.timeout(8000) });
+      const j = (await r.json()) as { result?: { result?: number[] }; error?: unknown };
+      if (!j.result?.result) throw new Error("rpc error");
+      const v = JSON.parse(Buffer.from(j.result.result).toString("utf8")) as unknown;
+      return v !== null;
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw last instanceof Error ? last : new Error("mainnet RPC unavailable");
+}
+const MAINNET_USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
+
 /** 503 ONECLICK_MAINNET_ONLY: NEAR Intents (1Click) has no testnet, so testnet builds don't proxy it. */
 export function oneclickMainnetOnly() {
   return jsonError("ONECLICK_MAINNET_ONLY", "Cross-chain payments use NEAR Intents, which only runs on mainnet. Use the mainnet demo build.", 503);

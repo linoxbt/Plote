@@ -13,7 +13,7 @@ import { estate as E } from "@/lib/estate";
 import { usdc } from "@/lib/usdc";
 import { serverEnv } from "@/lib/server/env";
 import { clientIp, jsonError, ok, parseJson } from "@/lib/server/http";
-import { oneclickFetch, quoteTarget } from "@/lib/server/oneclick-server";
+import { mainnetUsdcRegistered, oneclickFetch, quoteTarget } from "@/lib/server/oneclick-server";
 import { logError } from "@/lib/server/alert";
 import { rateLimitShared } from "@/lib/server/rate-limit";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
@@ -60,7 +60,9 @@ export async function POST(req: Request) {
   }
   try {
     if (NETWORK === "mainnet" && !(await isRealUnit(b.recipient))) return jsonError("E_UNIT_NOT_FOUND", "The recipient must be a Plote unit account.", 400);
-    if (NETWORK === "mainnet" && !(await usdc.storageBalanceOf(b.recipient, USDC_ID))) {
+    // A testnet build quoting for the Mainnet Lite unit checks it on mainnet (its own RPC is testnet's).
+    const registered = NETWORK === "mainnet" ? !!(await usdc.storageBalanceOf(b.recipient, USDC_ID)) : await mainnetUsdcRegistered(b.recipient);
+    if (!registered) {
       return jsonError("UNIT_NOT_REGISTERED", "That unit account isn't registered on USDC yet, so delivery would fail.", 400);
     }
   } catch {

@@ -461,3 +461,27 @@ describe("gate pass: fails closed without the shared replay check", () => {
     await expect(verifyGatePassServer(pass, PG, d, now + 1000)).rejects.toBeInstanceOf(ReplayCheckUnavailable);
   });
 });
+
+describe("mainnetUsdcRegistered (Mainnet Lite unit, checked from a testnet build)", () => {
+  it("reads storage_balance_of on mainnet and falls back to the second RPC", async () => {
+    const { mainnetUsdcRegistered } = await import("@/lib/server/oneclick-server");
+    const enc = (v: unknown) => Array.from(Buffer.from(JSON.stringify(v)));
+    const orig = globalThis.fetch;
+    const seen: string[] = [];
+    let answer: unknown = null;
+    globalThis.fetch = (async (url: string) => {
+      seen.push(String(url));
+      if (seen.length === 1) throw new Error("down");
+      return new Response(JSON.stringify({ result: { result: enc(answer) } }));
+    }) as typeof fetch;
+    try {
+      expect(await mainnetUsdcRegistered("a-4b.harmattan-court.plote.near", ["https://a", "https://b"])).toBe(false);
+      expect(seen).toEqual(["https://a", "https://b"]);
+      answer = { total: "1250000000000000000000", available: "0" };
+      seen.length = 0;
+      expect(await mainnetUsdcRegistered("a-4b.harmattan-court.plote.near", ["https://a", "https://b"])).toBe(true);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+});

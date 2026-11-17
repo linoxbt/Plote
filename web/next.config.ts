@@ -28,6 +28,9 @@ const nextConfig: NextConfig = {
     if (!mainnetZone) return { beforeFiles: [], afterFiles: [], fallback: [] };
     return {
       beforeFiles: [
+        // Cross-chain payments for the mainnet demo are quoted and tracked by this zone's own 1Click routes (they accept
+        // only the Mainnet Lite unit as recipient on a testnet build), so the quote store's key lives in one project.
+        { source: "/mainnet/api/oneclick/:path*", destination: "/api/oneclick/:path*" },
         { source: "/mainnet", destination: `${mainnetZone}/mainnet` },
         { source: "/mainnet/:path*", destination: `${mainnetZone}/mainnet/:path*` },
       ],
